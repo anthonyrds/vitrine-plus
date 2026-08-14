@@ -25,15 +25,19 @@ jobs:
       - name: Construire le site
         run: npm run build
 
-      - name: Déployer sur IONOS via SFTP
-        uses: appleboy/scp-action@v1
-        with:
-          host: access-5019473596.webspace-host.com
-          username: su1574645
-          password: ${{ secrets.IONOS_SFTP_PASSWORD }}
-          port: 22
-          source: "dist/*"
-          target: "/public"
-          overwrite: true
-          strip_components: 1
+      - name: Installer le client SFTP
+        run: sudo apt-get update && sudo apt-get install -y lftp
 
+      - name: Déployer sur IONOS via SFTP
+        env:
+          SFTP_PASSWORD: ${{ secrets.IONOS_SFTP_PASSWORD }}
+        run: |
+          lftp -u "su1574645,$SFTP_PASSWORD" sftp://access-5019473596.webspace-host.com:22 <<EOF
+          set sftp:auto-confirm yes
+          set net:timeout 30
+          set net:max-retries 2
+          set net:reconnect-interval-base 5
+          cd /public
+          mirror --reverse --delete --verbose dist/ .
+          bye
+          EOF
