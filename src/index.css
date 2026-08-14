@@ -133,12 +133,11 @@ button {
 }
 
 /* Keep decorative animations lighter on mobile */
-@media (max-width: 640px) {
-  .float {
-    animation-duration: 10s;
-  }
 
-  .marquee {
-    animation-duration: 28s;
+@media (max-width: 767px) {
+  .reveal {
+    animation: none;
+    opacity: 1;
+    transform: none;
   }
 }
