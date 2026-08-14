@@ -1,0 +1,39 @@
+name: Deploy Vitrine+ to IONOS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Construire le site
+        run: npm run build
+
+      - name: Déployer sur IONOS via SFTP
+        uses: appleboy/scp-action@v1
+        with:
+          host: access-5019473596.webspace-host.com
+          username: su1574645
+          password: ${{ secrets.IONOS_SFTP_PASSWORD }}
+          port: 22
+          source: "dist/*"
+          target: "/public"
+          overwrite: true
+          strip_components: 1
+
