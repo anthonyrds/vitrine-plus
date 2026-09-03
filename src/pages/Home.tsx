@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowRight, Check, Quote } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import Button from "../components/Button";
 import CTA from "../components/CTA";
@@ -15,40 +15,149 @@ export default function Home() {
         canonical="/"
       />
 
-      <section className="noise relative min-h-[92vh] overflow-hidden bg-[#080808] px-6 pb-16 pt-36 text-white lg:min-h-screen lg:px-8 lg:pt-44">
-        <div className="absolute -right-32 top-10 h-[620px] w-[620px] rounded-full bg-[#c8a45d]/15 blur-[130px]" />
-        <div className="absolute left-1/3 top-1/2 h-72 w-72 rounded-full bg-white/5 blur-[100px]" />
+      {/* HERO */}
+      <section className="relative min-h-[78vh] overflow-hidden bg-[#080808] px-6 pb-14 pt-32 text-white lg:min-h-[82vh] lg:px-8 lg:pt-40">
+        <div className="absolute -right-40 top-0 h-[500px] w-[500px] rounded-full bg-[#c8a45d]/10 blur-[110px]" />
+        <div className="absolute left-1/3 top-1/2 h-64 w-64 rounded-full bg-white/[0.025] blur-[90px]" />
 
         <div className="relative mx-auto flex max-w-7xl flex-col justify-between">
           <div className="max-w-6xl">
             <SectionLabel>Agence digitale indépendante</SectionLabel>
 
-            <h1 className="display mt-7 max-w-6xl text-[15vw] font-extrabold leading-[0.94] tracking-[-0.045em] sm:text-8xl sm:leading-[0.92] lg:text-[112px] lg:leading-[0.9]">
+            <h1 className="display mt-7 max-w-6xl text-[15vw] font-extrabold leading-[0.92] tracking-[-0.045em] sm:text-8xl lg:text-[112px]">
               Votre entreprise.
               <span className="block text-white/35">En mieux.</span>
             </h1>
 
-            <div className="mt-10 flex max-w-3xl flex-col gap-8 sm:flex-row sm:items-end">
-              <p className="text-lg leading-8 text-white/55">
-                Vitrine+ conçoit des expériences digitales qui renforcent votre
-                image, votre visibilité et votre capacité à générer des clients.
+            <div className="mt-9 flex max-w-3xl flex-col gap-7 sm:flex-row sm:items-end">
+              <p className="max-w-xl text-lg leading-8 text-white/55">
+                Vitrine+ conçoit des expériences digitales qui renforcent
+                votre image, votre visibilité et votre capacité à générer des
+                clients.
               </p>
 
-              <Button to="/audit" dark={false}>
+              <Button to="/audit">
                 Obtenir mon audit gratuit
               </Button>
             </div>
           </div>
 
-          <div className="mt-24 flex items-center justify-between border-t border-white/10 pt-5 text-xs font-bold uppercase tracking-[.2em] text-white/30">
-            <span>Web · SEO · Acquisition · IA</span>
-            <ArrowDown className="float" size={18} />
+          <div className="mt-16 border-t border-white/10 pt-5 text-xs font-bold uppercase tracking-[.2em] text-white/25">
+            Web · SEO · Acquisition · IA
           </div>
         </div>
       </section>
 
-      <section className="px-6 py-24 lg:px-8 lg:py-36">
-        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.8fr_1.2fr]">
+      {/* AUDIT TEASER — JUSTE SOUS LE HERO */}
+      <section className="px-6 py-14 lg:px-8 lg:py-20">
+        <div className="mx-auto max-w-7xl">
+          <div className="overflow-hidden rounded-[2rem] bg-[#f5f5f2]">
+            <div className="grid lg:grid-cols-[1.05fr_.95fr]">
+              <div className="p-7 sm:p-10 lg:p-14">
+                <SectionLabel>Audit digital gratuit</SectionLabel>
+
+                <h2 className="display mt-5 max-w-2xl text-4xl font-extrabold leading-[1] sm:text-6xl">
+                  Et si votre site vous faisait perdre des clients ?
+                </h2>
+
+                <p className="mt-6 max-w-xl text-base leading-7 text-black/55 sm:text-lg">
+                  Entrez simplement l’adresse de votre site. Nous analysons
+                  automatiquement l’ensemble de ses pages et identifions les
+                  points qui peuvent freiner votre visibilité, votre crédibilité
+                  et votre conversion.
+                </p>
+
+                <Button to="/audit">
+                Analyser mon site gratuitement
+              </Button>
+
+                <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-xs font-semibold text-black/40">
+                  <span className="flex items-center gap-2">
+                    <Check size={14} className="text-[#c8a45d]" />
+                    Analyse multi-pages
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Check size={14} className="text-[#c8a45d]" />
+                    Résultat en quelques secondes
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Check size={14} className="text-[#c8a45d]" />
+                    100 % gratuit
+                  </span>
+                </div>
+              </div>
+
+              {/* EXEMPLE DE RÉSULTAT */}
+<div className="relative overflow-hidden bg-[#080808] p-7 text-white sm:p-10 lg:p-12">
+  <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#c8a45d]/10 blur-[90px]" />
+
+  <div className="relative">
+    <p className="text-xs font-bold uppercase tracking-[.25em] text-white/35">
+      Exemple de résultat
+    </p>
+
+    <div className="mt-4 flex items-baseline gap-3">
+      <span className="display text-7xl font-extrabold leading-none tracking-[-.07em] sm:text-8xl">
+        72
+      </span>
+
+      <span className="text-2xl font-semibold text-white/65">
+        /100
+      </span>
+    </div>
+
+    <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+      <div className="h-full w-[72%] rounded-full bg-[#c8a45d]" />
+    </div>
+
+    <p className="mt-4 text-xs text-white/40">
+      Score indicatif de présence digitale
+    </p>
+
+    <div className="mt-8 border-t border-white/10 pt-7">
+      <p className="text-xs font-bold uppercase tracking-[.2em] text-white/35">
+        3 conseils
+      </p>
+
+      <div className="mt-5 space-y-4">
+        {[
+          "Optimiser vos titres et descriptions pour améliorer votre visibilité sur Google.",
+          "Améliorer la vitesse de chargement de vos pages.",
+          "Renforcer vos appels à l’action pour transformer davantage de visiteurs en clients.",
+        ].map((tip, index) => (
+          <div key={tip} className="flex gap-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-extrabold text-[#c8a45d]">
+              0{index + 1}
+            </span>
+
+            <p className="text-sm leading-5 text-white/60">
+              {tip}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="mt-8 rounded-2xl border border-[#c8a45d]/20 bg-[#c8a45d]/[0.06] p-5">
+      <p className="text-xs font-bold uppercase tracking-[.2em] text-[#c8a45d]">
+        Les + que Vitrine+ peut vous apporter
+      </p>
+
+      <p className="mt-3 text-sm leading-6 text-white/65">
+        Un site plus performant, une meilleure visibilité et un parcours
+        pensé pour convertir vos visiteurs en clients.
+      </p>
+    </div>
+  </div>
+</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CONVICTION */}
+      <section className="px-6 py-16 lg:px-8 lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[.8fr_1.2fr]">
           <div>
             <SectionLabel>Notre conviction</SectionLabel>
           </div>
@@ -59,7 +168,7 @@ export default function Home() {
               <span className="block text-black/30">Il faut être choisi.</span>
             </h2>
 
-            <p className="mt-8 max-w-2xl text-lg leading-8 text-black/55">
+            <p className="mt-7 max-w-2xl text-lg leading-8 text-black/55">
               Un site performant n’est pas une brochure. C’est un point de
               contact commercial. Nous pensons chaque détail autour d’une
               question : comment transformer l’attention en confiance, puis la
@@ -68,7 +177,7 @@ export default function Home() {
 
             <Link
               to="/a-propos"
-              className="mt-8 inline-flex items-center gap-2 text-sm font-bold"
+              className="mt-7 inline-flex items-center gap-2 text-sm font-bold"
             >
               Découvrir notre approche
               <ArrowRight size={16} />
@@ -77,12 +186,13 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SERVICES */}
       <section
         id="services"
-        className="bg-[#f5f5f2] px-6 py-24 lg:px-8 lg:py-36"
+        className="bg-[#f5f5f2] px-6 py-16 lg:px-8 lg:py-24"
       >
         <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col justify-between gap-8 md:flex-row md:items-end">
+          <div className="flex flex-col justify-between gap-7 md:flex-row md:items-end">
             <div>
               <SectionLabel>Nos expertises</SectionLabel>
 
@@ -94,7 +204,7 @@ export default function Home() {
             <Button to="/services">Voir tous les services</Button>
           </div>
 
-          <div className="mt-14 grid gap-px overflow-hidden rounded-3xl bg-black/10 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-10 grid gap-px overflow-hidden rounded-3xl bg-black/10 sm:grid-cols-2 lg:grid-cols-3">
             <ServiceCard
               number="01"
               title="Création web"
@@ -140,72 +250,8 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="overflow-hidden bg-[#080808] py-5 text-white">
-        <div className="marquee flex w-max gap-12 text-sm font-bold uppercase tracking-[.2em] text-white/30">
-          <span>Vitrine+</span>
-          <span>•</span>
-          <span>Web</span>
-          <span>•</span>
-          <span>SEO</span>
-          <span>•</span>
-          <span>Stratégie</span>
-          <span>•</span>
-          <span>IA</span>
-          <span>•</span>
-
-          <span>Vitrine+</span>
-          <span>•</span>
-          <span>Web</span>
-          <span>•</span>
-          <span>SEO</span>
-          <span>•</span>
-          <span>Stratégie</span>
-          <span>•</span>
-          <span>IA</span>
-        </div>
-      </section>
-
-      <section className="px-6 py-24 lg:px-8 lg:py-36">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col justify-between gap-8 md:flex-row md:items-end">
-            <div>
-              <SectionLabel>Notre méthode</SectionLabel>
-
-              <h2 className="display mt-5 max-w-3xl text-5xl font-extrabold sm:text-7xl">
-                Stratégie. Design. Technologie. Résultats.
-              </h2>
-            </div>
-
-            <p className="max-w-md text-black/50">
-              Une approche simple : comprendre votre activité, construire une
-              expérience forte et mesurer ce qui compte.
-            </p>
-          </div>
-
-          <div className="mt-16 grid gap-10 border-t border-black/10 pt-10 md:grid-cols-4">
-            {[
-              ["01", "Comprendre", "Votre activité, vos clients et vos objectifs."],
-              ["02", "Structurer", "Le positionnement, le parcours et les contenus."],
-              ["03", "Construire", "Le design, la technologie et les intégrations."],
-              ["04", "Optimiser", "Les performances, la visibilité et la conversion."],
-            ].map(([n, t, d]) => (
-              <div key={n}>
-                <span className="text-xs font-bold tracking-[.2em] text-[#c8a45d]">
-                  {n}
-                </span>
-
-                <h3 className="display mt-8 text-2xl font-extrabold">
-                  {t}
-                </h3>
-
-                <p className="mt-3 leading-7 text-black/50">{d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-[#f5f5f2] px-6 py-24 lg:px-8 lg:py-36">
+      {/* SOLUTIONS */}
+      <section className="px-6 py-16 lg:px-8 lg:py-24">
         <div className="mx-auto max-w-7xl">
           <div className="flex items-end justify-between gap-8">
             <div>
@@ -224,7 +270,7 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="mt-14 grid gap-5 lg:grid-cols-3">
+          <div className="mt-10 grid gap-5 lg:grid-cols-3">
             {[
               [
                 "START",
@@ -246,7 +292,7 @@ export default function Home() {
                 key={name}
                 className={`rounded-[2rem] p-8 sm:p-10 ${
                   i === 1
-                    ? "bg-[#080808] text-white glow"
+                    ? "bg-[#080808] text-white"
                     : "border border-black/10 bg-white"
                 }`}
               >
@@ -260,7 +306,7 @@ export default function Home() {
                   {name}
                 </p>
 
-                <h3 className="display mt-8 text-3xl font-extrabold">
+                <h3 className="display mt-7 text-3xl font-extrabold">
                   {price}
                 </h3>
 
@@ -273,7 +319,7 @@ export default function Home() {
                 </p>
 
                 <div
-                  className={`mt-8 grid gap-3 text-sm ${
+                  className={`mt-7 grid gap-3 text-sm ${
                     i === 1 ? "text-white/75" : "text-black/65"
                   }`}
                 >
@@ -292,7 +338,7 @@ export default function Home() {
 
                 <Link
                   to="/solutions"
-                  className="mt-10 inline-flex items-center gap-2 text-sm font-bold"
+                  className="mt-9 inline-flex items-center gap-2 text-sm font-bold"
                 >
                   Découvrir
                   <ArrowRight size={16} />
@@ -303,29 +349,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="px-6 py-24 lg:px-8 lg:py-36">
-        <div className="mx-auto max-w-7xl rounded-[2rem] border border-black/10 p-8 sm:p-12 lg:p-20">
-          <div className="grid gap-12 lg:grid-cols-[1fr_.7fr] lg:items-end">
-            <div>
-              <Quote className="text-[#c8a45d]" size={40} />
-
-              <blockquote className="display mt-8 text-4xl font-extrabold leading-tight sm:text-6xl">
-                “Votre image digitale doit être à la hauteur de la qualité de
-                votre entreprise.”
-              </blockquote>
-            </div>
-
-            <div className="lg:text-right">
-              <p className="text-sm font-bold">Vitrine+</p>
-
-              <p className="mt-1 text-sm text-black/40">
-                Une ambition nationale, construite projet après projet.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
+      {/* CTA FINAL */}
       <CTA
         title="Prêt à faire passer votre présence digitale au niveau supérieur ?"
         text="Commencez par un audit gratuit. Nous identifions les opportunités les plus importantes pour votre entreprise, sans engagement."
