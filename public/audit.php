@@ -14,6 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+$action = trim($_POST['action'] ?? '');
+
 /*
 |--------------------------------------------------------------------------
 | CONFIGURATION
