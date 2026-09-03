@@ -1330,11 +1330,11 @@ function build_recommendations(
 
     $categoryMap = [
         'seo' => 'SEO',
-        'structure' => 'Structure',
-        'mobile' => 'Mobile',
-        'content' => 'Contenu',
-        'performance' => 'Performance',
-        'social' => 'Partage social',
+        'structure' => 'structure',
+        'mobile' => 'mobile',
+        'content' => 'contenu',
+        'performance' => 'performance',
+        'social' => 'partage social',
     ];
 
     $weakCategories = $categories;
@@ -1348,9 +1348,7 @@ function build_recommendations(
     foreach (
         $weakCategories as $key => $category
     ) {
-        if (
-            count($recommendations) >= 3
-        ) {
+        if (count($recommendations) >= 3) {
             break;
         }
 
@@ -1362,9 +1360,10 @@ function build_recommendations(
 
         foreach ($issueCounts as $issue) {
             if (
+                isset($issue['category']) &&
                 $issue['category'] === $key
             ) {
-                $count += $issue['count'];
+                $count += (int) $issue['count'];
             }
         }
 
@@ -1372,21 +1371,51 @@ function build_recommendations(
             $categoryMap[$key] ??
             ucfirst($key);
 
-        $recommendations[] = [
-            'title' =>
+        if ($count > 0) {
+            $recommendations[] =
                 'Renforcer votre ' .
-                strtolower($label),
-            'description' =>
-                $count > 0
-                    ? $count .
-                        ' point(s) détecté(s) sur ' .
-                        $pageCount .
-                        ' page(s) analysée(s).'
-                    : 'Cette catégorie présente une marge d’amélioration.',
-            'category' => $key,
-            'score' => $category['score'],
-        ];
+                $label .
+                ' : ' .
+                $count .
+                ' point(s) détecté(s) sur ' .
+                $pageCount .
+                ' page(s) analysée(s).';
+        } else {
+            $recommendations[] =
+                'Renforcer votre ' .
+                $label .
+                ' : cette catégorie présente une marge d’amélioration.';
+        }
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | RECOMMANDATIONS DE SECOURS
+    |--------------------------------------------------------------------------
+    */
+
+    $fallbacks = [
+        'Continuer à optimiser les pages les plus importantes du site.',
+        'Maintenir une structure SEO cohérente sur les nouvelles pages.',
+        'Optimiser les parcours et appels à l’action pour améliorer la conversion.',
+    ];
+
+    foreach ($fallbacks as $fallback) {
+        if (count($recommendations) >= 3) {
+            break;
+        }
+
+        if (!in_array($fallback, $recommendations, true)) {
+            $recommendations[] = $fallback;
+        }
+    }
+
+    return array_slice(
+        $recommendations,
+        0,
+        3
+    );
+}
 
     if (
         count($recommendations) < 3
