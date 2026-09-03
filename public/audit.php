@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
@@ -25,15 +27,18 @@ $action = trim($_POST['action'] ?? '');
 const MAX_PAGES = 50;
 const MAX_CONCURRENT = 8;
 const MAX_CRAWL_SECONDS = 22;
+
 const REQUEST_TIMEOUT = 7;
 const CONNECT_TIMEOUT = 4;
-const MAX_RESPONSE_BYTES = 2500000;
 
-const AUDIT_USER_AGENT = 'VitrinePlus-Audit/3.0';
+const MAX_RESPONSE_BYTES = 2500000;
+const MAX_SITEMAP_BYTES = 1500000;
+
+const AUDIT_USER_AGENT = 'VitrinePlus-Audit/4.0';
 
 /*
 |--------------------------------------------------------------------------
-| RÉPONSE
+| RÉPONSE JSON
 |--------------------------------------------------------------------------
 */
 
@@ -74,34 +79,19 @@ function normalize_url(string $url): ?string
         return null;
     }
 
-    $scheme = strtolower(
-        $parts['scheme'] ?? ''
-    );
+    $scheme = strtolower($parts['scheme'] ?? '');
 
-    if (!in_array(
-        $scheme,
-        ['http', 'https'],
-        true
-    )) {
+    if (!in_array($scheme, ['http', 'https'], true)) {
         return null;
     }
 
-    $host = strtolower(
-        $parts['host']
-    );
+    $host = strtolower($parts['host']);
 
-    if (str_starts_with(
-        $host,
-        'www.'
-    )) {
-        $host = substr(
-            $host,
-            4
-        );
+    if (str_starts_with($host, 'www.')) {
+        $host = substr($host, 4);
     }
 
-    $path =
-        $parts['path'] ?? '/';
+    $path = $parts['path'] ?? '/';
 
     if ($path === '') {
         $path = '/';
@@ -110,40 +100,25 @@ function normalize_url(string $url): ?string
     $query = '';
 
     if (!empty($parts['query'])) {
-        $query =
-            '?' .
-            $parts['query'];
+        $query = '?' . $parts['query'];
     }
 
-    $result =
+    $normalized =
         $scheme .
         '://' .
         $host .
         $path .
         $query;
 
-    return rtrim(
-        $result,
-        '/'
-    ) ?: $scheme . '://' . $host;
+    return rtrim($normalized, '/') ?: $scheme . '://' . $host;
 }
 
 function normalize_host(string $host): string
 {
-    $host =
-        strtolower(
-            trim($host)
-        );
+    $host = strtolower(trim($host));
 
-    if (str_starts_with(
-        $host,
-        'www.'
-    )) {
-        $host =
-            substr(
-                $host,
-                4
-            );
+    if (str_starts_with($host, 'www.')) {
+        $host = substr($host, 4);
     }
 
     return $host;
@@ -151,29 +126,19 @@ function normalize_host(string $host): string
 
 function origin_from_url(string $url): ?string
 {
-    $parts =
-        parse_url($url);
+    $parts = parse_url($url);
 
-    if (
-        !$parts ||
-        empty($parts['scheme']) ||
-        empty($parts['host'])
-    ) {
+    if (!$parts || empty($parts['scheme']) || empty($parts['host'])) {
         return null;
     }
 
     $origin =
-        strtolower(
-            $parts['scheme']
-        ) .
+        strtolower($parts['scheme']) .
         '://' .
-        strtolower(
-            $parts['host']
-        );
+        strtolower($parts['host']);
 
     if (!empty($parts['port'])) {
-        $origin .= ':' .
-            $parts['port'];
+        $origin .= ':' . $parts['port'];
     }
 
     return $origin;
@@ -181,96 +146,102 @@ function origin_from_url(string $url): ?string
 
 /*
 |--------------------------------------------------------------------------
-| SÉCURITÉ
+| SÉCURITÉ SSRF
 |--------------------------------------------------------------------------
 */
 
-function is_private_or_reserved_ip(
-    string $ip
-): bool {
-    if (!filter_var(
-        $ip,
-        FILTER_VALIDATE_IP
-    )) {
-        return true;
+function is_private_or_reserved_ip(string $ip): bool
+{
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $long = ip2long($ip);
+
+        if ($long === false) {
+            return true;
+        }
+
+        $ranges = [
+            ['0.0.0.0', '0.255.255.255'],
+            ['10.0.0.0', '10.255.255.255'],
+            ['100.64.0.0', '100.127.255.255'],
+            ['127.0.0.0', '127.255.255.255'],
+            ['169.254.0.0', '169.254.255.255'],
+            ['172.16.0.0', '172.31.255.255'],
+            ['192.0.0.0', '192.0.0.255'],
+            ['192.168.0.0', '192.168.255.255'],
+            ['198.18.0.0', '198.19.255.255'],
+            ['224.0.0.0', '255.255.255.255'],
+        ];
+
+        foreach ($ranges as [$start, $end]) {
+            $startLong = ip2long($start);
+            $endLong = ip2long($end);
+
+            if ($long >= $startLong && $long <= $endLong) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    return filter_var(
-        $ip,
-        FILTER_VALIDATE_IP,
-        FILTER_FLAG_NO_PRIV_RANGE |
-        FILTER_FLAG_NO_RES_RANGE
-    ) === false;
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $lower = strtolower($ip);
+
+        if ($lower === '::1') {
+            return true;
+        }
+
+        if (str_starts_with($lower, 'fc') || str_starts_with($lower, 'fd')) {
+            return true;
+        }
+
+        if (str_starts_with($lower, 'fe8') ||
+            str_starts_with($lower, 'fe9') ||
+            str_starts_with($lower, 'fea') ||
+            str_starts_with($lower, 'feb')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    return true;
 }
 
-function resolve_host_ips(
-    string $host
-): array {
+function resolve_host_ips(string $host): array
+{
     $ips = [];
 
-    if (function_exists(
-        'dns_get_record'
-    )) {
-        $records = @dns_get_record(
-            $host,
-            DNS_A | DNS_AAAA
-        );
+    $records = @dns_get_record(
+        $host,
+        DNS_A | DNS_AAAA
+    );
 
-        if (is_array($records)) {
-            foreach (
-                $records as $record
-            ) {
-                if (!empty(
-                    $record['ip']
-                )) {
-                    $ips[] =
-                        $record['ip'];
-                }
+    if (is_array($records)) {
+        foreach ($records as $record) {
+            if (!empty($record['ip'])) {
+                $ips[] = $record['ip'];
+            }
 
-                if (!empty(
-                    $record['ipv6']
-                )) {
-                    $ips[] =
-                        $record['ipv6'];
-                }
+            if (!empty($record['ipv6'])) {
+                $ips[] = $record['ipv6'];
             }
         }
     }
 
     if (!$ips) {
-        $resolved =
-            @gethostbynamel(
-                $host
-            );
+        $resolved = @gethostbynamel($host);
 
-        if (is_array(
-            $resolved
-        )) {
-            $ips =
-                array_merge(
-                    $ips,
-                    $resolved
-                );
+        if (is_array($resolved)) {
+            $ips = array_merge($ips, $resolved);
         }
     }
 
-    return array_values(
-        array_unique($ips)
-    );
+    return array_values(array_unique($ips));
 }
 
-function is_safe_host(
-    string $host
-): bool {
-    $host =
-        strtolower(
-            trim($host)
-        );
-
-    if ($host === '') {
-        return false;
-    }
-
+function is_safe_host(string $host): bool
+{
     $blocked = [
         'localhost',
         'localhost.localdomain',
@@ -281,29 +252,27 @@ function is_safe_host(
         'metadata.google.internal',
     ];
 
-    if (in_array(
-        $host,
-        $blocked,
-        true
-    )) {
+    if (in_array($host, $blocked, true)) {
         return false;
     }
 
-    $ips =
-        resolve_host_ips($host);
+    if (
+        filter_var(
+            $host,
+            FILTER_VALIDATE_IP
+        )
+    ) {
+        return !is_private_or_reserved_ip($host);
+    }
+
+    $ips = resolve_host_ips($host);
 
     if (!$ips) {
         return false;
     }
 
-    foreach (
-        $ips as $ip
-    ) {
-        if (
-            is_private_or_reserved_ip(
-                $ip
-            )
-        ) {
+    foreach ($ips as $ip) {
+        if (is_private_or_reserved_ip($ip)) {
             return false;
         }
     }
@@ -311,191 +280,36 @@ function is_safe_host(
     return true;
 }
 
-function same_site(
-    string $url,
-    string $rootHost
-): bool {
-    $parts =
-        parse_url($url);
-
-    if (
-        !$parts ||
-        empty($parts['host'])
-    ) {
-        return false;
-    }
-
-    return normalize_host(
-        $parts['host']
-    ) === normalize_host(
-        $rootHost
-    );
-}
-
 /*
 |--------------------------------------------------------------------------
-| LIENS
+| DOMAINE
 |--------------------------------------------------------------------------
 */
 
-function absolute_url(
-    string $href,
-    string $baseUrl
-): ?string {
-    $href =
-        trim($href);
+function same_site(string $url, string $rootHost): bool
+{
+    $parts = parse_url($url);
 
-    if ($href === '') {
-        return null;
+    if (!$parts || empty($parts['host'])) {
+        return false;
     }
 
-    if (
-        str_starts_with(
-            $href,
-            '#'
-        ) ||
-        preg_match(
-            '#^(mailto:|tel:|javascript:|data:|blob:)#i',
-            $href
-        )
-    ) {
-        return null;
-    }
+    $host = normalize_host($parts['host']);
 
-    $href =
-        preg_replace(
-            '/#.*$/',
-            '',
-            $href
-        );
-
-    if ($href === '') {
-        return null;
-    }
-
-    if (
-        preg_match(
-            '#^https?://#i',
-            $href
-        )
-    ) {
-        return normalize_url(
-            $href
-        );
-    }
-
-    $base =
-        parse_url(
-            $baseUrl
-        );
-
-    if (
-        !$base ||
-        empty($base['scheme']) ||
-        empty($base['host'])
-    ) {
-        return null;
-    }
-
-    $scheme =
-        $base['scheme'];
-
-    $host =
-        $base['host'];
-
-    if (
-        str_starts_with(
-            $href,
-            '//'
-        )
-    ) {
-        return normalize_url(
-            $scheme . ':' . $href
-        );
-    }
-
-    if (
-        str_starts_with(
-            $href,
-            '/'
-        )
-    ) {
-        return normalize_url(
-            $scheme .
-            '://' .
-            $host .
-            $href
-        );
-    }
-
-    $basePath =
-        $base['path'] ?? '/';
-
-    if (
-        !str_ends_with(
-            $basePath,
-            '/'
-        )
-    ) {
-        $basePath =
-            dirname(
-                $basePath
-            ) . '/';
-    }
-
-    $combined =
-        $basePath . $href;
-
-    $segments = [];
-
-    foreach (
-        explode(
-            '/',
-            $combined
-        ) as $segment
-    ) {
-        if (
-            $segment === '' ||
-            $segment === '.'
-        ) {
-            continue;
-        }
-
-        if ($segment === '..') {
-            array_pop(
-                $segments
-            );
-            continue;
-        }
-
-        $segments[] =
-            $segment;
-    }
-
-    return normalize_url(
-        $scheme .
-        '://' .
-        $host .
-        '/' .
-        implode(
-            '/',
-            $segments
-        )
-    );
+    return $host === $rootHost;
 }
 
-function is_html_candidate(
-    string $url
-): bool {
-    $path =
-        strtolower(
-            parse_url(
-                $url,
-                PHP_URL_PATH
-            ) ?? ''
-        );
+function is_html_candidate(string $url): bool
+{
+    $parts = parse_url($url);
 
-    $extensions = [
+    if (!$parts) {
+        return false;
+    }
+
+    $path = strtolower($parts['path'] ?? '');
+
+    $blockedExtensions = [
         '.jpg',
         '.jpeg',
         '.png',
@@ -503,9 +317,6 @@ function is_html_candidate(
         '.webp',
         '.svg',
         '.ico',
-        '.avif',
-        '.bmp',
-        '.tiff',
         '.pdf',
         '.zip',
         '.rar',
@@ -517,31 +328,18 @@ function is_html_candidate(
         '.wav',
         '.css',
         '.js',
-        '.mjs',
         '.json',
         '.xml',
-        '.csv',
-        '.doc',
-        '.docx',
-        '.xls',
-        '.xlsx',
-        '.ppt',
-        '.pptx',
+        '.txt',
         '.woff',
         '.woff2',
         '.ttf',
-        '.eot'
+        '.eot',
+        '.webmanifest',
     ];
 
-    foreach (
-        $extensions as $extension
-    ) {
-        if (
-            str_ends_with(
-                $path,
-                $extension
-            )
-        ) {
+    foreach ($blockedExtensions as $extension) {
+        if (str_ends_with($path, $extension)) {
             return false;
         }
     }
@@ -551,214 +349,277 @@ function is_html_candidate(
 
 /*
 |--------------------------------------------------------------------------
-| FETCH
+| RÉSOLUTION DES LIENS
+|--------------------------------------------------------------------------
+*/
+
+function resolve_url(string $baseUrl, string $href): ?string
+{
+    $href = trim(html_entity_decode($href));
+
+    if ($href === '') {
+        return null;
+    }
+
+    if (
+        str_starts_with($href, '#') ||
+        str_starts_with($href, 'mailto:') ||
+        str_starts_with($href, 'tel:') ||
+        str_starts_with($href, 'javascript:')
+    ) {
+        return null;
+    }
+
+    if (preg_match('#^https?://#i', $href)) {
+        return normalize_url($href);
+    }
+
+    $base = parse_url($baseUrl);
+
+    if (!$base || empty($base['scheme']) || empty($base['host'])) {
+        return null;
+    }
+
+    $origin =
+        $base['scheme'] .
+        '://' .
+        $base['host'];
+
+    if (!empty($base['port'])) {
+        $origin .= ':' . $base['port'];
+    }
+
+    if (str_starts_with($href, '//')) {
+        return normalize_url(
+            $base['scheme'] . ':' . $href
+        );
+    }
+
+    if (str_starts_with($href, '/')) {
+        return normalize_url(
+            $origin . $href
+        );
+    }
+
+    $basePath = $base['path'] ?? '/';
+
+    $directory = rtrim(
+        dirname($basePath),
+        '/'
+    );
+
+    if ($directory === '') {
+        $directory = '';
+    }
+
+    return normalize_url(
+        $origin .
+        $directory .
+        '/' .
+        ltrim($href, '/')
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| HTTP
 |--------------------------------------------------------------------------
 */
 
 function fetch_url(
     string $url,
-    int $timeout = REQUEST_TIMEOUT
+    int $timeout = REQUEST_TIMEOUT,
+    int $maxBytes = MAX_RESPONSE_BYTES
 ): array {
-    $start =
-        microtime(true);
+    $started = microtime(true);
 
-    $ch =
-        curl_init($url);
+    $parts = parse_url($url);
 
-    curl_setopt_array(
-        $ch,
-        [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_CONNECTTIMEOUT => CONNECT_TIMEOUT,
-            CURLOPT_TIMEOUT => $timeout,
-            CURLOPT_MAXFILESIZE => MAX_RESPONSE_BYTES,
-            CURLOPT_USERAGENT => AUDIT_USER_AGENT,
-            CURLOPT_ENCODING => '',
-            CURLOPT_HEADER => true,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-        ]
-    );
+    if (!$parts || empty($parts['host'])) {
+        return [
+            'success' => false,
+            'status' => 0,
+            'body' => '',
+            'contentType' => '',
+            'responseTime' => 0,
+            'bytes' => 0,
+            'error' => 'URL invalide'
+        ];
+    }
 
-    $response =
-        curl_exec($ch);
+    $host = normalize_host($parts['host']);
 
-    $error =
-        curl_error($ch);
+    if (!is_safe_host($host)) {
+        return [
+            'success' => false,
+            'status' => 0,
+            'body' => '',
+            'contentType' => '',
+            'responseTime' => 0,
+            'bytes' => 0,
+            'error' => 'Domaine non autorisé'
+        ];
+    }
 
-    $status =
-        (int) curl_getinfo(
-            $ch,
-            CURLINFO_HTTP_CODE
-        );
+    $ch = curl_init($url);
 
-    $headerSize =
-        (int) curl_getinfo(
-            $ch,
-            CURLINFO_HEADER_SIZE
-        );
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_MAXREDIRS => 0,
+        CURLOPT_CONNECTTIMEOUT => $timeout,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_USERAGENT => AUDIT_USER_AGENT,
+        CURLOPT_HTTPHEADER => [
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language: fr-FR,fr;q=0.9,en;q=0.7',
+        ],
+        CURLOPT_ENCODING => '',
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
 
-    $contentType =
-        (string) curl_getinfo(
-            $ch,
-            CURLINFO_CONTENT_TYPE
-        );
+    $body = curl_exec($ch);
 
-    $effectiveUrl =
-        (string) curl_getinfo(
-            $ch,
-            CURLINFO_EFFECTIVE_URL
-        );
+    $error = curl_error($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    $headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
 
-    curl_close($ch);
+    $elapsed = microtime(true) - $started;
 
-    $duration =
-        round(
-            microtime(true) -
-            $start,
-            3
-        );
+    if ($body === false) {
+        curl_close($ch);
 
-    if (
-        $response === false
-    ) {
         return [
             'success' => false,
             'status' => $status,
             'body' => '',
-            'contentType' =>
-                $contentType,
-            'effectiveUrl' =>
-                $effectiveUrl,
-            'time' =>
-                $duration,
-            'error' =>
-                $error,
+            'contentType' => $contentType,
+            'responseTime' => round($elapsed, 3),
+            'bytes' => 0,
+            'error' => $error ?: 'Erreur HTTP'
         ];
     }
 
+    curl_close($ch);
+
+    if (strlen($body) > $maxBytes) {
+        $body = substr($body, 0, $maxBytes);
+    }
+
+    $redirectLocation = '';
+
+    if (
+        $status >= 300 &&
+        $status < 400
+    ) {
+        /*
+         * Nous ne suivons volontairement pas les redirections
+         * afin d'éviter les risques SSRF.
+         */
+        $headers = substr(
+            $body,
+            0,
+            min(strlen($body), $headerSize)
+        );
+
+        if (
+            preg_match(
+                '/^Location:\s*(.+)$/im',
+                $headers,
+                $matches
+            )
+        ) {
+            $redirectLocation = trim($matches[1]);
+        }
+    }
+
     return [
-        'success' =>
-            $status >= 200 &&
-            $status < 400,
-        'status' =>
-            $status,
-        'body' =>
-            substr(
-                $response,
-                $headerSize
-            ),
-        'contentType' =>
-            $contentType,
-        'effectiveUrl' =>
-            $effectiveUrl,
-        'time' =>
-            $duration,
-        'error' => '',
+        'success' => $status >= 200 && $status < 400,
+        'status' => $status,
+        'body' => $body,
+        'contentType' => $contentType,
+        'responseTime' => round($elapsed, 3),
+        'bytes' => strlen($body),
+        'error' => $error,
+        'redirect' => $redirectLocation,
     ];
 }
 
 /*
 |--------------------------------------------------------------------------
-| FETCH CONCURRENT
+| CURL MULTI
 |--------------------------------------------------------------------------
 */
 
-function fetch_batch(
-    array $urls
-): array {
-    $multi =
-        curl_multi_init();
+function fetch_batch(array $urls): array
+{
+    $multi = curl_multi_init();
 
     $handles = [];
+    $responses = [];
 
-    foreach (
-        $urls as $url
-    ) {
-        $ch =
-            curl_init($url);
+    foreach ($urls as $url) {
+        $parts = parse_url($url);
 
-        curl_setopt_array(
-            $ch,
-            [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_CONNECTTIMEOUT => CONNECT_TIMEOUT,
-                CURLOPT_TIMEOUT => REQUEST_TIMEOUT,
-                CURLOPT_MAXFILESIZE => MAX_RESPONSE_BYTES,
-                CURLOPT_USERAGENT => AUDIT_USER_AGENT,
-                CURLOPT_ENCODING => '',
-                CURLOPT_HEADER => true,
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_SSL_VERIFYHOST => 2,
-            ]
-        );
+        if (!$parts || empty($parts['host'])) {
+            continue;
+        }
 
-        curl_multi_add_handle(
-            $multi,
-            $ch
-        );
+        $host = normalize_host($parts['host']);
+
+        if (!is_safe_host($host)) {
+            continue;
+        }
+
+        $ch = curl_init($url);
+
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_MAXREDIRS => 0,
+            CURLOPT_CONNECTTIMEOUT => CONNECT_TIMEOUT,
+            CURLOPT_TIMEOUT => REQUEST_TIMEOUT,
+            CURLOPT_USERAGENT => AUDIT_USER_AGENT,
+            CURLOPT_HTTPHEADER => [
+                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language: fr-FR,fr;q=0.9,en;q=0.7',
+            ],
+            CURLOPT_ENCODING => '',
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ]);
+
+        curl_multi_add_handle($multi, $ch);
 
         $handles[(int) $ch] = [
             'handle' => $ch,
             'url' => $url,
-            'start' =>
-                microtime(true),
+            'started' => microtime(true),
         ];
     }
 
-    $running = null;
-
     do {
-        $status =
-            curl_multi_exec(
-                $multi,
-                $running
-            );
+        $status = curl_multi_exec($multi, $running);
 
         if ($running) {
-            $select =
-                curl_multi_select(
-                    $multi,
-                    0.5
-                );
-
-            if ($select === -1) {
-                usleep(10000);
-            }
+            curl_multi_select($multi, 0.2);
         }
     } while (
         $running &&
         $status === CURLM_OK
     );
 
-    $results = [];
+    foreach ($handles as $data) {
+        $ch = $data['handle'];
 
-    foreach (
-        $handles as $data
-    ) {
-        $ch =
-            $data['handle'];
-
-        $url =
-            $data['url'];
-
-        $raw =
-            curl_multi_getcontent(
-                $ch
-            );
+        $body = curl_multi_getcontent($ch);
 
         $statusCode =
             (int) curl_getinfo(
                 $ch,
                 CURLINFO_HTTP_CODE
-            );
-
-        $headerSize =
-            (int) curl_getinfo(
-                $ch,
-                CURLINFO_HEADER_SIZE
             );
 
         $contentType =
@@ -767,71 +628,116 @@ function fetch_batch(
                 CURLINFO_CONTENT_TYPE
             );
 
-        $duration =
-            round(
-                microtime(true) -
-                $data['start'],
-                3
+        $totalTime =
+            (float) curl_getinfo(
+                $ch,
+                CURLINFO_TOTAL_TIME
             );
 
-        $body = '';
+        $error = curl_error($ch);
 
-        if ($raw !== false) {
-            $body =
-                substr(
-                    $raw,
-                    $headerSize
-                );
+        if ($body === false) {
+            $body = '';
         }
 
-        $results[] = [
-            'url' =>
-                $url,
-            'success' =>
-                $raw !== false &&
-                $statusCode >= 200 &&
-                $statusCode < 400,
-            'status' =>
-                $statusCode,
-            'body' =>
+        if (strlen($body) > MAX_RESPONSE_BYTES) {
+            $body = substr(
                 $body,
-            'contentType' =>
-                $contentType,
-            'time' =>
-                $duration,
-            'error' =>
-                curl_error($ch),
+                0,
+                MAX_RESPONSE_BYTES
+            );
+        }
+
+        $responses[] = [
+            'url' => $data['url'],
+            'success' =>
+                $statusCode >= 200 &&
+                $statusCode < 400 &&
+                $error === '',
+            'status' => $statusCode,
+            'body' => $body,
+            'contentType' => $contentType,
+            'responseTime' => round($totalTime, 3),
+            'bytes' => strlen($body),
+            'error' => $error,
         ];
 
-        curl_multi_remove_handle(
-            $multi,
-            $ch
-        );
-
+        curl_multi_remove_handle($multi, $ch);
         curl_close($ch);
     }
 
-    curl_multi_close(
-        $multi
-    );
+    curl_multi_close($multi);
 
-    return $results;
+    return $responses;
 }
 
 /*
 |--------------------------------------------------------------------------
-| DÉTECTION SPA
+| DOM
 |--------------------------------------------------------------------------
 */
 
-function detect_spa(
-    string $html
-): bool {
+function get_meta(
+    DOMXPath $xpath,
+    string $name
+): string {
+    $query = sprintf(
+        '//meta[
+            translate(
+                @name,
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "abcdefghijklmnopqrstuvwxyz"
+            )="%s"
+        ]/@content',
+        strtolower($name)
+    );
+
+    $node = $xpath
+        ->query($query)
+        ->item(0);
+
+    return $node
+        ? trim($node->nodeValue)
+        : '';
+}
+
+function get_property(
+    DOMXPath $xpath,
+    string $property
+): string {
+    $query = sprintf(
+        '//meta[
+            translate(
+                @property,
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "abcdefghijklmnopqrstuvwxyz"
+            )="%s"
+        ]/@content',
+        strtolower($property)
+    );
+
+    $node = $xpath
+        ->query($query)
+        ->item(0);
+
+    return $node
+        ? trim($node->nodeValue)
+        : '';
+}
+
+/*
+|--------------------------------------------------------------------------
+| SPA
+|--------------------------------------------------------------------------
+*/
+
+function detect_spa(string $html): bool
+{
     $signals = 0;
 
     if (
         preg_match(
-            '#<div[^>]+(?:id|class)=["\'][^"\']*(?:root|app|__next|__nuxt)[^"\']*["\']#i',
+            '#<(?:div|main|body)[^>]+(?:id|class)=["\'][^"\']*(?:root|app|__next|__nuxt)[^"\']*["\']#i',
             $html
         )
     ) {
@@ -847,19 +753,21 @@ function detect_spa(
         $signals++;
     }
 
-    $bodyText =
-        trim(
+    $text = trim(
+        preg_replace(
+            '/\s+/',
+            ' ',
             strip_tags($html)
-        );
+        )
+    );
 
-    $h1Count =
-        preg_match_all(
-            '#<h1\b[^>]*>#i',
-            $html
-        );
+    $h1Count = preg_match_all(
+        '#<h1\b[^>]*>#i',
+        $html
+    );
 
     if (
-        strlen($bodyText) < 1200 &&
+        strlen($text) < 1200 &&
         $h1Count === 0
     ) {
         $signals++;
@@ -870,276 +778,311 @@ function detect_spa(
 
 /*
 |--------------------------------------------------------------------------
-| META
-|--------------------------------------------------------------------------
-*/
-
-function get_meta(
-    DOMXPath $xpath,
-    string $name
-): string {
-    $query = sprintf(
-        '//meta[translate(@name,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="%s"]/@content',
-        strtolower($name)
-    );
-
-    $node =
-        $xpath
-            ->query($query)
-            ->item(0);
-
-    return $node
-        ? trim($node->nodeValue)
-        : '';
-}
-
-function get_property(
-    DOMXPath $xpath,
-    string $property
-): string {
-    $query = sprintf(
-        '//meta[translate(@property,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="%s"]/@content',
-        strtolower($property)
-    );
-
-    $node =
-        $xpath
-            ->query($query)
-            ->item(0);
-
-    return $node
-        ? trim($node->nodeValue)
-        : '';
-}
-
-/*
-|--------------------------------------------------------------------------
-| ANALYSE HTML
+| ANALYSE D'UNE PAGE
 |--------------------------------------------------------------------------
 */
 
 function analyze_html(
     string $url,
     string $html,
-    float $responseTime
+    float $responseTime,
+    int $httpStatus,
+    int $bytes
 ): array {
     libxml_use_internal_errors(true);
 
-    $dom =
-        new DOMDocument();
+    $dom = new DOMDocument();
 
     @$dom->loadHTML(
-        '<?xml encoding="UTF-8">' .
-        $html,
+        '<?xml encoding="UTF-8">' . $html,
         LIBXML_NOWARNING |
         LIBXML_NOERROR
     );
 
-    $xpath =
-        new DOMXPath($dom);
+    $xpath = new DOMXPath($dom);
 
-    $titleNode =
-        $xpath
-            ->query('//title')
-            ->item(0);
+    /*
+     * TITLE
+     */
 
-    $title =
-        $titleNode
-            ? trim(
-                $titleNode->textContent
-            )
-            : '';
+    $titleNode = $xpath
+        ->query('//title')
+        ->item(0);
 
-    $description =
-        get_meta(
-            $xpath,
-            'description'
-        );
+    $title = $titleNode
+        ? trim($titleNode->textContent)
+        : '';
 
-    $viewport =
-        get_meta(
-            $xpath,
-            'viewport'
-        );
+    /*
+     * META
+     */
 
-    $canonicalNode =
-        $xpath
-            ->query(
-                '//link[contains(translate(@rel,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"canonical")]/@href'
-            )
-            ->item(0);
+    $description = get_meta(
+        $xpath,
+        'description'
+    );
 
-    $canonical =
-        $canonicalNode
-            ? trim(
-                $canonicalNode->nodeValue
-            )
-            : '';
+    $viewport = get_meta(
+        $xpath,
+        'viewport'
+    );
 
-    $htmlNode =
-        $xpath
-            ->query('//html')
-            ->item(0);
+    $robots = get_meta(
+        $xpath,
+        'robots'
+    );
 
-    $lang =
-        '';
+    /*
+     * CANONICAL
+     */
+
+    $canonicalNode = $xpath
+        ->query(
+            '//link[
+                contains(
+                    translate(
+                        @rel,
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "abcdefghijklmnopqrstuvwxyz"
+                    ),
+                    "canonical"
+                )
+            ]/@href'
+        )
+        ->item(0);
+
+    $canonical = $canonicalNode
+        ? trim($canonicalNode->nodeValue)
+        : '';
+
+    /*
+     * LANG
+     */
+
+    $htmlNode = $xpath
+        ->query('//html')
+        ->item(0);
+
+    $lang = '';
 
     if (
         $htmlNode &&
         $htmlNode->hasAttribute('lang')
     ) {
-        $lang =
-            trim(
-                $htmlNode
-                    ->getAttribute(
-                        'lang'
-                    )
-            );
+        $lang = trim(
+            $htmlNode->getAttribute('lang')
+        );
     }
 
-    $h1Count =
-        $xpath
-            ->query('//h1')
-            ->length;
+    /*
+     * HEADINGS
+     */
 
-    $h2Count =
-        $xpath
-            ->query('//h2')
-            ->length;
+    $h1Nodes = $xpath->query('//h1');
+    $h2Nodes = $xpath->query('//h2');
+    $h3Nodes = $xpath->query('//h3');
 
-    $h3Count =
-        $xpath
-            ->query('//h3')
-            ->length;
+    $h1Count = $h1Nodes->length;
+    $h2Count = $h2Nodes->length;
+    $h3Count = $h3Nodes->length;
 
-    $viewportCount =
-        $xpath
-            ->query(
-                '//meta[contains(translate(@name,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"viewport")]'
+    $h1Texts = [];
+
+    foreach ($h1Nodes as $node) {
+        $text = trim(
+            preg_replace(
+                '/\s+/',
+                ' ',
+                $node->textContent
             )
-            ->length;
+        );
 
-    $images =
-        $xpath
-            ->query('//img');
+        if ($text !== '') {
+            $h1Texts[] = $text;
+        }
+    }
 
-    $imagesTotal =
-        $images->length;
+    /*
+     * IMAGES
+     */
 
-    $imagesWithoutAlt =
-        0;
+    $images = $xpath->query('//img');
 
-    foreach (
-        $images as $image
-    ) {
+    $imagesTotal = $images->length;
+    $imagesWithoutAlt = 0;
+
+    foreach ($images as $image) {
         if (
-            trim(
-                $image->getAttribute(
-                    'alt'
-                )
-            ) === ''
+            !$image->hasAttribute('alt')
+        ) {
+            $imagesWithoutAlt++;
+            continue;
+        }
+
+        /*
+         * alt="" est acceptable pour une image décorative.
+         */
+        $alt = trim(
+            $image->getAttribute('alt')
+        );
+
+        if (
+            $alt === '' &&
+            $image->hasAttribute('role') &&
+            strtolower(
+                $image->getAttribute('role')
+            ) !== 'presentation'
         ) {
             $imagesWithoutAlt++;
         }
     }
 
+    /*
+     * SOCIAL
+     */
+
     $ogTitle =
         get_property(
             $xpath,
             'og:title'
-        ) !== '';
+        );
 
     $ogDescription =
         get_property(
             $xpath,
             'og:description'
-        ) !== '';
+        );
 
     $ogImage =
         get_property(
             $xpath,
             'og:image'
-        ) !== '';
+        );
 
     $ogUrl =
         get_property(
             $xpath,
             'og:url'
-        ) !== '';
+        );
 
     $twitterCard =
         get_meta(
             $xpath,
             'twitter:card'
-        ) !== '';
+        );
+
+    /*
+     * LIENS
+     */
 
     $links = [];
 
     foreach (
-        $xpath
-            ->query('//a[@href]')
+        $xpath->query('//a[@href]')
         as $anchor
     ) {
-        $href =
-            trim(
-                $anchor
-                    ->getAttribute(
-                        'href'
-                    )
-            );
+        $href = trim(
+            $anchor->getAttribute('href')
+        );
 
-        if ($href !== '') {
-            $links[] =
-                $href;
+        $resolved = resolve_url(
+            $url,
+            $href
+        );
+
+        if ($resolved) {
+            $links[] = $resolved;
         }
     }
 
-    $bodyText =
-        trim(
-            preg_replace(
-                '/\s+/u',
-                ' ',
-                strip_tags($html)
-            )
-        );
-
-    $decodedText =
-        html_entity_decode(
-            $bodyText,
-            ENT_QUOTES |
-            ENT_HTML5,
-            'UTF-8'
-        );
-
-    $wordCount =
-        str_word_count(
-            $decodedText
-        );
-
-    $isSpa =
-        detect_spa($html);
+    $links = array_values(
+        array_unique($links)
+    );
 
     /*
-    |--------------------------------------------------------------------------
-    | SEO
-    |--------------------------------------------------------------------------
-    */
+     * CONTENU
+     */
+
+    $bodyText = '';
+
+    $bodyNode = $xpath
+        ->query('//body')
+        ->item(0);
+
+    if ($bodyNode) {
+        $bodyText =
+            trim(
+                preg_replace(
+                    '/\s+/',
+                    ' ',
+                    $bodyNode->textContent
+                )
+            );
+    } else {
+        $bodyText =
+            trim(
+                preg_replace(
+                    '/\s+/',
+                    ' ',
+                    strip_tags($html)
+                )
+            );
+    }
+
+    $words = preg_split(
+        '/\s+/u',
+        $bodyText,
+        -1,
+        PREG_SPLIT_NO_EMPTY
+    );
+
+    $wordCount = is_array($words)
+        ? count($words)
+        : 0;
+
+    /*
+     * SCRIPTS / STYLES
+     */
+
+    $scriptCount =
+        $xpath->query('//script')->length;
+
+    $stylesheetCount =
+        $xpath->query('//link[@rel="stylesheet"]')->length;
+
+    /*
+     * SPA
+     */
+
+    $isSpa = detect_spa($html);
+
+    /*
+     * INDEXABILITÉ
+     */
+
+    $noindex =
+        stripos(
+            $robots,
+            'noindex'
+        ) !== false;
+
+    /*
+     * SEO
+     *
+     * 100 points
+     */
 
     $seo = 0;
 
     if ($title !== '') {
-        $seo += 25;
+        $seo += 20;
     }
 
     if (
         mb_strlen($title) >= 30 &&
         mb_strlen($title) <= 65
     ) {
-        $seo += 15;
-    } elseif (
-        mb_strlen($title) >= 20
-    ) {
-        $seo += 8;
+        $seo += 10;
     }
 
     if ($description !== '') {
@@ -1147,14 +1090,10 @@ function analyze_html(
     }
 
     if (
-        mb_strlen($description) >= 80 &&
+        mb_strlen($description) >= 70 &&
         mb_strlen($description) <= 170
     ) {
         $seo += 10;
-    } elseif (
-        mb_strlen($description) >= 50
-    ) {
-        $seo += 5;
     }
 
     if ($canonical !== '') {
@@ -1165,36 +1104,42 @@ function analyze_html(
         $seo += 10;
     }
 
+    if (!$noindex) {
+        $seo += 10;
+    }
+
+    if ($h1Count === 1) {
+        $seo += 10;
+    }
+
     /*
-    |--------------------------------------------------------------------------
-    | STRUCTURE
-    |--------------------------------------------------------------------------
-    */
+     * STRUCTURE
+     */
 
     $structure = 0;
 
     if ($h1Count === 1) {
-        $structure += 35;
-    } elseif ($h1Count > 1) {
-        $structure += 20;
-    } elseif ($isSpa) {
         $structure += 25;
+    } elseif ($h1Count > 1) {
+        $structure += 10;
+    } elseif ($isSpa) {
+        $structure += 15;
     }
 
     if ($h2Count > 0) {
         $structure += 20;
     } elseif ($isSpa) {
-        $structure += 15;
+        $structure += 10;
     }
 
     if ($h3Count > 0) {
         $structure += 10;
-    } elseif ($isSpa) {
-        $structure += 5;
     }
 
-    if (count($links) > 0) {
+    if (count($links) >= 3) {
         $structure += 20;
+    } elseif (count($links) > 0) {
+        $structure += 10;
     }
 
     if ($canonical !== '') {
@@ -1205,16 +1150,18 @@ function analyze_html(
         $structure += 5;
     }
 
+    if ($isSpa) {
+        $structure += 10;
+    }
+
     /*
-    |--------------------------------------------------------------------------
-    | MOBILE
-    |--------------------------------------------------------------------------
-    */
+     * MOBILE
+     */
 
     $mobile = 0;
 
-    if ($viewportCount > 0) {
-        $mobile += 65;
+    if ($viewport !== '') {
+        $mobile += 60;
     }
 
     if (
@@ -1223,153 +1170,136 @@ function analyze_html(
             'width=device-width'
         ) !== false
     ) {
-        $mobile += 15;
-    }
-
-    if ($imagesTotal === 0) {
         $mobile += 20;
-    } elseif (
-        $imagesWithoutAlt /
-        max(
-            1,
-            $imagesTotal
-        ) < 0.25
-    ) {
-        $mobile += 20;
-    } else {
-        $mobile += 10;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | CONTENU
-    |--------------------------------------------------------------------------
-    */
-
-    $content = 0;
-
-    if ($title !== '') {
-        $content += 15;
-    }
-
-    if ($description !== '') {
-        $content += 15;
     }
 
     if (
-        $h1Count > 0
+        stripos(
+            $viewport,
+            'initial-scale=1'
+        ) !== false
     ) {
+        $mobile += 20;
+    }
+
+    /*
+     * CONTENU
+     */
+
+    $content = 0;
+
+    if ($wordCount >= 300) {
+        $content += 40;
+    } elseif ($wordCount >= 150) {
+        $content += 30;
+    } elseif ($wordCount >= 80) {
         $content += 20;
     } elseif ($isSpa) {
         $content += 15;
+    }
+
+    if ($h1Count === 1) {
+        $content += 20;
+    } elseif ($isSpa) {
+        $content += 10;
     }
 
     if ($h2Count >= 2) {
         $content += 15;
+    } elseif ($h2Count === 1) {
+        $content += 10;
+    }
+
+    if ($imagesTotal === 0) {
+        $content += 5;
     } elseif (
-        $h2Count === 1 ||
-        $isSpa
+        $imagesWithoutAlt === 0
     ) {
-        $content += 10;
+        $content += 15;
+    } else {
+        $content += 5;
     }
 
-    if ($wordCount >= 600) {
-        $content += 20;
-    } elseif ($wordCount >= 300) {
-        $content += 15;
-    } elseif ($wordCount >= 150) {
-        $content += 10;
-    } elseif ($isSpa) {
-        $content += 8;
-    }
-
-    if ($imagesTotal > 0) {
-        $content += 15;
-    } elseif ($isSpa) {
+    if (count($links) >= 3) {
         $content += 5;
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | PERFORMANCE
-    |--------------------------------------------------------------------------
-    */
+     * PERFORMANCE TECHNIQUE
+     *
+     * Important :
+     * ce n'est PAS un Core Web Vitals.
+     * On mesure le serveur + poids HTML.
+     */
 
-    if ($responseTime <= 0.5) {
-        $performance = 100;
-    } elseif ($responseTime <= 1) {
-        $performance = 90;
-    } elseif ($responseTime <= 1.5) {
-        $performance = 80;
-    } elseif ($responseTime <= 2.5) {
-        $performance = 65;
-    } elseif ($responseTime <= 4) {
-        $performance = 45;
-    } elseif ($responseTime <= 6) {
-        $performance = 30;
+    $performance = 0;
+
+    if ($responseTime <= 0.4) {
+        $performance += 65;
+    } elseif ($responseTime <= 0.8) {
+        $performance += 55;
+    } elseif ($responseTime <= 1.2) {
+        $performance += 45;
+    } elseif ($responseTime <= 2) {
+        $performance += 30;
+    } elseif ($responseTime <= 3) {
+        $performance += 20;
     } else {
-        $performance = 15;
+        $performance += 10;
+    }
+
+    if ($bytes <= 500000) {
+        $performance += 35;
+    } elseif ($bytes <= 1000000) {
+        $performance += 25;
+    } elseif ($bytes <= 1800000) {
+        $performance += 15;
+    } else {
+        $performance += 5;
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | SOCIAL
-    |--------------------------------------------------------------------------
-    */
+     * SOCIAL
+     */
 
     $social = 0;
 
-    if ($ogTitle) {
+    if ($ogTitle !== '') {
         $social += 25;
     }
 
-    if ($ogDescription) {
+    if ($ogDescription !== '') {
         $social += 25;
     }
 
-    if ($ogImage) {
-        $social += 30;
+    if ($ogImage !== '') {
+        $social += 25;
     }
 
-    if ($ogUrl) {
-        $social += 10;
+    if ($ogUrl !== '') {
+        $social += 15;
     }
 
-    if ($twitterCard) {
+    if ($twitterCard !== '') {
         $social += 10;
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | CATÉGORIES
-    |--------------------------------------------------------------------------
-    */
+     * NORMALISATION
+     */
 
     $categories = [
-        'seo' =>
-            min(100, $seo),
-
-        'structure' =>
-            min(100, $structure),
-
-        'mobile' =>
-            min(100, $mobile),
-
-        'content' =>
-            min(100, $content),
-
-        'performance' =>
-            min(100, $performance),
-
-        'social' =>
-            min(100, $social),
+        'seo' => min(100, $seo),
+        'structure' => min(100, $structure),
+        'mobile' => min(100, $mobile),
+        'content' => min(100, $content),
+        'performance' => min(100, $performance),
+        'social' => min(100, $social),
     ];
 
     /*
-    |--------------------------------------------------------------------------
-    | PROBLÈMES
-    |--------------------------------------------------------------------------
-    */
+     * PROBLÈMES
+     */
 
     $issues = [];
 
@@ -1377,18 +1307,16 @@ function analyze_html(
         $issues[] = [
             'key' => 'missing_title',
             'category' => 'seo',
-            'message' =>
-                'Ajouter une balise title claire et optimisée.'
+            'message' => 'Ajouter une balise title sur cette page.'
         ];
     } elseif (
-        mb_strlen($title) < 20 ||
+        mb_strlen($title) < 30 ||
         mb_strlen($title) > 65
     ) {
         $issues[] = [
             'key' => 'title_length',
             'category' => 'seo',
-            'message' =>
-                'Optimiser la longueur de la balise title.'
+            'message' => 'Optimiser la longueur du title de cette page.'
         ];
     }
 
@@ -1396,18 +1324,40 @@ function analyze_html(
         $issues[] = [
             'key' => 'missing_description',
             'category' => 'seo',
-            'message' =>
-                'Ajouter une meta description pertinente.'
+            'message' => 'Ajouter une meta description pertinente.'
         ];
     } elseif (
-        mb_strlen($description) < 50 ||
+        mb_strlen($description) < 70 ||
         mb_strlen($description) > 170
     ) {
         $issues[] = [
             'key' => 'description_length',
             'category' => 'seo',
-            'message' =>
-                'Optimiser la longueur de la meta description.'
+            'message' => 'Optimiser la longueur de la meta description.'
+        ];
+    }
+
+    if ($canonical === '') {
+        $issues[] = [
+            'key' => 'missing_canonical',
+            'category' => 'seo',
+            'message' => 'Ajouter une URL canonique à cette page.'
+        ];
+    }
+
+    if ($lang === '') {
+        $issues[] = [
+            'key' => 'missing_lang',
+            'category' => 'seo',
+            'message' => 'Déclarer la langue du document avec l’attribut lang.'
+        ];
+    }
+
+    if ($noindex) {
+        $issues[] = [
+            'key' => 'noindex',
+            'category' => 'seo',
+            'message' => 'Cette page contient une directive noindex.'
         ];
     }
 
@@ -1418,8 +1368,7 @@ function analyze_html(
         $issues[] = [
             'key' => 'missing_h1',
             'category' => 'structure',
-            'message' =>
-                'Ajouter un titre H1 clairement identifiable.'
+            'message' => 'Ajouter un H1 principal à cette page.'
         ];
     }
 
@@ -1427,61 +1376,37 @@ function analyze_html(
         $issues[] = [
             'key' => 'multiple_h1',
             'category' => 'structure',
-            'message' =>
-                'Réduire la page à un H1 principal.'
-        ];
-    }
-
-    if ($viewportCount === 0) {
-        $issues[] = [
-            'key' => 'missing_viewport',
-            'category' => 'mobile',
-            'message' =>
-                'Ajouter la configuration viewport pour le mobile.'
+            'message' => 'Limiter la page à un H1 principal.'
         ];
     }
 
     if (
-        $imagesTotal > 0 &&
-        $imagesWithoutAlt > 0
+        $h2Count === 0 &&
+        !$isSpa &&
+        $wordCount >= 200
     ) {
+        $issues[] = [
+            'key' => 'missing_h2',
+            'category' => 'structure',
+            'message' => 'Structurer le contenu avec des titres H2.'
+        ];
+    }
+
+    if ($viewport === '') {
+        $issues[] = [
+            'key' => 'missing_viewport',
+            'category' => 'mobile',
+            'message' => 'Ajouter une configuration viewport adaptée au mobile.'
+        ];
+    }
+
+    if ($imagesWithoutAlt > 0) {
         $issues[] = [
             'key' => 'image_alt',
             'category' => 'content',
             'message' =>
                 $imagesWithoutAlt .
-                ' image(s) sans texte alternatif.'
-        ];
-    }
-
-    if ($canonical === '') {
-        $issues[] = [
-            'key' => 'missing_canonical',
-            'category' => 'seo',
-            'message' =>
-                'Ajouter une URL canonique.'
-        ];
-    }
-
-    if (
-        !$ogTitle ||
-        !$ogDescription ||
-        !$ogImage
-    ) {
-        $issues[] = [
-            'key' => 'social',
-            'category' => 'social',
-            'message' =>
-                'Compléter les balises Open Graph pour améliorer les partages sociaux.'
-        ];
-    }
-
-    if ($responseTime > 2) {
-        $issues[] = [
-            'key' => 'server_response',
-            'category' => 'performance',
-            'message' =>
-                'Réduire le temps de réponse du serveur.'
+                ' image(s) nécessitent un texte alternatif.'
         ];
     }
 
@@ -1492,49 +1417,83 @@ function analyze_html(
         $issues[] = [
             'key' => 'thin_content',
             'category' => 'content',
-            'message' =>
-                'Renforcer le contenu textuel de cette page.'
+            'message' => 'Renforcer le contenu textuel de cette page.'
+        ];
+    }
+
+    if ($responseTime > 2) {
+        $issues[] = [
+            'key' => 'slow_server',
+            'category' => 'performance',
+            'message' => 'Le temps de réponse serveur est élevé sur cette page.'
+        ];
+    }
+
+    if ($bytes > 1800000) {
+        $issues[] = [
+            'key' => 'large_html',
+            'category' => 'performance',
+            'message' => 'Le document HTML est particulièrement volumineux.'
+        ];
+    }
+
+    if ($ogTitle === '') {
+        $issues[] = [
+            'key' => 'missing_og_title',
+            'category' => 'social',
+            'message' => 'Ajouter og:title pour améliorer les partages sociaux.'
+        ];
+    }
+
+    if ($ogDescription === '') {
+        $issues[] = [
+            'key' => 'missing_og_description',
+            'category' => 'social',
+            'message' => 'Ajouter og:description pour les partages sociaux.'
+        ];
+    }
+
+    if ($ogImage === '') {
+        $issues[] = [
+            'key' => 'missing_og_image',
+            'category' => 'social',
+            'message' => 'Ajouter une image Open Graph.'
         ];
     }
 
     return [
-        'url' =>
-            $url,
-
-        'categories' =>
-            $categories,
-
-        'issues' =>
-            $issues,
-
-        'links' =>
-            array_values(
-                array_unique(
-                    $links
-                )
-            ),
-
+        'url' => $url,
+        'status' => $httpStatus,
+        'categories' => $categories,
+        'issues' => $issues,
+        'links' => array_values(
+            array_unique($links)
+        ),
         'meta' => [
-            'isSpa' =>
-                $isSpa,
-
-            'wordCount' =>
-                $wordCount,
-
-            'h1' =>
-                $h1Count,
-
-            'h2' =>
-                $h2Count,
-
-            'h3' =>
-                $h3Count,
-
-            'images' =>
-                $imagesTotal,
-
-            'imagesWithoutAlt' =>
-                $imagesWithoutAlt,
+            'title' => $title,
+            'description' => $description,
+            'canonical' => $canonical,
+            'lang' => $lang,
+            'robots' => $robots,
+            'isSpa' => $isSpa,
+            'wordCount' => $wordCount,
+            'h1' => $h1Count,
+            'h1Texts' => $h1Texts,
+            'h2' => $h2Count,
+            'h3' => $h3Count,
+            'images' => $imagesTotal,
+            'imagesWithoutAlt' => $imagesWithoutAlt,
+            'ogTitle' => $ogTitle !== '',
+            'ogDescription' => $ogDescription !== '',
+            'ogImage' => $ogImage !== '',
+            'ogUrl' => $ogUrl !== '',
+            'twitterCard' => $twitterCard !== '',
+            'scripts' => $scriptCount,
+            'stylesheets' => $stylesheetCount,
+        ],
+        'technical' => [
+            'responseTime' => $responseTime,
+            'htmlBytes' => $bytes,
         ],
     ];
 }
@@ -1550,66 +1509,55 @@ function get_sitemap_urls(
     string $rootHost
 ): array {
     $sitemapUrl =
-        rtrim(
-            $origin,
-            '/'
-        ) .
+        rtrim($origin, '/') .
         '/sitemap.xml';
 
-    $result =
-        fetch_url(
-            $sitemapUrl,
-            5
-        );
+    $result = fetch_url(
+        $sitemapUrl,
+        5,
+        MAX_SITEMAP_BYTES
+    );
 
     if (
-        !$result['success']
+        !$result['success'] ||
+        $result['status'] < 200 ||
+        $result['status'] >= 300
     ) {
         return [];
     }
 
+    $body = $result['body'];
+
     preg_match_all(
         '#<loc>\s*(.*?)\s*</loc>#is',
-        $result['body'],
+        $body,
         $matches
     );
 
     $urls = [];
 
     foreach (
-        $matches[1] ?? []
-        as $url
+        $matches[1] ?? [] as $rawUrl
     ) {
-        $url =
-            normalize_url(
-                html_entity_decode(
-                    trim($url)
-                )
-            );
+        $url = normalize_url(
+            html_entity_decode(
+                trim($rawUrl)
+            )
+        );
 
         if (!$url) {
             continue;
         }
 
-        if (
-            !same_site(
-                $url,
-                $rootHost
-            )
-        ) {
+        if (!same_site($url, $rootHost)) {
             continue;
         }
 
-        if (
-            !is_html_candidate(
-                $url
-            )
-        ) {
+        if (!is_html_candidate($url)) {
             continue;
         }
 
-        $urls[] =
-            $url;
+        $urls[] = $url;
     }
 
     return array_values(
@@ -1619,175 +1567,105 @@ function get_sitemap_urls(
 
 /*
 |--------------------------------------------------------------------------
+| PROBLÈMES AGRÉGÉS
+|--------------------------------------------------------------------------
+*/
+
+function aggregate_issues(
+    array $results
+): array {
+    $counts = [];
+
+    foreach ($results as $result) {
+        foreach (
+            $result['issues'] ?? [] as $issue
+        ) {
+            $key = $issue['key'];
+
+            if (!isset($counts[$key])) {
+                $counts[$key] = [
+                    'key' => $key,
+                    'category' =>
+                        $issue['category'] ?? 'content',
+                    'message' =>
+                        $issue['message'] ?? '',
+                    'count' => 0,
+                ];
+            }
+
+            $counts[$key]['count']++;
+        }
+    }
+
+    $counts = array_values($counts);
+
+    usort(
+        $counts,
+        function ($a, $b) {
+            return $b['count'] <=> $a['count'];
+        }
+    );
+
+    return $counts;
+}
+
+/*
+|--------------------------------------------------------------------------
 | RECOMMANDATIONS
 |--------------------------------------------------------------------------
 */
 
 function build_recommendations(
-    array $issueCounts,
-    array $categories,
-    int $pageCount
+    array $issueCounts
 ): array {
     $recommendations = [];
 
-    $categoryLabels = [
-        'seo' =>
-            'SEO',
-
-        'structure' =>
-            'structure',
-
-        'mobile' =>
-            'expérience mobile',
-
-        'content' =>
-            'contenu',
-
-        'performance' =>
-            'performance',
-
-        'social' =>
-            'partage social',
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Priorité aux vrais problèmes détectés
-    |--------------------------------------------------------------------------
-    */
-
-    foreach (
-        $issueCounts as $issue
-    ) {
-        if (
-            count(
-                $recommendations
-            ) >= 3
-        ) {
+    foreach ($issueCounts as $issue) {
+        if (count($recommendations) >= 3) {
             break;
         }
 
-        $category =
-            $issue['category'] ??
-            'content';
-
-        $label =
-            $categoryLabels[
-                $category
-            ] ??
-            $category;
-
-        $count =
-            (int) (
-                $issue['count'] ??
-                0
-            );
+        $count = (int) (
+            $issue['count'] ?? 0
+        );
 
         $message =
-            $issue['message'] ??
-            '';
+            $issue['message'] ?? '';
+
+        if ($message === '') {
+            continue;
+        }
 
         if ($count > 1) {
-            $recommendations[] =
+            $recommendation =
                 $message .
                 ' ' .
                 $count .
-                ' page(s) concernée(s).';
+                ' pages concernées.';
         } else {
-            $recommendations[] =
-                $message;
+            $recommendation = $message;
         }
-    }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Complément selon les scores
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-        count(
-            $recommendations
-        ) < 3
-    ) {
-        $sorted =
-            $categories;
-
-        uasort(
-            $sorted,
-            function (
-                $a,
-                $b
-            ) {
-                return
-                    $a['score'] <=>
-                    $b['score'];
-            }
-        );
-
-        foreach (
-            $sorted as $key => $category
+        if (
+            !in_array(
+                $recommendation,
+                $recommendations,
+                true
+            )
         ) {
-            if (
-                count(
-                    $recommendations
-                ) >= 3
-            ) {
-                break;
-            }
-
-            if (
-                $category['score'] >= 80
-            ) {
-                continue;
-            }
-
-            $label =
-                $categoryLabels[
-                    $key
-                ] ??
-                $key;
-
-            $recommendation =
-                'Renforcer votre ' .
-                $label .
-                ' : la catégorie obtient ' .
-                $category['score'] .
-                '/100.';
-
-            if (
-                !in_array(
-                    $recommendation,
-                    $recommendations,
-                    true
-                )
-            ) {
-                $recommendations[] =
-                    $recommendation;
-            }
+            $recommendations[] =
+                $recommendation;
         }
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Secours
-    |--------------------------------------------------------------------------
-    */
 
     $fallbacks = [
-        'Continuer à optimiser les pages stratégiques du site.',
-        'Maintenir une structure SEO cohérente sur les nouvelles pages.',
-        'Optimiser les parcours et appels à l’action pour améliorer la conversion.',
+        'Optimiser en priorité les pages qui génèrent le plus de visibilité et de conversions.',
+        'Renforcer le maillage interne entre les pages stratégiques du site.',
+        'Améliorer les parcours et appels à l’action sur les pages importantes.'
     ];
 
-    foreach (
-        $fallbacks as $fallback
-    ) {
-        if (
-            count(
-                $recommendations
-            ) >= 3
-        ) {
+    foreach ($fallbacks as $fallback) {
+        if (count($recommendations) >= 3) {
             break;
         }
 
@@ -1798,8 +1676,7 @@ function build_recommendations(
                 true
             )
         ) {
-            $recommendations[] =
-                $fallback;
+            $recommendations[] = $fallback;
         }
     }
 
@@ -1812,6 +1689,131 @@ function build_recommendations(
 
 /*
 |--------------------------------------------------------------------------
+| FORCES
+|--------------------------------------------------------------------------
+*/
+
+function build_strengths(
+    array $categories,
+    array $results
+): array {
+    $strengths = [];
+
+    $messages = [
+        'seo' =>
+            'Les fondamentaux SEO sont correctement présents.',
+        'structure' =>
+            'La structure technique du site présente de bons signaux.',
+        'mobile' =>
+            'La configuration mobile détectée est solide.',
+        'content' =>
+            'Le contenu des pages présente une base exploitable.',
+        'performance' =>
+            'Les temps de réponse serveur observés sont rapides.',
+        'social' =>
+            'Les métadonnées principales de partage social sont présentes.',
+    ];
+
+    foreach ($categories as $key => $category) {
+        if (
+            ($category['score'] ?? 0) >= 80 &&
+            isset($messages[$key])
+        ) {
+            $strengths[] = $messages[$key];
+        }
+    }
+
+    /*
+     * Force supplémentaire si le crawl est conséquent.
+     */
+
+    if (
+        count($results) >= 10
+    ) {
+        $strengths[] =
+            'Le site dispose d’une architecture suffisamment accessible pour permettre un crawl multi-pages.';
+    }
+
+    /*
+     * Détection SPA : ce n'est pas un défaut.
+     */
+
+    $spaPages = 0;
+
+    foreach ($results as $result) {
+        if (
+            !empty(
+                $result['meta']['isSpa']
+            )
+        ) {
+            $spaPages++;
+        }
+    }
+
+    if (
+        $spaPages > 0 &&
+        $spaPages === count($results)
+    ) {
+        $strengths[] =
+            'Le site utilise une architecture applicative moderne de type SPA.';
+    }
+
+    if (!$strengths) {
+        $strengths = [
+            'Le domaine est accessible et a pu être analysé.',
+            'Plusieurs signaux techniques ont pu être contrôlés.',
+            'Le site dispose de bases exploitables pour poursuivre son optimisation.'
+        ];
+    }
+
+    return array_slice(
+        array_values(
+            array_unique($strengths)
+        ),
+        0,
+        5
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| SCORE GLOBAL
+|--------------------------------------------------------------------------
+*/
+
+function calculate_overall_score(
+    array $categories
+): int {
+    $weights = [
+        'seo' => 0.25,
+        'structure' => 0.20,
+        'mobile' => 0.15,
+        'content' => 0.15,
+        'performance' => 0.15,
+        'social' => 0.10,
+    ];
+
+    $score = 0;
+
+    foreach ($weights as $key => $weight) {
+        $score +=
+            ($categories[$key]['score'] ?? 0) *
+            $weight;
+    }
+
+    return (int) round(
+        max(
+            0,
+            min(
+                100,
+                $score
+            )
+        )
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
 | AUDIT COMPLET
 |--------------------------------------------------------------------------
 */
@@ -1819,10 +1821,10 @@ function build_recommendations(
 function run_full_audit(
     string $inputUrl
 ): array {
+    $started = microtime(true);
+
     $normalized =
-        normalize_url(
-            $inputUrl
-        );
+        normalize_url($inputUrl);
 
     if (!$normalized) {
         respond([
@@ -1833,9 +1835,7 @@ function run_full_audit(
     }
 
     $parts =
-        parse_url(
-            $normalized
-        );
+        parse_url($normalized);
 
     if (
         !$parts ||
@@ -1854,9 +1854,7 @@ function run_full_audit(
         );
 
     if (
-        !is_safe_host(
-            $rootHost
-        )
+        !is_safe_host($rootHost)
     ) {
         respond([
             'success' => false,
@@ -1866,9 +1864,7 @@ function run_full_audit(
     }
 
     $origin =
-        origin_from_url(
-            $normalized
-        );
+        origin_from_url($normalized);
 
     if (!$origin) {
         respond([
@@ -1878,14 +1874,9 @@ function run_full_audit(
         ], 422);
     }
 
-    $start =
-        microtime(true);
-
     /*
-    |--------------------------------------------------------------------------
-    | HOME
-    |--------------------------------------------------------------------------
-    */
+     * HOME
+     */
 
     $homepage =
         fetch_url(
@@ -1894,38 +1885,78 @@ function run_full_audit(
         );
 
     if (
-        !$homepage['success']
+        !$homepage['success'] ||
+        $homepage['status'] < 200 ||
+        $homepage['status'] >= 300
     ) {
         respond([
             'success' => false,
             'message' =>
                 'Le site n’a pas pu être chargé. Vérifiez l’adresse et réessayez.'
-        ], 502);
+        ], 422);
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | QUEUE
-    |--------------------------------------------------------------------------
-    */
+     * QUEUE
+     */
 
     $queue = [];
-    $visited = [];
-    $results = [];
+    $queued = [];
 
-    $homepageUrl =
-        normalize_url(
-            $normalized
-        );
+    $addToQueue = function (
+        string $url
+    ) use (
+        &$queue,
+        &$queued,
+        $rootHost
+    ): void {
+        $normalizedUrl =
+            normalize_url($url);
 
-    $queue[] =
-        $homepageUrl;
+        if (!$normalizedUrl) {
+            return;
+        }
+
+        if (
+            !same_site(
+                $normalizedUrl,
+                $rootHost
+            )
+        ) {
+            return;
+        }
+
+        if (
+            !is_html_candidate(
+                $normalizedUrl
+            )
+        ) {
+            return;
+        }
+
+        if (
+            isset(
+                $queued[$normalizedUrl]
+            )
+        ) {
+            return;
+        }
+
+        if (
+            count($queue) >= MAX_PAGES
+        ) {
+            return;
+        }
+
+        $queued[$normalizedUrl] = true;
+        $queue[] = $normalizedUrl;
+    };
+
+    $addToQueue($normalized);
 
     /*
-    |--------------------------------------------------------------------------
-    | SITEMAP
-    |--------------------------------------------------------------------------
-    */
+     * SITEMAP
+     */
 
     $sitemapUrls =
         get_sitemap_urls(
@@ -1933,169 +1964,78 @@ function run_full_audit(
             $rootHost
         );
 
-    foreach (
-        $sitemapUrls as $url
-    ) {
-        if (
-            !isset(
-                $visited[$url]
-            )
-        ) {
-            $queue[] =
-                $url;
-        }
-    }
-
-    $queue =
-        array_values(
-            array_unique(
-                $queue
-            )
-        );
-
-    /*
-    |--------------------------------------------------------------------------
-    | HOME
-    |--------------------------------------------------------------------------
-    */
-
-    $homepageAnalysis =
-        analyze_html(
-            $homepageUrl,
-            $homepage['body'],
-            $homepage['time']
-        );
-
-    $results[] =
-        $homepageAnalysis;
-
-    $visited[
-        $homepageUrl
-    ] = true;
-
-    /*
-    |--------------------------------------------------------------------------
-    | LIENS HOME
-    |--------------------------------------------------------------------------
-    */
-
-    foreach (
-        $homepageAnalysis['links']
-        as $href
-    ) {
-        $absolute =
-            absolute_url(
-                $href,
-                $homepageUrl
-            );
-
-        if (!$absolute) {
-            continue;
-        }
+    foreach ($sitemapUrls as $url) {
+        $addToQueue($url);
 
         if (
-            !same_site(
-                $absolute,
-                $rootHost
-            )
-        ) {
-            continue;
-        }
-
-        if (
-            !is_html_candidate(
-                $absolute
-            )
-        ) {
-            continue;
-        }
-
-        if (
-            !isset(
-                $visited[$absolute]
-            )
-        ) {
-            $queue[] =
-                $absolute;
-        }
-    }
-
-    $queue =
-        array_values(
-            array_unique(
-                $queue
-            )
-        );
-
-    /*
-    |--------------------------------------------------------------------------
-    | CRAWL
-    |--------------------------------------------------------------------------
-    */
-
-    while (
-        count($results) <
-            MAX_PAGES &&
-        !empty($queue)
-    ) {
-        if (
-            microtime(true) -
-            $start >
-            MAX_CRAWL_SECONDS
+            count($queue) >= MAX_PAGES
         ) {
             break;
         }
+    }
 
+    /*
+     * PREMIÈRE PAGE
+     */
+
+    $results = [];
+
+    $homepageAnalysis =
+        analyze_html(
+            $normalized,
+            $homepage['body'],
+            $homepage['responseTime'],
+            $homepage['status'],
+            $homepage['bytes']
+        );
+
+    $results[$normalized] =
+        $homepageAnalysis;
+
+    /*
+     * Ajouter les liens de la home.
+     */
+
+    foreach (
+        $homepageAnalysis['links'] as $link
+    ) {
+        $addToQueue($link);
+    }
+
+    /*
+     * CRAWL
+     */
+
+    $processed = [
+        $normalized => true
+    ];
+
+    while (
+        count($results) < MAX_PAGES &&
+        (microtime(true) - $started) <
+            MAX_CRAWL_SECONDS
+    ) {
         $batch = [];
 
-        while (
-            count($batch) <
-                MAX_CONCURRENT &&
-            !empty($queue) &&
-            count($results) +
-                count($batch) <
-                MAX_PAGES
-        ) {
-            $candidate =
-                array_shift(
-                    $queue
-                );
-
-            if (!$candidate) {
-                continue;
-            }
-
+        foreach ($queue as $url) {
             if (
                 isset(
-                    $visited[$candidate]
+                    $processed[$url]
                 )
             ) {
                 continue;
             }
+
+            $processed[$url] = true;
+
+            $batch[] = $url;
 
             if (
-                !same_site(
-                    $candidate,
-                    $rootHost
-                )
+                count($batch) >=
+                MAX_CONCURRENT
             ) {
-                continue;
+                break;
             }
-
-            if (
-                !is_html_candidate(
-                    $candidate
-                )
-            ) {
-                continue;
-            }
-
-            $visited[
-                $candidate
-            ] = true;
-
-            $batch[] =
-                $candidate;
         }
 
         if (!$batch) {
@@ -2103,24 +2043,71 @@ function run_full_audit(
         }
 
         $responses =
-            fetch_batch(
-                $batch
-            );
+            fetch_batch($batch);
 
-        foreach (
-            $responses as $response
-        ) {
+        foreach ($responses as $response) {
+            $url = $response['url'];
+
             if (
                 !$response['success']
             ) {
+                $results[$url] = [
+                    'url' => $url,
+                    'status' =>
+                        $response['status'],
+                    'categories' => [
+                        'seo' => 0,
+                        'structure' => 0,
+                        'mobile' => 0,
+                        'content' => 0,
+                        'performance' => 0,
+                        'social' => 0,
+                    ],
+                    'issues' => [
+                        [
+                            'key' =>
+                                'http_error',
+                            'category' =>
+                                'structure',
+                            'message' =>
+                                'Cette page ne répond pas correctement.'
+                        ]
+                    ],
+                    'links' => [],
+                    'meta' => [
+                        'isSpa' => false,
+                        'title' => '',
+                        'description' => '',
+                        'canonical' => '',
+                        'lang' => '',
+                        'robots' => '',
+                        'wordCount' => 0,
+                        'h1' => 0,
+                        'h1Texts' => [],
+                        'h2' => 0,
+                        'h3' => 0,
+                        'images' => 0,
+                        'imagesWithoutAlt' => 0,
+                        'ogTitle' => false,
+                        'ogDescription' => false,
+                        'ogImage' => false,
+                        'ogUrl' => false,
+                        'twitterCard' => false,
+                    ],
+                    'technical' => [
+                        'responseTime' =>
+                            $response['responseTime'],
+                        'htmlBytes' =>
+                            $response['bytes'],
+                    ]
+                ];
+
                 continue;
             }
 
             if (
-                $response['status'] <
-                    200 ||
-                $response['status'] >=
-                    300
+                $response['status'] < 200 ||
+                $response['status'] >= 300
             ) {
                 continue;
             }
@@ -2137,287 +2124,139 @@ function run_full_audit(
 
             $analysis =
                 analyze_html(
-                    $response['url'],
+                    $url,
                     $response['body'],
-                    $response['time']
+                    $response['responseTime'],
+                    $response['status'],
+                    $response['bytes']
                 );
 
-            $results[] =
+            $results[$url] =
                 $analysis;
 
+            /*
+             * Découverte de nouveaux liens.
+             */
+
             foreach (
-                $analysis['links']
-                as $href
+                $analysis['links'] as $link
             ) {
-                $absolute =
-                    absolute_url(
-                        $href,
-                        $analysis['url']
-                    );
+                $addToQueue($link);
+            }
 
-                if (!$absolute) {
-                    continue;
-                }
-
-                if (
-                    !same_site(
-                        $absolute,
-                        $rootHost
-                    )
-                ) {
-                    continue;
-                }
-
-                if (
-                    !is_html_candidate(
-                        $absolute
-                    )
-                ) {
-                    continue;
-                }
-
-                if (
-                    !isset(
-                        $visited[$absolute]
-                    )
-                ) {
-                    $queue[] =
-                        $absolute;
-                }
+            if (
+                count($results) >= MAX_PAGES
+            ) {
+                break;
             }
         }
-
-        $queue =
-            array_values(
-                array_unique(
-                    $queue
-                )
-            );
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | AGRÉGATION
-    |--------------------------------------------------------------------------
-    */
-
-    $keys = [
-        'seo',
-        'structure',
-        'mobile',
-        'content',
-        'performance',
-        'social',
-    ];
-
-    $totals = [];
-
-    foreach (
-        $keys as $key
-    ) {
-        $totals[$key] = 0;
-    }
-
-    $issueCounts = [];
-
-    foreach (
-        $results as $result
-    ) {
-        foreach (
-            $result['categories']
-            as $key => $score
-        ) {
-            $totals[$key] +=
-                $score;
-        }
-
-        foreach (
-            $result['issues']
-            as $issue
-        ) {
-            $key =
-                $issue['key'];
-
-            if (
-                !isset(
-                    $issueCounts[$key]
-                )
-            ) {
-                $issueCounts[$key] = [
-                    'key' =>
-                        $key,
-
-                    'category' =>
-                        $issue['category'],
-
-                    'message' =>
-                        $issue['message'],
-
-                    'count' =>
-                        0,
-                ];
-            }
-
-            $issueCounts[$key]['count']++;
-        }
-    }
+     * AGRÉGATION
+     */
 
     $pageCount =
-        max(
-            1,
-            count($results)
-        );
+        count($results);
+
+    if ($pageCount === 0) {
+        respond([
+            'success' => false,
+            'message' =>
+                'Aucune page exploitable n’a pu être analysée.'
+        ], 500);
+    }
+
+    $categoryTotals = [
+        'seo' => 0,
+        'structure' => 0,
+        'mobile' => 0,
+        'content' => 0,
+        'performance' => 0,
+        'social' => 0,
+    ];
+
+    foreach ($results as $result) {
+        foreach ($categoryTotals as $key => $value) {
+            $categoryTotals[$key] +=
+                (int) (
+                    $result['categories'][$key]
+                    ?? 0
+                );
+        }
+    }
 
     $categories = [];
 
-    foreach (
-        $totals as $key => $total
-    ) {
-        $categories[$key] = [
-            'score' =>
-                (int) round(
-                    $total /
-                    $pageCount
-                ),
+    $labels = [
+        'seo' => 'SEO',
+        'structure' => 'Structure',
+        'mobile' => 'Mobile',
+        'content' => 'Contenu',
+        'performance' => 'Performance technique',
+        'social' => 'Partage social',
+    ];
 
+    foreach ($categoryTotals as $key => $total) {
+        $categories[$key] = [
+            'score' => (int) round(
+                $total / $pageCount
+            ),
             'label' =>
-                $key,
+                $labels[$key] ?? $key,
         ];
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | SCORE GLOBAL
-    |--------------------------------------------------------------------------
-    */
-
-    $weights = [
-        'seo' =>
-            0.25,
-
-        'structure' =>
-            0.20,
-
-        'mobile' =>
-            0.15,
-
-        'content' =>
-            0.15,
-
-        'performance' =>
-            0.15,
-
-        'social' =>
-            0.10,
-    ];
-
-    $overallScore = 0;
-
-    foreach (
-        $weights as $key => $weight
-    ) {
-        $overallScore +=
-            $categories[$key]['score'] *
-            $weight;
-    }
+     * SCORE GLOBAL
+     */
 
     $overallScore =
-        (int) round(
-            $overallScore
+        calculate_overall_score(
+            $categories
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | TRI DES PROBLÈMES
-    |--------------------------------------------------------------------------
-    */
+     * PROBLÈMES
+     */
 
-    usort(
-        $issueCounts,
-        function (
-            $a,
-            $b
-        ) {
-            return
-                $b['count'] <=>
-                $a['count'];
-        }
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | RECOMMANDATIONS
-    |--------------------------------------------------------------------------
-    */
+    $issueCounts =
+        aggregate_issues(
+            $results
+        );
 
     $recommendations =
         build_recommendations(
-            $issueCounts,
-            $categories,
-            $pageCount
+            $issueCounts
         );
 
     /*
-    |--------------------------------------------------------------------------
-    | FORCES
-    |--------------------------------------------------------------------------
-    */
+     * FORCES
+     */
 
-    $strengths = [];
-
-    $strengthMessages = [
-        'seo' =>
-            'Les fondamentaux SEO sont correctement présents.',
-
-        'structure' =>
-            'La structure du site présente de bons signaux techniques.',
-
-        'mobile' =>
-            'Les principaux signaux de compatibilité mobile sont présents.',
-
-        'content' =>
-            'Les pages disposent de bases de contenu exploitables.',
-
-        'performance' =>
-            'Les temps de réponse serveur observés sont rapides.',
-
-        'social' =>
-            'Les principales métadonnées de partage social sont présentes.',
-    ];
-
-    foreach (
-        $categories as $key => $category
-    ) {
-        if (
-            $category['score'] >= 80 &&
-            isset(
-                $strengthMessages[$key]
-            )
-        ) {
-            $strengths[] =
-                $strengthMessages[$key];
-        }
-    }
-
-    if (!$strengths) {
-        $strengths = [
-            'Le domaine est accessible et a pu être analysé.',
-            'Plusieurs signaux techniques ont pu être contrôlés.',
-            'Le site dispose de bases exploitables pour poursuivre son optimisation.',
-        ];
-    }
+    $strengths =
+        build_strengths(
+            $categories,
+            $results
+        );
 
     /*
-    |--------------------------------------------------------------------------
-    | SPA
-    |--------------------------------------------------------------------------
-    */
+     * STATISTIQUES
+     */
 
     $spaPages = 0;
+    $errorPages = 0;
 
-    foreach (
-        $results as $result
-    ) {
+    $responseTimes = [];
+    $htmlBytes = [];
+
+    $titles = [];
+    $descriptions = [];
+    $h1s = [];
+
+    $internalLinks = 0;
+
+    foreach ($results as $result) {
         if (
             !empty(
                 $result['meta']['isSpa']
@@ -2425,56 +2264,196 @@ function run_full_audit(
         ) {
             $spaPages++;
         }
+
+        if (
+            ($result['status'] ?? 200) >= 400
+        ) {
+            $errorPages++;
+        }
+
+        $responseTimes[] =
+            (float) (
+                $result['technical']['responseTime']
+                ?? 0
+            );
+
+        $htmlBytes[] =
+            (int) (
+                $result['technical']['htmlBytes']
+                ?? 0
+            );
+
+        $title =
+            trim(
+                $result['meta']['title']
+                ?? ''
+            );
+
+        if ($title !== '') {
+            $titles[] =
+                mb_strtolower($title);
+        }
+
+        $description =
+            trim(
+                $result['meta']['description']
+                ?? ''
+            );
+
+        if ($description !== '') {
+            $descriptions[] =
+                mb_strtolower($description);
+        }
+
+        foreach (
+            $result['meta']['h1Texts']
+            ?? [] as $h1
+        ) {
+            $h1s[] =
+                mb_strtolower(
+                    trim($h1)
+                );
+        }
+
+        $internalLinks +=
+            count(
+                $result['links'] ?? []
+            );
     }
 
     /*
-    |--------------------------------------------------------------------------
-    | TEMPS
-    |--------------------------------------------------------------------------
-    */
+     * DUPLICATIONS
+     */
+
+    $duplicateTitles = 0;
+
+    foreach (
+        array_count_values($titles)
+        as $count
+    ) {
+        if ($count > 1) {
+            $duplicateTitles +=
+                $count - 1;
+        }
+    }
+
+    $duplicateDescriptions = 0;
+
+    foreach (
+        array_count_values($descriptions)
+        as $count
+    ) {
+        if ($count > 1) {
+            $duplicateDescriptions +=
+                $count - 1;
+        }
+    }
+
+    $duplicateH1 = 0;
+
+    foreach (
+        array_count_values($h1s)
+        as $count
+    ) {
+        if ($count > 1) {
+            $duplicateH1 +=
+                $count - 1;
+        }
+    }
+
+    /*
+     * TEMPS
+     */
 
     $elapsed =
         round(
             microtime(true) -
-            $start,
+            $started,
             1
         );
 
+    $averageResponse =
+        $responseTimes
+            ? round(
+                array_sum(
+                    $responseTimes
+                ) / count(
+                    $responseTimes
+                ),
+                3
+            )
+            : 0;
+
+    $averageHtmlBytes =
+        $htmlBytes
+            ? (int) round(
+                array_sum(
+                    $htmlBytes
+                ) / count(
+                    $htmlBytes
+                )
+            )
+            : 0;
+
     /*
-    |--------------------------------------------------------------------------
-    | RÉSULTAT
-    |--------------------------------------------------------------------------
-    */
+     * PAGES À PRIORITÉ
+     */
+
+    $priorityPages = [];
+
+    foreach ($results as $result) {
+        $score =
+            calculate_overall_score(
+                $result['categories']
+            );
+
+        $issueCount =
+            count(
+                $result['issues'] ?? []
+            );
+
+        $priorityPages[] = [
+            'url' =>
+                $result['url'],
+            'score' =>
+                $score,
+            'issues' =>
+                $issueCount,
+            'status' =>
+                $result['status'],
+        ];
+    }
+
+    usort(
+        $priorityPages,
+        function ($a, $b) {
+            if ($a['score'] === $b['score']) {
+                return $b['issues'] <=> $a['issues'];
+            }
+
+            return $a['score'] <=> $b['score'];
+        }
+    );
+
+    /*
+     * RÉSULTAT
+     */
 
     return [
-        'success' =>
-            true,
+        'success' => true,
 
         'score' =>
-            max(
-                0,
-                min(
-                    100,
-                    $overallScore
-                )
-            ),
+            $overallScore,
 
         'pagesAnalyzed' =>
-            count(
-                $results
-            ),
+            $pageCount,
 
         'pagesDiscovered' =>
-            max(
-                count($results),
-                count(
-                    array_unique(
-                        array_merge(
-                            array_keys(
-                                $visited
-                            ),
-                            $queue
-                        )
+            count(
+                array_unique(
+                    array_merge(
+                        array_keys($queued),
+                        $queue
                     )
                 )
             ),
@@ -2483,24 +2462,23 @@ function run_full_audit(
             $categories,
 
         /*
-        | IMPORTANT :
-        | Le frontend actuel attend des strings.
-        */
+         * IMPORTANT :
+         * Audit.tsx attend des strings.
+         */
 
         'recommendations' =>
             $recommendations,
 
         'strengths' =>
-            array_slice(
-                $strengths,
-                0,
-                5
-            ),
+            $strengths,
 
         'responseTime' =>
             $elapsed,
 
         'technical' => [
+            'version' =>
+                '4.0',
+
             'isSpa' =>
                 $spaPages > 0,
 
@@ -2508,8 +2486,44 @@ function run_full_audit(
                 $spaPages,
 
             'pages' =>
-                count(
-                    $results
+                $pageCount,
+
+            'errorPages' =>
+                $errorPages,
+
+            'averageResponseTime' =>
+                $averageResponse,
+
+            'averageHtmlBytes' =>
+                $averageHtmlBytes,
+
+            'duplicateTitles' =>
+                $duplicateTitles,
+
+            'duplicateDescriptions' =>
+                $duplicateDescriptions,
+
+            'duplicateH1' =>
+                $duplicateH1,
+
+            'internalLinks' =>
+                $internalLinks,
+
+            'sitemapPages' =>
+                count($sitemapUrls),
+
+            /*
+             * On ne prétend PAS mesurer les Core Web Vitals.
+             */
+
+            'performanceNote' =>
+                'La performance mesure ici la réponse serveur et le poids HTML. Les Core Web Vitals nécessitent un navigateur réel.',
+
+            'priorityPages' =>
+                array_slice(
+                    $priorityPages,
+                    0,
+                    10
                 ),
         ],
     ];
@@ -2521,9 +2535,7 @@ function run_full_audit(
 |--------------------------------------------------------------------------
 */
 
-if (
-    $action === 'analyze'
-) {
+if ($action === 'analyze') {
     $url =
         trim(
             $_POST['url'] ?? ''
@@ -2539,16 +2551,15 @@ if (
 
     try {
         $result =
-            run_full_audit(
-                $url
-            );
+            run_full_audit($url);
 
-        respond(
-            $result
-        );
-    } catch (
-        Throwable $e
-    ) {
+        respond($result);
+    } catch (Throwable $e) {
+        /*
+         * Ne jamais exposer les détails internes
+         * de l'erreur au visiteur.
+         */
+
         respond([
             'success' => false,
             'message' =>
@@ -2559,7 +2570,7 @@ if (
 
 /*
 |--------------------------------------------------------------------------
-| ANCIEN FORMULAIRE
+| ANCIEN FORMULAIRE DE CONTACT
 |--------------------------------------------------------------------------
 */
 
@@ -2623,11 +2634,11 @@ if (
 }
 
 $subject =
-    'Nouvel audit digital Vitrine+ — ' .
+    'Nouvelle demande Vitrine+ — ' .
     $company;
 
 $body =
-    "Nouvelle demande d'audit depuis vitrineplus.fr\n\n" .
+    "Nouvelle demande depuis vitrineplus.fr\n\n" .
     "Nom : $name\n" .
     "Entreprise : $company\n" .
     "Email : $email\n" .
