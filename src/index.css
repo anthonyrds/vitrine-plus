@@ -117,3 +117,9 @@ button:disabled {
     filter: none !important;
   }
 }
+
+@media (max-width: 767px) {
+  .blur-\[110px\] {
+    filter: none !important;
+  }
+}
