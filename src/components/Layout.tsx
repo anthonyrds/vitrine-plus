@@ -114,9 +114,9 @@ export default function Layout() {
         )}
       </header>
 
-      <main>
-        <Outlet />
-      </main>
+      <main style={{ transform: "translateZ(0)" }}>
+  <Outlet />
+</main>
 
       <footer className="border-t border-black/10 bg-white px-6 py-14 lg:px-8">
         <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-4">
