@@ -38,6 +38,6 @@ jobs:
           set net:max-retries 2
           set net:reconnect-interval-base 5
           cd /public
-          mirror --reverse --delete --verbose dist/ .
+          mirror --reverse --delete --verbose --exclude-glob vitrine-mail-config.php dist/ .
           bye
           EOF

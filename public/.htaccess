@@ -6,6 +6,9 @@ RewriteBase /
 # Protection des données privées
 RewriteRule ^\.data(?:/|$) - [F,L]
 
+# Protection de la configuration SMTP
+RewriteRule ^vitrine-mail-config\.php$ - [F,L]
+
 # Ne pas réécrire les vrais fichiers
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
