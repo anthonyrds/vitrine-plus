@@ -26,7 +26,19 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-white text-[#080808]">
       <header className="fixed inset-x-0 top-0 z-50 px-4 pt-4 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-7xl items-center justify-between rounded-full border border-black/10 bg-white/85 px-4 py-2.5 shadow-[0_10px_40px_rgba(0,0,0,.06)] backdrop-blur-xl sm:px-5">
+        <div
+          className="
+            mobile-no-backdrop
+            mx-auto flex max-w-7xl items-center justify-between
+            rounded-full border border-black/10
+            bg-white/95
+            px-4 py-2.5
+            shadow-[0_10px_40px_rgba(0,0,0,.06)]
+            sm:px-5
+            lg:bg-white/85
+            lg:backdrop-blur-xl
+          "
+        >
           <Logo />
 
           <nav className="hidden items-center gap-7 text-sm font-semibold text-black/55 lg:flex">
@@ -156,9 +168,7 @@ export default function Layout() {
               <Link to="/audit">Audit gratuit</Link>
               <Link to="/rendez-vous">Rendez-vous</Link>
               <Link to="/contact">Contact</Link>
-              <Link to="/mentions-legales">
-                Mentions légales
-              </Link>
+              <Link to="/mentions-legales">Mentions légales</Link>
             </div>
           </div>
         </div>
@@ -168,9 +178,7 @@ export default function Layout() {
             © {new Date().getFullYear()} Vitrine+. Tous droits réservés.
           </span>
 
-          <span>
-            Votre entreprise. En mieux.
-          </span>
+          <span>Votre entreprise. En mieux.</span>
         </div>
       </footer>
     </div>
