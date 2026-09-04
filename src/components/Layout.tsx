@@ -84,7 +84,7 @@ export default function Layout() {
         </div>
 
         {open && (
-          <div className="mx-auto mt-2 max-w-7xl rounded-3xl border border-black/10 bg-white p-5 shadow-xl lg:hidden">
+          <div className="mx-auto mt-2 max-w-7xl rounded-3xl border border-black/10 bg-white p-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)] lg:hidden">
             <nav className="grid gap-2">
               {nav.map(([to, label]) => (
                 <Link
