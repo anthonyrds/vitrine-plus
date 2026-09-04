@@ -1,11 +1,15 @@
 Options -MultiViews
+
 RewriteEngine On
 RewriteBase /
 
-# Keep real files/directories available.
+# Protection des données privées
+RewriteRule ^\.data(?:/|$) - [F,L]
+
+# Ne pas réécrire les vrais fichiers
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# React Router fallback.
+# SPA React
 RewriteRule ^ index.html [L]

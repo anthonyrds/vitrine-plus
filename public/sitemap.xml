@@ -1,46 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+>
   <url>
-    <loc>https://www.vitrineplus.fr/</loc>
+    <loc>https://vitrineplus.fr/</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/services</loc>
+    <loc>https://vitrineplus.fr/services</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/services/web</loc>
+    <loc>https://vitrineplus.fr/services/web</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/services/seo</loc>
+    <loc>https://vitrineplus.fr/services/seo</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/services/ia</loc>
+    <loc>https://vitrineplus.fr/services/ia</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/realisations</loc>
+    <loc>https://vitrineplus.fr/realisations</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/solutions</loc>
+    <loc>https://vitrineplus.fr/solutions</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/a-propos</loc>
+    <loc>https://vitrineplus.fr/a-propos</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/audit</loc>
+    <loc>https://vitrineplus.fr/audit</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/contact</loc>
+    <loc>https://vitrineplus.fr/rendez-vous</loc>
   </url>
 
   <url>
-    <loc>https://www.vitrineplus.fr/mentions-legales</loc>
+    <loc>https://vitrineplus.fr/contact</loc>
+  </url>
+
+  <url>
+    <loc>https://vitrineplus.fr/mentions-legales</loc>
   </url>
 </urlset>
