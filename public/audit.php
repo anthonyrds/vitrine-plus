@@ -1075,7 +1075,8 @@ function analyzePage(
     array $fetch,
     string $rootHost
 ): array {
-    $html = (string) $fetch['body'];
+
+    $html = (string) ($fetch['body'] ?? '');
 
     /*
     |--------------------------------------------------------------------------
@@ -1106,20 +1107,9 @@ function analyzePage(
         '/<link\b[^>]*\brel\s*=\s*["\']canonical["\'][^>]*\bhref\s*=\s*["\']([^"\']+)["\']/i'
     );
 
-    $h1 = countTag(
-        $html,
-        'h1'
-    );
-
-    $h2 = countTag(
-        $html,
-        'h2'
-    );
-
-    $h3 = countTag(
-        $html,
-        'h3'
-    );
+    $h1 = countTag($html, 'h1');
+    $h2 = countTag($html, 'h2');
+    $h3 = countTag($html, 'h3');
 
     $viewport = hasMeta(
         $html,
@@ -1145,10 +1135,22 @@ function analyzePage(
         'og:image'
     );
 
-    $wordCount = str_word_count(
-        $text,
-        0,
-        'ÀÁÂÃÄÅàáâãäåÆæÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝŸýÿABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    $ogUrl = metaContent(
+        $html,
+        'property',
+        'og:url'
+    );
+
+    $twitterCard = metaContent(
+        $html,
+        'name',
+        'twitter:card'
+    );
+
+    $twitterImage = metaContent(
+        $html,
+        'name',
+        'twitter:image'
     );
 
     /*
@@ -1170,9 +1172,9 @@ function analyzePage(
     $imagesWithAlt = 0;
 
     foreach (
-        $imageMatches[0] ?? []
-        as $image
+        $imageMatches[0] ?? [] as $image
     ) {
+
         if (
             preg_match(
                 '/\balt\s*=\s*["\'][^"\']*["\']/i',
@@ -1185,34 +1187,9 @@ function analyzePage(
 
     /*
     |--------------------------------------------------------------------------
-    | DÉTECTION HTML
+    | LIENS ET NAVIGATION
     |--------------------------------------------------------------------------
     */
-
-    $hasCta = preg_match(
-        '/(contactez|demandez|devis|rendez[- ]vous|réservation|appel|commencer|obtenir|découvrir|parler|audit gratuit|essai gratuit|prendre contact|en savoir plus|voir les services|nous contacter)/iu',
-        $html
-    ) === 1;
-
-    $hasContact = preg_match(
-        '/(contact|mailto:|tel:|\+33|0[1-9](?:[\s.-]?\d{2}){4})/iu',
-        $html
-    ) === 1;
-
-    $hasSocial = preg_match(
-        '/(facebook\.com|instagram\.com|linkedin\.com|x\.com|twitter\.com|youtube\.com|tiktok\.com)/i',
-        $html
-    ) === 1;
-
-    $forms = countTag(
-        $html,
-        'form'
-    );
-
-    $buttons = countTag(
-        $html,
-        'button'
-    );
 
     $links = extractLinks(
         $html,
@@ -1220,31 +1197,69 @@ function analyzePage(
         $rootHost
     );
 
+    $internalLinkCount = count($links);
+
+    $hasNav =
+        preg_match(
+            '/<nav\b/i',
+            $html
+        ) === 1;
+
+    $hasMain =
+        preg_match(
+            '/<main\b/i',
+            $html
+        ) === 1;
+
+    $hasHeader =
+        preg_match(
+            '/<header\b/i',
+            $html
+        ) === 1;
+
+    $hasFooter =
+        preg_match(
+            '/<footer\b/i',
+            $html
+        ) === 1;
+
     /*
     |--------------------------------------------------------------------------
     | DÉTECTION SPA
     |--------------------------------------------------------------------------
     */
 
+    $scriptCount = countTag(
+        $html,
+        'script'
+    );
+
     $spa =
         (
-            $h1 === 0 &&
-            $wordCount < 150 &&
-            countTag($html, 'script') > 0
-        )
-        ||
-        preg_match(
-            '/id=["\'](?:root|app|__next|__nuxt)["\']/i',
-            $html
-        ) === 1;
+            $scriptCount > 0 &&
+            (
+                preg_match(
+                    '/id\s*=\s*["\'](?:root|app|__next|__nuxt)["\']/i',
+                    $html
+                ) === 1
+                ||
+                (
+                    $h1 === 0 &&
+                    $wordCount < 150
+                )
+            )
+        );
 
     /*
     |--------------------------------------------------------------------------
-    | ANALYSE DES FICHIERS JAVASCRIPT POUR LES SPA
-    |
-    | Un site React/Vite peut contenir ses CTA, formulaires, tarifs et
-    | parcours de conversion uniquement dans les bundles JS.
+    | ANALYSE DES BUNDLES JAVASCRIPT
     |--------------------------------------------------------------------------
+    |
+    | Pour une SPA, le HTML initial peut être très léger alors que la
+    | structure et les contenus sont présents dans les bundles.
+    |
+    | On récupère uniquement les scripts provenant du même domaine.
+    |
     */
 
     $renderedSource = '';
@@ -1257,17 +1272,13 @@ function analyzePage(
 
     $scriptSources = $scriptMatches[1] ?? [];
 
-    $scriptCount = countTag(
-        $html,
-        'script'
-    );
-
     $scriptBytesRead = 0;
-    $maxScriptBytes = 1200000;
+    $maxScriptBytes = 1500000;
 
     foreach (
         $scriptSources as $scriptSource
     ) {
+
         if (
             $scriptBytesRead >= $maxScriptBytes
         ) {
@@ -1343,16 +1354,17 @@ function analyzePage(
             );
         }
 
-        $renderedSource .= "\n" . $scriptBody;
+        $renderedSource .=
+            "\n" .
+            $scriptBody;
 
-        $scriptBytesRead += strlen(
-            $scriptBody
-        );
+        $scriptBytesRead +=
+            strlen($scriptBody);
     }
 
     /*
     |--------------------------------------------------------------------------
-    | SOURCE ANALYSIS
+    | SOURCE UTILISABLE POUR LES SPAs
     |--------------------------------------------------------------------------
     */
 
@@ -1363,44 +1375,150 @@ function analyzePage(
 
     /*
     |--------------------------------------------------------------------------
-    | CTA / CONTACT / CONVERSION SIGNALS
+    | SIGNAUX DE CONVERSION
     |--------------------------------------------------------------------------
     */
 
     $hasCta =
         preg_match(
-            '/(contactez|demandez|devis|rendez[- ]vous|réservation|appel|commencer|obtenir|découvrir|parler|audit gratuit|essai gratuit|prendre contact|en savoir plus|voir les services|nous contacter|commencer mon|obtenir mon|recevoir mon|prendre rendez[- ]vous)/iu',
+            '/(
+                contactez|
+                demandez|
+                devis|
+                rendez[- ]vous|
+                réservation|
+                appel|
+                appeler|
+                commencer|
+                obtenir|
+                découvrir|
+                parler|
+                audit gratuit|
+                essai gratuit|
+                prendre contact|
+                en savoir plus|
+                voir les services|
+                nous contacter|
+                commencer mon|
+                obtenir mon|
+                recevoir mon|
+                prendre rendez[- ]vous|
+                réserver|
+                demander
+            )/ixu',
             $analysisSource
         ) === 1;
 
     $hasContact =
         preg_match(
-            '/(contact|mailto:|tel:|\+33|0[1-9](?:[\s.-]?\d{2}){4}|\/contact\b|\/rendez[- ]vous\b)/iu',
+            '/(
+                contact|
+                mailto:|
+                tel:|
+                \+33|
+                0[1-9](?:[\s.-]?\d{2}){4}|
+                \/contact\b|
+                \/rendez[- ]vous\b
+            )/ixu',
+            $analysisSource
+        ) === 1;
+
+    $hasSocial =
+        preg_match(
+            '/(
+                facebook\.com|
+                instagram\.com|
+                linkedin\.com|
+                x\.com|
+                twitter\.com|
+                youtube\.com|
+                tiktok\.com
+            )/ix',
+            $analysisSource
+        ) === 1;
+
+    $forms = countTag(
+        $html,
+        'form'
+    );
+
+    $buttons = countTag(
+        $html,
+        'button'
+    );
+
+    $hasForm =
+        $forms > 0 ||
+        preg_match(
+            '/(
+                type\s*=\s*["\']email["\']|
+                type\s*=\s*["\']tel["\']|
+                name\s*=\s*["\']email["\']|
+                name\s*=\s*["\']phone["\']|
+                name\s*=\s*["\']telephone["\']|
+                placeholder\s*=
+            )/ix',
             $analysisSource
         ) === 1;
 
     $hasTrust =
         preg_match(
-            '/(témoignage|témoignages|avis|client|clients|réalisations|portfolio|référence|références|projet|projets|ils nous font confiance|confiance|satisfaction|garantie|expert|expérience|années)/iu',
+            '/(
+                témoignage|
+                témoignages|
+                avis|
+                client|
+                clients|
+                réalisations|
+                portfolio|
+                référence|
+                références|
+                projet|
+                projets|
+                ils nous font confiance|
+                confiance|
+                satisfaction|
+                garantie|
+                expert|
+                expertise|
+                expérience|
+                années
+            )/ixu',
             $analysisSource
         ) === 1;
 
     $hasOffer =
         preg_match(
-            '/(prix|tarif|tarifs|à partir de|offre|offres|formule|formules|790|1990|3990|49|149|299|€|euros)/iu',
+            '/(
+                prix|
+                tarif|
+                tarifs|
+                à partir de|
+                offre|
+                offres|
+                formule|
+                formules|
+                790|
+                1990|
+                3990|
+                49|
+                149|
+                299|
+                €|
+                euros
+            )/ixu',
             $analysisSource
-        ) === 1;
-
-    $hasForm =
-        $forms > 0 ||
-        preg_match(
-            '/(type=["\']email["\']|type=["\']tel["\']|type=["\']text["\']|placeholder=|name=["\']email["\']|name=["\']phone["\']|name=["\']telephone["\'])/i',
-            $renderedSource
         ) === 1;
 
     $hasNavigationConversion =
         preg_match(
-            '/(\/contact\b|\/rendez[- ]vous\b|\/audit\b|\/devis\b|\/services\b)/i',
+            '/(
+                \/contact\b|
+                \/rendez[- ]vous\b|
+                \/audit\b|
+                \/devis\b|
+                \/services\b
+            )/ix',
             $analysisSource
         ) === 1;
 
@@ -1412,34 +1530,48 @@ function analyzePage(
 
     $seo = 0;
 
-    if (
-        $title !== ''
-    ) {
-        $seo +=
-            textLength($title) >= 20 &&
-            textLength($title) <= 65
-                ? 25
-                : 15;
+    if ($title !== '') {
+
+        $titleLength = textLength($title);
+
+        if (
+            $titleLength >= 30 &&
+            $titleLength <= 60
+        ) {
+            $seo += 25;
+        } elseif (
+            $titleLength >= 20 &&
+            $titleLength <= 65
+        ) {
+            $seo += 20;
+        } else {
+            $seo += 10;
+        }
     }
 
-    if (
-        $description !== ''
-    ) {
-        $seo +=
-            textLength($description) >= 70 &&
-            textLength($description) <= 170
-                ? 25
-                : 15;
+    if ($description !== '') {
+
+        $descriptionLength =
+            textLength($description);
+
+        if (
+            $descriptionLength >= 100 &&
+            $descriptionLength <= 160
+        ) {
+            $seo += 25;
+        } elseif (
+            $descriptionLength >= 70 &&
+            $descriptionLength <= 170
+        ) {
+            $seo += 20;
+        } else {
+            $seo += 10;
+        }
     }
 
     if ($h1 === 1) {
         $seo += 20;
-    } elseif ($h1 > 0) {
-        $seo += 10;
-    } elseif ($spa) {
-        /*
-        | Une SPA peut avoir son H1 après rendu JavaScript.
-        */
+    } elseif ($h1 > 1) {
         $seo += 10;
     }
 
@@ -1467,50 +1599,36 @@ function analyzePage(
 
     $structure = 0;
 
-    $structure +=
-        $h1 === 1
-            ? 35
-            : (
-                $h1 > 0
-                    ? 20
-                    : 0
-            );
+    if ($h1 === 1) {
+        $structure += 30;
+    } elseif ($h1 > 0) {
+        $structure += 15;
+    }
 
-    $structure +=
-        $h2 > 0
-            ? 25
-            : 0;
+    if ($h2 >= 2) {
+        $structure += 25;
+    } elseif ($h2 === 1) {
+        $structure += 15;
+    }
 
-    $structure +=
-        $h3 > 0
-            ? 10
-            : 0;
+    if ($h3 > 0) {
+        $structure += 10;
+    }
 
-    $structure +=
-        preg_match(
-            '/<nav\b/i',
-            $html
-        )
-            ? 15
-            : 0;
+    if ($hasNav) {
+        $structure += 10;
+    }
 
-    $structure +=
-        preg_match(
-            '/<main\b/i',
-            $html
-        )
-            ? 15
-            : 0;
+    if ($hasMain) {
+        $structure += 10;
+    }
 
-    if (
-        $spa &&
-        $structure < 50
-    ) {
-        /*
-        | Minimum prudent pour une SPA dont la structure est rendue
-        | côté client et donc invisible dans le HTML initial.
-        */
-        $structure = 50;
+    if ($hasHeader) {
+        $structure += 2.5;
+    }
+
+    if ($hasFooter) {
+        $structure += 2.5;
     }
 
     /*
@@ -1519,36 +1637,55 @@ function analyzePage(
     |--------------------------------------------------------------------------
     */
 
-    $mobile =
-        $viewport
-            ? 60
-            : 0;
+    $mobile = 0;
 
-    $mobile +=
+    if ($viewport) {
+        $mobile += 60;
+    }
+
+    if (
         preg_match(
-            '/max-width|min-width|@media|responsive|viewport/i',
+            '/width\s*=\s*device-width/i',
             $html
-        )
-            ? 10
-            : 0;
+        ) === 1
+    ) {
+        $mobile += 10;
+    }
+
+    /*
+    | L'absence d'image n'est pas un défaut mobile.
+    | On vérifie uniquement les images réellement présentes.
+    */
 
     if ($imageTotal === 0) {
-        $mobile += 10;
+
+        $mobile += 15;
+
     } elseif (
         $imagesWithAlt === $imageTotal
     ) {
+
         $mobile += 15;
+
     } else {
-        $mobile += 5;
+
+        $mobile += 8;
     }
 
-    $mobile +=
+    /*
+    | Les dimensions fixes excessives sont un signal négatif uniquement
+    | lorsqu'elles sont réellement présentes dans le HTML.
+    */
+
+    $hasLargeFixedWidth =
         preg_match(
-            '/width\s*=\s*["\']\d{3,}["\']/i',
+            '/\bwidth\s*=\s*["\']\d{4,}["\']/i',
             $html
-        )
-            ? 0
-            : 15;
+        ) === 1;
+
+    if (!$hasLargeFixedWidth) {
+        $mobile += 15;
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -1558,52 +1695,41 @@ function analyzePage(
 
     $content = 0;
 
-    $content +=
-        $wordCount >= 300
-            ? 35
-            : (
-                $wordCount >= 150
-                    ? 25
-                    : (
-                        $wordCount >= 80
-                            ? 15
-                            : 5
-                    )
-            );
+    $wordCount =
+        str_word_count(
+            $text,
+            0,
+            'ÀÁÂÃÄÅàáâãäåÆæÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖØòóôõöøÙÚÛÜùûüÝŸýÿABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+        );
 
-    $content +=
-        $h2 >= 2
-            ? 25
-            : (
-                $h2 === 1
-                    ? 15
-                    : 0
-            );
+    if ($wordCount >= 600) {
+        $content += 35;
+    } elseif ($wordCount >= 300) {
+        $content += 30;
+    } elseif ($wordCount >= 150) {
+        $content += 20;
+    } elseif ($wordCount >= 80) {
+        $content += 10;
+    } else {
+        $content += 5;
+    }
 
-    $content +=
-        $h1 > 0
-            ? 15
-            : 0;
+    if ($h2 >= 2) {
+        $content += 25;
+    } elseif ($h2 === 1) {
+        $content += 15;
+    }
 
-    $content +=
-        $imageTotal > 0
-            ? 10
-            : 0;
+    if ($h1 === 1) {
+        $content += 15;
+    }
 
-    $content +=
-        $hasContact
-            ? 15
-            : 0;
+    if ($imageTotal > 0) {
+        $content += 10;
+    }
 
-    if (
-        $spa &&
-        $content < 50
-    ) {
-        /*
-        | Une SPA ne doit pas être considérée comme vide simplement
-        | parce que son contenu est injecté par React.
-        */
-        $content = 50;
+    if ($hasContact) {
+        $content += 15;
     }
 
     /*
@@ -1614,48 +1740,45 @@ function analyzePage(
 
     $performance = 0;
 
-    $performance +=
-        $fetch['time'] <= 1
-            ? 45
-            : (
-                $fetch['time'] <= 2
-                    ? 35
-                    : (
-                        $fetch['time'] <= 4
-                            ? 20
-                            : 5
-                    )
-            );
+    $responseTime =
+        (float) (
+            $fetch['time'] ?? 99
+        );
 
-    $performance +=
-        $fetch['bytes'] <= 300000
-            ? 30
-            : (
-                $fetch['bytes'] <= 700000
-                    ? 20
-                    : (
-                        $fetch['bytes'] <= 1200000
-                            ? 10
-                            : 0
-                    )
-            );
+    $responseBytes =
+        (int) (
+            $fetch['bytes'] ?? 0
+        );
 
-    $performance +=
-        $scriptCount <= 8
-            ? 15
-            : (
-                $scriptCount <= 15
-                    ? 10
-                    : 5
-            );
+    if ($responseTime <= 0.5) {
+        $performance += 50;
+    } elseif ($responseTime <= 1) {
+        $performance += 45;
+    } elseif ($responseTime <= 2) {
+        $performance += 35;
+    } elseif ($responseTime <= 4) {
+        $performance += 20;
+    } else {
+        $performance += 5;
+    }
 
-    $performance +=
-        preg_match(
-            '/<link[^>]+preload/i',
-            $html
-        )
-            ? 10
-            : 0;
+    if ($responseBytes <= 150000) {
+        $performance += 35;
+    } elseif ($responseBytes <= 300000) {
+        $performance += 30;
+    } elseif ($responseBytes <= 700000) {
+        $performance += 20;
+    } elseif ($responseBytes <= 1200000) {
+        $performance += 10;
+    }
+
+    if ($scriptCount <= 4) {
+        $performance += 15;
+    } elseif ($scriptCount <= 8) {
+        $performance += 10;
+    } elseif ($scriptCount <= 15) {
+        $performance += 5;
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -1665,108 +1788,104 @@ function analyzePage(
 
     $social = 0;
 
-    $social +=
-        $ogTitle !== ''
-            ? 30
-            : 0;
+    if ($ogTitle !== '') {
+        $social += 25;
+    }
 
-    $social +=
-        $ogDescription !== ''
-            ? 30
-            : 0;
+    if ($ogDescription !== '') {
+        $social += 25;
+    }
 
-    $social +=
-        $ogImage !== ''
-            ? 25
-            : 0;
+    if ($ogImage !== '') {
+        $social += 30;
+    }
 
-    $social +=
-        $hasSocial
-            ? 15
-            : 0;
+    if (
+        $ogUrl !== '' ||
+        $twitterCard !== ''
+    ) {
+        $social += 10;
+    }
+
+    if (
+        $twitterImage !== ''
+    ) {
+        $social += 10;
+    }
 
     /*
     |--------------------------------------------------------------------------
     | CONVERSION
     |--------------------------------------------------------------------------
-    |
-    | Le moteur regarde désormais :
-    | - HTML initial
-    | - bundles JavaScript des SPA
-    | - CTA
-    | - contact
-    | - formulaires
-    | - navigation vers contact/rendez-vous/audit/devis
-    | - preuves sociales
-    | - offres et tarifs
-    |
     */
 
     $conversion = 0;
 
-    if (
-        $hasCta
-    ) {
-        $conversion += 30;
+    if ($hasCta) {
+        $conversion += 25;
     }
 
-    if (
-        $hasContact
-    ) {
+    if ($hasContact) {
         $conversion += 20;
     }
 
-    if (
-        $hasForm
-    ) {
-        $conversion += 20;
-    }
-
-    if (
-        $hasTrust
-    ) {
+    if ($hasForm) {
         $conversion += 15;
     }
 
-    if (
-        $hasOffer
-    ) {
+    if ($hasTrust) {
+        $conversion += 15;
+    }
+
+    if ($hasOffer) {
+        $conversion += 10;
+    }
+
+    if ($hasNavigationConversion) {
         $conversion += 10;
     }
 
     if (
-        $hasNavigationConversion
+        $buttons > 0 ||
+        $internalLinkCount > 0
     ) {
         $conversion += 5;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | GARDE-FOU SPA
+    | NORMALISATION
     |--------------------------------------------------------------------------
     */
 
-    if (
-        $spa &&
-        $renderedSource !== ''
-    ) {
-        /*
-        | Si le bundle contient clairement des signaux de conversion,
-        | on ne laisse pas le score tomber artificiellement à cause
-        | de l'absence de rendu HTML côté serveur.
-        */
-        if (
-            $hasCta ||
-            $hasContact ||
-            $hasForm ||
-            $hasNavigationConversion
-        ) {
-            $conversion = max(
-                $conversion,
-                50
-            );
-        }
-    }
+    $categories = [
+        'seo' =>
+            min(100, (int) round($seo)),
+
+        'structure' =>
+            min(100, (int) round($structure)),
+
+        'mobile' =>
+            min(100, (int) round($mobile)),
+
+        'content' =>
+            min(100, (int) round($content)),
+
+        'performance' =>
+            min(100, (int) round($performance)),
+
+        'social' =>
+            min(100, (int) round($social)),
+
+        'conversion' =>
+            min(100, (int) round($conversion)),
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | RÉSULTAT
+    |--------------------------------------------------------------------------
+    */
 
     return [
         'url' =>
@@ -1794,54 +1913,13 @@ function analyzePage(
             $wordCount,
 
         'response' =>
-            $fetch['time'],
+            $responseTime,
 
         'bytes' =>
-            $fetch['bytes'],
+            $responseBytes,
 
-        'categories' => [
-            'seo' =>
-                min(
-                    100,
-                    $seo
-                ),
-
-            'structure' =>
-                min(
-                    100,
-                    $structure
-                ),
-
-            'mobile' =>
-                min(
-                    100,
-                    $mobile
-                ),
-
-            'content' =>
-                min(
-                    100,
-                    $content
-                ),
-
-            'performance' =>
-                min(
-                    100,
-                    $performance
-                ),
-
-            'social' =>
-                min(
-                    100,
-                    $social
-                ),
-
-            'conversion' =>
-                min(
-                    100,
-                    $conversion
-                )
-        ],
+        'categories' =>
+            $categories,
 
         'links' =>
             $links
@@ -2243,12 +2321,57 @@ $avg =
 
 $recommendations = [];
 
+/*
+|--------------------------------------------------------------------------
+| CONTEXTE SPA
+|--------------------------------------------------------------------------
+|
+| Si la majorité des pages sont des SPA, certaines informations
+| structurelles et textuelles ne sont pas visibles dans le HTML initial.
+| On évite donc de générer des recommandations artificielles.
+|
+*/
+
+$spaPages = 0;
+
+foreach (
+    $pages as $page
+) {
+    if (
+        !empty($page['spa'])
+    ) {
+        $spaPages++;
+    }
+}
+
+$spaRatio =
+    count($pages) > 0
+        ? $spaPages / count($pages)
+        : 0;
+
+$mostlySpa =
+    $spaRatio >= 0.5;
+
+
+/*
+|--------------------------------------------------------------------------
+| CONVERSION
+|--------------------------------------------------------------------------
+*/
+
 if (
     $avg('conversion') < 60
 ) {
     $recommendations[] =
         'Clarifier les appels à l’action, les points de contact et les éléments de réassurance pour transformer davantage de visites en demandes.';
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| SEO
+|--------------------------------------------------------------------------
+*/
 
 if (
     $avg('seo') < 70
@@ -2257,12 +2380,26 @@ if (
         'Renforcer les fondamentaux SEO : titres, méta-descriptions, balises H1, structure sémantique et données de partage.';
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| PERFORMANCE
+|--------------------------------------------------------------------------
+*/
+
 if (
     $avg('performance') < 70
 ) {
     $recommendations[] =
         'Réduire le temps de réponse, le poids HTML et la complexité technique afin d’améliorer la vitesse perçue.';
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| MOBILE
+|--------------------------------------------------------------------------
+*/
 
 if (
     $avg('mobile') < 70
@@ -2271,12 +2408,33 @@ if (
         'Vérifier et renforcer l’expérience mobile : viewport, dimensions des médias et adaptation des contenus.';
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| CONTENU
+|--------------------------------------------------------------------------
+*/
+
 if (
     $avg('content') < 70
 ) {
-    $recommendations[] =
-        'Enrichir les pages importantes avec un contenu plus précis, structuré et orienté vers les intentions de recherche et les besoins clients.';
+    if (
+        $mostlySpa
+    ) {
+        $recommendations[] =
+            'Enrichir les pages importantes avec un contenu plus précis, structuré et orienté vers les intentions de recherche et les besoins clients. Une partie du contenu étant générée côté navigateur, cette analyse peut rester prudente.';
+    } else {
+        $recommendations[] =
+            'Enrichir les pages importantes avec un contenu plus précis, structuré et orienté vers les intentions de recherche et les besoins clients.';
+    }
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| SOCIAL
+|--------------------------------------------------------------------------
+*/
 
 if (
     $avg('social') < 70
@@ -2285,17 +2443,66 @@ if (
         'Compléter les balises Open Graph et les signaux sociaux pour mieux contrôler l’apparence des partages.';
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| STRUCTURE
+|--------------------------------------------------------------------------
+|
+| Pour une SPA majoritaire, le HTML initial ne reflète pas nécessairement
+| la structure réellement affichée dans le navigateur.
+|
+*/
+
 if (
-    $avg('structure') < 70
+    $avg('structure') < 70 &&
+    !$mostlySpa
 ) {
     $recommendations[] =
         'Améliorer la hiérarchie des titres et la structure HTML afin de rendre les pages plus lisibles pour les visiteurs et les moteurs.';
 }
 
-if (!$recommendations) {
+
+/*
+|--------------------------------------------------------------------------
+| CAS SPA
+|--------------------------------------------------------------------------
+|
+| Si une SPA est détectée et que la structure reste basse uniquement
+| parce que le rendu est effectué côté client, on ne génère pas de faux
+| signal structurel.
+|
+*/
+
+if (
+    $mostlySpa &&
+    $avg('structure') < 70 &&
+    count($recommendations) < 3
+) {
+    $recommendations[] =
+        'Vérifier le rendu du contenu côté navigateur et les éléments sémantiques générés après chargement JavaScript afin de garantir une bonne lecture par les moteurs.';
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| FALLBACK
+|--------------------------------------------------------------------------
+*/
+
+if (
+    !$recommendations
+) {
     $recommendations[] =
         'Le socle est solide. Les prochaines optimisations doivent viser les détails de conversion, de contenu et de performance.';
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| TOP 3
+|--------------------------------------------------------------------------
+*/
 
 $recommendations =
     array_slice(

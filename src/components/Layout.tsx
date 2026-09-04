@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Logo from "./Logo";
 
 const nav: [string, string][] = [
+  ["/creation-site-internet", "Création de site"],
   ["/services", "Services"],
+  ["/services/seo", "SEO"],
   ["/realisations", "Réalisations"],
-  ["/solutions", "Solutions"],
   ["/a-propos", "À propos"],
 ];
 
@@ -28,7 +29,6 @@ export default function Layout() {
       <header className="fixed inset-x-0 top-0 z-50 px-4 pt-4 sm:px-6 lg:px-8">
         <div
           className="
-            
             mx-auto flex max-w-7xl items-center justify-between
             rounded-full border border-black/10
             bg-white/95
@@ -41,7 +41,10 @@ export default function Layout() {
         >
           <Logo />
 
-          <nav className="hidden items-center gap-7 text-sm font-semibold text-black/55 lg:flex">
+          <nav
+            aria-label="Navigation principale"
+            className="hidden items-center gap-7 text-sm font-semibold text-black/55 lg:flex"
+          >
             {nav.map(([to, label]) => (
               <NavLink
                 key={to}
@@ -77,6 +80,8 @@ export default function Layout() {
             type="button"
             className="focus-ring rounded-full p-2 lg:hidden"
             onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-controls="mobile-navigation"
             aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
           >
             {open ? <X /> : <Menu />}
@@ -84,8 +89,14 @@ export default function Layout() {
         </div>
 
         {open && (
-          <div className="mx-auto mt-2 max-w-7xl rounded-3xl border border-black/10 bg-white p-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)] lg:hidden">
-            <nav className="grid gap-2">
+          <div
+            id="mobile-navigation"
+            className="mx-auto mt-2 max-w-7xl rounded-3xl border border-black/10 bg-white p-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)] lg:hidden"
+          >
+            <nav
+              aria-label="Navigation mobile"
+              className="grid gap-2"
+            >
               {nav.map(([to, label]) => (
                 <Link
                   key={to}
@@ -95,6 +106,20 @@ export default function Layout() {
                   {label}
                 </Link>
               ))}
+
+              <Link
+                to="/services/web"
+                className="rounded-2xl px-4 py-3 font-semibold hover:bg-black/5"
+              >
+                Conception & refonte web
+              </Link>
+
+              <Link
+                to="/services/maintenance"
+                className="rounded-2xl px-4 py-3 font-semibold hover:bg-black/5"
+              >
+                Maintenance de site
+              </Link>
 
               <Link
                 to="/audit"
@@ -115,8 +140,8 @@ export default function Layout() {
       </header>
 
       <main style={{ transform: "translateZ(0)" }}>
-  <Outlet />
-</main>
+        <Outlet />
+      </main>
 
       <footer className="border-t border-black/10 bg-white px-6 py-14 lg:px-8">
         <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-4">
@@ -125,8 +150,8 @@ export default function Layout() {
 
             <p className="mt-5 max-w-md text-sm leading-7 text-black/50">
               Vitrine+ accompagne les entreprises dans leur transformation
-              digitale : stratégie, web, visibilité, acquisition, identité,
-              automatisation et IA.
+              digitale : stratégie, création de sites internet, visibilité,
+              SEO, acquisition, identité, automatisation et IA.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -148,14 +173,33 @@ export default function Layout() {
 
           <div>
             <p className="text-xs font-bold uppercase tracking-[.2em] text-black/35">
-              Explorer
+              Vitrine+
             </p>
 
             <div className="mt-5 grid gap-3 text-sm font-semibold text-black/60">
-              <Link to="/services">Services</Link>
-              <Link to="/realisations">Réalisations</Link>
-              <Link to="/solutions">Solutions</Link>
-              <Link to="/a-propos">À propos</Link>
+              <Link to="/creation-site-internet">
+                Création de site internet
+              </Link>
+
+              <Link to="/services/web">
+                Conception & refonte web
+              </Link>
+
+              <Link to="/services/seo">
+                SEO & référencement naturel
+              </Link>
+
+              <Link to="/services/maintenance">
+                Maintenance de site internet
+              </Link>
+
+              <Link to="/audit">
+                Audit digital gratuit
+              </Link>
+
+              <Link to="/realisations">
+                Réalisations
+              </Link>
             </div>
           </div>
 
@@ -165,10 +209,29 @@ export default function Layout() {
             </p>
 
             <div className="mt-5 grid gap-3 text-sm font-semibold text-black/60">
-              <Link to="/audit">Audit gratuit</Link>
-              <Link to="/rendez-vous">Rendez-vous</Link>
-              <Link to="/contact">Contact</Link>
-              <Link to="/mentions-legales">Mentions légales</Link>
+              <Link to="/services">
+                Tous nos services
+              </Link>
+
+              <Link to="/solutions">
+                Nos solutions
+              </Link>
+
+              <Link to="/a-propos">
+                À propos de Vitrine+
+              </Link>
+
+              <Link to="/rendez-vous">
+                Prendre rendez-vous
+              </Link>
+
+              <Link to="/contact">
+                Nous contacter
+              </Link>
+
+              <Link to="/mentions-legales">
+                Mentions légales
+              </Link>
             </div>
           </div>
         </div>

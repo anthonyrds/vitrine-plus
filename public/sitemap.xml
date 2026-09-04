@@ -1,60 +1,72 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
 <urlset
   xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
 >
-  <url>
-    <loc>https://vitrineplus.fr/</loc>
-  </url>
 
   <url>
-    <loc>https://vitrineplus.fr/services</loc>
+    <loc>https://vitrineplus.fr/</loc>
+    <priority>1.0</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/creation-site-internet</loc>
+    <priority>0.95</priority>
   </url>
 
   <url>
-    <loc>https://vitrineplus.fr/services/web</loc>
+    <loc>https://vitrineplus.fr/services</loc>
+    <priority>0.90</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/services/seo</loc>
+    <priority>0.90</priority>
+  </url>
+
+  <url>
+    <loc>https://vitrineplus.fr/services/web</loc>
+    <priority>0.80</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/services/maintenance</loc>
+    <priority>0.75</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/services/ia</loc>
+    <priority>0.65</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/realisations</loc>
+    <priority>0.80</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/solutions</loc>
+    <priority>0.85</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/a-propos</loc>
+    <priority>0.60</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/audit</loc>
+    <priority>0.90</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/rendez-vous</loc>
+    <priority>0.80</priority>
   </url>
 
   <url>
     <loc>https://vitrineplus.fr/contact</loc>
+    <priority>0.70</priority>
   </url>
 
-  <url>
-    <loc>https://vitrineplus.fr/mentions-legales</loc>
-  </url>
 </urlset>

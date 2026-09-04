@@ -20,43 +20,43 @@ const standards = [
   {
     icon: Layout,
     title: "Une identité sur mesure",
-    text: "Votre site doit ressembler à votre entreprise, pas à un modèle utilisé par tout le monde.",
+    text: "Votre site internet doit ressembler à votre entreprise, pas à un modèle utilisé par tout le monde.",
   },
   {
     icon: Target,
     title: "Un objectif clair",
-    text: "Chaque page possède une fonction : présenter, rassurer, convaincre ou faire passer à l'action.",
+    text: "Chaque page possède une fonction : présenter votre activité, rassurer vos visiteurs, convaincre ou générer une prise de contact.",
   },
   {
     icon: Smartphone,
     title: "Pensé pour tous les écrans",
-    text: "Une expérience cohérente sur ordinateur, tablette et mobile.",
+    text: "Une expérience cohérente et confortable sur ordinateur, tablette et smartphone.",
   },
   {
     icon: Search,
     title: "Une base SEO solide",
-    text: "Structure sémantique, métadonnées, performances et fondations techniques pensées dès la conception.",
+    text: "Structure sémantique, balises, contenus, performances et fondations techniques sont pensés dès la conception.",
   },
   {
     icon: Gauge,
     title: "Rapide et performant",
-    text: "Nous limitons les éléments inutiles pour conserver une expérience fluide et agréable.",
+    text: "Nous limitons les éléments inutiles afin de conserver une expérience fluide et agréable pour vos visiteurs.",
   },
   {
     icon: Zap,
     title: "Conçu pour évoluer",
-    text: "Votre site doit pouvoir accompagner votre entreprise plutôt que devenir rapidement obsolète.",
+    text: "Votre site doit pouvoir accompagner le développement de votre entreprise plutôt que devenir rapidement obsolète.",
   },
 ];
 
 const websiteTypes = [
   {
     title: "Site vitrine",
-    text: "Présenter votre entreprise, vos services et votre savoir-faire avec une image professionnelle.",
+    text: "Présenter votre entreprise, vos services et votre savoir-faire avec une image professionnelle et une structure claire.",
   },
   {
-    title: "Refonte",
-    text: "Transformer un site vieillissant en une présence plus claire, moderne et efficace.",
+    title: "Refonte de site",
+    text: "Transformer un site vieillissant ou peu performant en une présence digitale plus moderne, claire et efficace.",
   },
   {
     title: "Landing page",
@@ -67,36 +67,93 @@ const websiteTypes = [
 const faqs = [
   [
     "Combien coûte la création d'un site internet ?",
-    "Chez Vitrine+, les solutions de création commencent à 790 €. Le tarif dépend du niveau de personnalisation, du contenu, des fonctionnalités et de l'accompagnement nécessaires.",
+    "Chez Vitrine+, les solutions de création commencent à 790 €. Le tarif dépend du niveau de personnalisation, du nombre de pages, du contenu, des fonctionnalités et de l'accompagnement nécessaires.",
   ],
   [
-    "Combien de temps faut-il pour créer un site ?",
-    "Le délai dépend du périmètre du projet, des contenus et des validations. Un projet simple peut être lancé en quelques semaines.",
+    "Combien de temps faut-il pour créer un site internet ?",
+    "Le délai dépend du périmètre du projet, des contenus disponibles et des validations. Un projet simple peut être lancé en quelques semaines. Nous définissons le calendrier dès le cadrage du projet.",
   ],
   [
     "Est-ce que le site sera adapté au mobile ?",
-    "Oui. Chaque projet est pensé pour offrir une expérience adaptée aux smartphones, tablettes et ordinateurs.",
+    "Oui. Chaque site internet est conçu en responsive design afin d'offrir une expérience adaptée aux smartphones, tablettes et ordinateurs.",
   ],
   [
-    "Le référencement est-il inclus ?",
-    "Une base SEO technique est intégrée à la conception. Un accompagnement SEO plus poussé peut ensuite être mis en place selon vos objectifs.",
+    "Le référencement naturel est-il inclus ?",
+    "Une base SEO technique est intégrée à la conception : structure des pages, hiérarchie des titres, métadonnées, performances et fondations techniques. Un accompagnement SEO plus poussé peut ensuite être mis en place selon vos objectifs.",
   ],
   [
     "Puis-je conserver mon nom de domaine actuel ?",
-    "Oui. Une création ou une refonte peut généralement être réalisée en conservant votre domaine existant.",
+    "Oui. Une création ou une refonte de site peut généralement être réalisée en conservant votre nom de domaine et votre adresse professionnelle.",
   ],
   [
     "Est-ce que vous pouvez refaire mon site actuel ?",
-    "Oui. Une refonte permet de repartir de l'existant tout en conservant ce qui fonctionne et en corrigeant ce qui freine votre présence en ligne.",
+    "Oui. Une refonte permet de repartir de l'existant tout en conservant ce qui fonctionne et en corrigeant ce qui freine votre visibilité, votre image ou votre conversion.",
+  ],
+  [
+    "Quel type de site internet pouvez-vous créer ?",
+    "Vitrine+ peut concevoir notamment des sites vitrines professionnels, des sites destinés aux entreprises et indépendants, des pages de présentation d'offres et des expériences web personnalisées.",
+  ],
+  [
+    "Le site sera-t-il optimisé pour Google ?",
+    "La conception intègre les fondamentaux nécessaires à une bonne compréhension du site par les moteurs de recherche : structure HTML, hiérarchie des contenus, métadonnées, liens internes, responsive design et performances.",
+  ],
+  [
+    "Est-ce que vous rédigez également les contenus ?",
+    "Le contenu peut être travaillé dans le cadre du projet afin de clarifier votre offre, votre positionnement et les informations essentielles pour vos visiteurs. L'objectif est de produire des contenus utiles à la fois pour vos prospects et pour votre visibilité.",
   ],
   [
     "Que se passe-t-il après la mise en ligne ?",
-    "Vous pouvez continuer à faire évoluer votre site avec Vitrine+. Notre accompagnement V+ Care permet notamment d'assurer sa maintenance et son suivi.",
+    "Votre site peut continuer à évoluer avec Vitrine+. Notre accompagnement V+ Care permet notamment d'assurer sa maintenance et son suivi.",
   ],
   [
     "Puis-je prendre rendez-vous avant de commencer ?",
     "Oui. Vous pouvez réserver directement un créneau avec Vitrine+ afin de parler de votre entreprise, de votre site actuel et de vos objectifs.",
   ],
+];
+
+const process = [
+  [
+    "01",
+    "Analyser",
+    "Nous comprenons votre entreprise, votre cible, votre positionnement et votre situation digitale actuelle.",
+  ],
+  [
+    "02",
+    "Structurer",
+    "Nous organisons les pages, les contenus et les parcours afin que l'information soit immédiatement compréhensible.",
+  ],
+  [
+    "03",
+    "Concevoir",
+    "Nous créons une direction visuelle cohérente avec votre identité, votre marché et votre positionnement.",
+  ],
+  [
+    "04",
+    "Développer",
+    "Nous construisons une expérience responsive, performante et techniquement propre.",
+  ],
+  [
+    "05",
+    "Optimiser",
+    "Nous travaillons les fondamentaux SEO, les performances, l'expérience utilisateur et les points de conversion.",
+  ],
+  [
+    "06",
+    "Lancer",
+    "Votre site est mis en ligne et peut ensuite continuer à évoluer avec votre entreprise.",
+  ],
+];
+
+const benefits = [
+  "Une identité digitale cohérente",
+  "Une navigation claire",
+  "Une expérience mobile soignée",
+  "Une structure pensée pour le référencement naturel",
+  "Des appels à l'action visibles",
+  "Une base technique performante",
+  "Des contenus organisés pour vos visiteurs",
+  "Un site évolutif",
+  "Un accompagnement après la mise en ligne",
 ];
 
 export default function CreationSiteInternet() {
@@ -112,19 +169,23 @@ export default function CreationSiteInternet() {
         eyebrow="Création de site internet"
         title={
           <>
-            Votre site doit faire
+            Création de site internet.
             <br />
-            <span className="text-black/30">plus que vous présenter.</span>
+            <span className="text-black/30">
+              Votre site doit faire plus que vous présenter.
+            </span>
           </>
         }
-        text="Vitrine+ conçoit des sites internet professionnels qui associent stratégie, design, performance, référencement et conversion pour donner à votre entreprise une présence digitale à la hauteur de son ambition."
+        text="Vitrine+ conçoit des sites internet professionnels qui associent stratégie, design, performance, référencement naturel et conversion pour donner à votre entreprise une présence digitale à la hauteur de son ambition."
       />
+
+      {/* INTRODUCTION SEO */}
 
       <section className="px-6 pb-24 lg:px-8 lg:pb-36">
         <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1.1fr_.9fr] lg:items-end">
           <div>
             <SectionLabel>
-              Création & refonte
+              Création & refonte de site internet
             </SectionLabel>
 
             <h2 className="display mt-6 max-w-4xl text-4xl font-extrabold leading-[1.02] sm:text-6xl">
@@ -138,9 +199,16 @@ export default function CreationSiteInternet() {
 
           <div>
             <p className="text-lg leading-8 text-black/55">
-              Votre site est souvent le premier contact entre votre entreprise
-              et un futur client. Il doit immédiatement expliquer qui vous êtes,
-              ce que vous proposez et pourquoi vous choisir.
+              Votre site internet est souvent le premier contact entre votre
+              entreprise et un futur client. Il doit immédiatement expliquer
+              qui vous êtes, ce que vous proposez et pourquoi vous choisir.
+            </p>
+
+            <p className="mt-5 text-base leading-8 text-black/50">
+              C'est pourquoi Vitrine+ ne se limite pas à créer un site web
+              esthétique. Nous travaillons sa structure, son expérience
+              utilisateur, ses contenus, sa visibilité dans les moteurs de
+              recherche et ses parcours de conversion.
             </p>
 
             <Link
@@ -153,6 +221,66 @@ export default function CreationSiteInternet() {
           </div>
         </div>
       </section>
+
+      {/* POURQUOI UN SITE PROFESSIONNEL */}
+
+      <section className="bg-[#f5f5f2] px-6 py-24 lg:px-8 lg:py-36">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[.8fr_1.2fr]">
+            <div>
+              <SectionLabel>
+                Pourquoi créer un site internet professionnel ?
+              </SectionLabel>
+
+              <h2 className="display mt-6 text-4xl font-extrabold leading-[1.02] sm:text-6xl">
+                Votre présence en ligne
+                <br />
+                <span className="text-black/30">
+                  travaille aussi pour vous.
+                </span>
+              </h2>
+            </div>
+
+            <div className="space-y-6 text-lg leading-8 text-black/55">
+              <p>
+                Un site internet professionnel ne sert pas uniquement à
+                afficher vos coordonnées. Il permet de présenter votre
+                entreprise, vos services, vos réalisations et votre expertise
+                tout en donnant à vos visiteurs les informations nécessaires
+                pour passer à l'action.
+              </p>
+
+              <p>
+                Il constitue également une base importante pour votre
+                visibilité sur Google. Une architecture claire, des contenus
+                pertinents, une bonne hiérarchie des titres, des performances
+                correctes et une expérience mobile de qualité facilitent la
+                compréhension de votre site par les moteurs de recherche et
+                par vos visiteurs.
+              </p>
+
+              <p>
+                Enfin, votre site doit inspirer confiance. Design, messages,
+                preuves, navigation et appels à l'action doivent fonctionner
+                ensemble pour transformer une simple visite en prise de
+                contact, demande de devis ou rendez-vous.
+              </p>
+
+              <div className="pt-4">
+                <Link
+                  to="/services/seo"
+                  className="inline-flex items-center gap-2 text-sm font-bold"
+                >
+                  Découvrir notre approche SEO
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* STANDARD */}
 
       <section className="bg-[#080808] px-6 py-24 text-white lg:px-8 lg:py-36">
         <div className="mx-auto max-w-7xl">
@@ -195,13 +323,31 @@ export default function CreationSiteInternet() {
         </div>
       </section>
 
+      {/* TYPES DE SITES */}
+
       <section className="px-6 py-24 lg:px-8 lg:py-36">
         <div className="mx-auto max-w-7xl">
           <SectionLabel>
-            Ce que nous créons
+            Les types de projets
           </SectionLabel>
 
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
+          <div className="mt-8 max-w-3xl">
+            <h2 className="display text-4xl font-extrabold leading-[1.02] sm:text-6xl">
+              Un site adapté
+              <br />
+              <span className="text-black/30">
+                à votre objectif.
+              </span>
+            </h2>
+
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-black/50">
+              Chaque entreprise n'a pas besoin du même site. Nous adaptons la
+              structure, le contenu et le parcours à votre activité et à
+              l'objectif que vous souhaitez atteindre.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
             {websiteTypes.map((item, index) => (
               <article
                 key={item.title}
@@ -232,6 +378,8 @@ export default function CreationSiteInternet() {
         </div>
       </section>
 
+      {/* PROCESS */}
+
       <section className="bg-[#f5f5f2] px-6 py-24 lg:px-8 lg:py-36">
         <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[.75fr_1.25fr]">
           <div>
@@ -246,41 +394,16 @@ export default function CreationSiteInternet() {
                 Une direction claire.
               </span>
             </h2>
+
+            <p className="mt-7 max-w-md text-lg leading-8 text-black/50">
+              Une création de site internet efficace commence bien avant le
+              développement. Chaque étape sert à construire une présence
+              digitale cohérente avec votre entreprise.
+            </p>
           </div>
 
           <div className="grid gap-0">
-            {[
-              [
-                "01",
-                "Analyser",
-                "Nous comprenons votre entreprise, votre cible et votre situation actuelle.",
-              ],
-              [
-                "02",
-                "Structurer",
-                "Nous organisons le contenu et le parcours pour que l'information soit immédiatement compréhensible.",
-              ],
-              [
-                "03",
-                "Concevoir",
-                "Nous créons une direction visuelle cohérente avec votre positionnement.",
-              ],
-              [
-                "04",
-                "Développer",
-                "Nous construisons une expérience responsive, performante et techniquement propre.",
-              ],
-              [
-                "05",
-                "Optimiser",
-                "Nous travaillons les fondamentaux SEO, la performance et les points de conversion.",
-              ],
-              [
-                "06",
-                "Lancer",
-                "Votre site est mis en ligne et peut ensuite continuer à évoluer avec votre entreprise.",
-              ],
-            ].map(([number, title, text]) => (
+            {process.map(([number, title, text]) => (
               <div
                 key={number}
                 className="grid gap-4 border-t border-black/10 py-7 sm:grid-cols-[70px_180px_1fr] sm:items-start"
@@ -302,7 +425,61 @@ export default function CreationSiteInternet() {
         </div>
       </section>
 
+      {/* SEO */}
+
       <section className="px-6 py-24 lg:px-8 lg:py-36">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[.8fr_1.2fr]">
+            <div>
+              <SectionLabel>
+                Création de site & référencement naturel
+              </SectionLabel>
+
+              <h2 className="display mt-6 text-4xl font-extrabold leading-[1.02] sm:text-6xl">
+                Un site conçu
+                <br />
+                <span className="text-black/30">
+                  pour être trouvé.
+                </span>
+              </h2>
+            </div>
+
+            <div className="space-y-6 text-lg leading-8 text-black/55">
+              <p>
+                Le référencement naturel ne doit pas être ajouté après la
+                création du site internet. Les fondations SEO doivent être
+                pensées dès la conception : architecture des pages, titres,
+                contenus, maillage interne, données structurées, performances
+                et expérience mobile.
+              </p>
+
+              <p>
+                Notre objectif est de construire un site que vos visiteurs
+                comprennent facilement et que les moteurs de recherche peuvent
+                également interpréter correctement.
+              </p>
+
+              <p>
+                La création du site constitue ainsi une première étape. Selon
+                vos objectifs, elle peut ensuite être complétée par un
+                accompagnement en référencement naturel et en visibilité.
+              </p>
+
+              <Link
+                to="/services/seo"
+                className="inline-flex items-center gap-2 text-sm font-bold"
+              >
+                Voir le service SEO
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BENEFICES */}
+
+      <section className="bg-[#080808] px-6 py-24 text-white lg:px-8 lg:py-36">
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-12 lg:grid-cols-[.8fr_1.2fr]">
             <div>
@@ -313,27 +490,25 @@ export default function CreationSiteInternet() {
               <h2 className="display mt-6 text-4xl font-extrabold sm:text-6xl">
                 Un site pensé autour de votre entreprise.
               </h2>
+
+              <p className="mt-7 max-w-lg text-lg leading-8 text-white/45">
+                Une présence digitale ne se résume pas à son apparence.
+                Chaque détail doit participer à une expérience cohérente et
+                utile.
+              </p>
             </div>
 
             <div className="grid gap-3">
-              {[
-                "Une identité digitale cohérente",
-                "Une navigation claire",
-                "Une expérience mobile soignée",
-                "Une structure pensée pour le référencement",
-                "Des appels à l'action visibles",
-                "Une base technique performante",
-                "Un site évolutif",
-                "Un accompagnement après la mise en ligne",
-              ].map((item) => (
+              {benefits.map((item) => (
                 <div
                   key={item}
-                  className="flex items-center gap-3 border-t border-black/10 py-4 text-black/65"
+                  className="flex items-center gap-3 border-t border-white/10 py-4 text-white/65"
                 >
                   <Check
                     size={18}
                     className="shrink-0 text-[#c8a45d]"
                   />
+
                   {item}
                 </div>
               ))}
@@ -341,6 +516,69 @@ export default function CreationSiteInternet() {
           </div>
         </div>
       </section>
+
+      {/* CONTENU COMMERCIAL */}
+
+      <section className="px-6 py-24 lg:px-8 lg:py-36">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[1.1fr_.9fr]">
+            <div>
+              <SectionLabel>
+                Un site qui travaille pour votre activité
+              </SectionLabel>
+
+              <h2 className="display mt-6 text-4xl font-extrabold leading-[1.02] sm:text-6xl">
+                Transformer une visite
+                <br />
+                <span className="text-black/30">
+                  en opportunité.
+                </span>
+              </h2>
+            </div>
+
+            <div className="space-y-6 text-lg leading-8 text-black/55">
+              <p>
+                Un visiteur arrive sur votre site avec une question. En
+                quelques secondes, il doit comprendre votre activité, votre
+                proposition de valeur et la prochaine étape à suivre.
+              </p>
+
+              <p>
+                Une bonne création de site internet prend donc en compte le
+                parcours complet : accroche, informations essentielles,
+                preuves, services, réponses aux objections et appel à l'action.
+              </p>
+
+              <p>
+                Le design sert ce parcours. Le contenu le rend compréhensible.
+                La technique le rend rapide. Le SEO permet de développer sa
+                visibilité. La conversion transforme cette visibilité en
+                opportunités commerciales.
+              </p>
+
+              <div className="flex flex-wrap gap-3 pt-3">
+                <Link
+                  to="/solutions"
+                  className="inline-flex items-center gap-2 rounded-full border border-black/10 px-5 py-3 text-sm font-bold transition hover:border-[#c8a45d]"
+                >
+                  Découvrir les solutions
+                  <ArrowRight size={16} />
+                </Link>
+
+                <Link
+                  to="/rendez-vous"
+                  className="inline-flex items-center gap-2 rounded-full bg-[#080808] px-5 py-3 text-sm font-bold !text-white transition hover:bg-[#c8a45d] hover:!text-black"
+                >
+                  Prendre rendez-vous
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
 
       <section className="bg-[#080808] px-6 py-24 text-white lg:px-8 lg:py-32">
         <div className="mx-auto max-w-5xl">
@@ -378,6 +616,8 @@ export default function CreationSiteInternet() {
           </div>
         </div>
       </section>
+
+      {/* CTA */}
 
       <CTA
         title="Votre entreprise mérite un site à sa hauteur."

@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
 
+Disallow: /vitrine-mail-config.php
+Disallow: /.data/
+Disallow: /vitrine-data/
+
 Sitemap: https://vitrineplus.fr/sitemap.xml

@@ -43,7 +43,7 @@ export default function About() {
     <>
       <SEO
         title="À propos de Vitrine+ — Agence digitale indépendante"
-        description="Vitrine+ est une agence digitale indépendante qui transforme les présences en ligne en outils commerciaux : stratégie, web, SEO et conversion."
+        description="Vitrine+ est une agence digitale indépendante qui transforme les présences en ligne en outils commerciaux grâce à la stratégie, au web, au SEO et à la conversion."
         canonical="/a-propos"
       />
 
@@ -64,7 +64,7 @@ export default function About() {
       <section className="bg-[#080808] px-6 py-24 text-white lg:px-8 lg:py-36">
         <div className="mx-auto grid max-w-7xl gap-5 md:grid-cols-3">
           {principles.map(([Icon, title, text]) => (
-            <div
+            <article
               key={title as string}
               className="rounded-3xl border border-white/10 p-8"
             >
@@ -73,14 +73,14 @@ export default function About() {
                 size={30}
               />
 
-              <h3 className="display mt-14 text-3xl font-extrabold">
+              <h2 className="display mt-14 text-3xl font-extrabold">
                 {title as string}
-              </h3>
+              </h2>
 
               <p className="mt-3 leading-7 text-white/50">
                 {text as string}
               </p>
-            </div>
+            </article>
           ))}
         </div>
       </section>
@@ -99,11 +99,26 @@ export default function About() {
           </h2>
 
           <p className="mt-8 max-w-3xl text-lg leading-8 text-black/55">
-            Cela signifie commencer par vos objectifs, comprendre
-            ce qui bloque aujourd’hui, puis choisir la bonne
-            combinaison de stratégie, design, technologie,
-            visibilité et automatisation.
+            Cela signifie commencer par vos objectifs, comprendre ce qui
+            bloque aujourd’hui, puis choisir la bonne combinaison de stratégie,
+            design, technologie, visibilité et automatisation.
           </p>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              to="/creation-site-internet"
+              className="rounded-full bg-[#080808] px-5 py-3 text-sm font-bold !text-white transition hover:bg-[#c8a45d] hover:!text-[#080808]"
+            >
+              Découvrir la création de site
+            </Link>
+
+            <Link
+              to="/audit"
+              className="rounded-full border border-black/10 px-5 py-3 text-sm font-bold transition hover:bg-black/5"
+            >
+              Faire un audit gratuit
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -119,11 +134,11 @@ export default function About() {
 
           <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {method.map(([number, title, text]) => (
-              <div
+              <article
                 key={number}
-                className="rounded-3xl bg-white p-7"
+                className="rounded-3xl border border-black/10 bg-white p-7"
               >
-                <span className="text-xs font-bold tracking-[.2em] text-[#c8a45d]">
+                <span className="text-xs font-bold tracking-[.2em] text-[#b08a45]">
                   {number}
                 </span>
 
@@ -131,26 +146,70 @@ export default function About() {
                   {title}
                 </h3>
 
-                <p className="mt-2 text-sm text-black/45">
+                <p className="mt-3 text-sm leading-7 text-black/50">
                   {text}
                 </p>
-              </div>
+              </article>
             ))}
           </div>
-
-          <Link
-            to="/audit"
-            className="mt-8 inline-flex items-center gap-2 text-sm font-bold"
-          >
-            Commencer par un audit
-          </Link>
         </div>
       </section>
 
-      <CTA
-        title="Construisons quelque chose d’utile."
-        text="Parlez-nous de votre entreprise, de votre problème ou simplement de votre idée. Le premier échange sert à cadrer, pas à vous vendre une solution toute faite."
-      />
+      <section className="px-6 py-24 lg:px-8 lg:py-36">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2">
+          <div>
+            <SectionLabel>
+              Une approche globale
+            </SectionLabel>
+
+            <h2 className="display mt-6 text-4xl font-extrabold leading-[1.02] sm:text-6xl">
+              Du premier diagnostic
+              <span className="block text-black/30">
+                jusqu’à l’accélération.
+              </span>
+            </h2>
+          </div>
+
+          <div className="space-y-6 text-lg leading-8 text-black/55">
+            <p>
+              Une présence digitale efficace ne repose pas uniquement sur un
+              beau site. Elle doit être compréhensible, visible, rapide et
+              orientée vers l’action.
+            </p>
+
+            <p>
+              C’est pourquoi Vitrine+ travaille sur l’ensemble du parcours :
+              positionnement, expérience utilisateur, conception web,
+              référencement naturel, conversion et évolution du site.
+            </p>
+
+            <div className="flex flex-wrap gap-3 pt-2">
+              <Link
+                to="/services"
+                className="rounded-full border border-black/10 px-5 py-3 text-sm font-bold transition hover:bg-black/5"
+              >
+                Voir nos services
+              </Link>
+
+              <Link
+                to="/solutions"
+                className="rounded-full border border-black/10 px-5 py-3 text-sm font-bold transition hover:bg-black/5"
+              >
+                Découvrir nos solutions
+              </Link>
+
+              <Link
+                to="/rendez-vous"
+                className="rounded-full bg-[#080808] px-5 py-3 text-sm font-bold !text-white transition hover:bg-[#c8a45d] hover:!text-[#080808]"
+              >
+                Prendre rendez-vous
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <CTA />
     </>
   );
 }
