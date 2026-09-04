@@ -6,7 +6,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('X-Content-Type-Options: nosniff');
 
 const ADMIN_EMAIL = 'vitrineplus@hotmail.com';
-const FROM_EMAIL = 'no-reply@vitrineplus.fr';
+const FROM_EMAIL = 'contact@vitrineplus.fr';
 const TIMEZONE = 'Europe/Paris';
 const OPEN_MINUTE = 9 * 60;
 const CLOSE_MINUTE = 18 * 60;
