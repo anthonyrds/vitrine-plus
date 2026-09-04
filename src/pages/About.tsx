@@ -43,7 +43,7 @@ export default function About() {
     <>
       <SEO
         title="À propos de Vitrine+ — Agence digitale indépendante"
-        description="Vitrine+ transforme les présences en ligne en outils commerciaux : stratégie, web, SEO, conversion, IA et automatisation."
+        description="Vitrine+ est une agence digitale indépendante qui transforme les présences en ligne en outils commerciaux : stratégie, web, SEO et conversion."
         canonical="/a-propos"
       />
 

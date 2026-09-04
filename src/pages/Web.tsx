@@ -8,8 +8,8 @@ export default function Web() {
   return (
     <>
       <SEO
-        title="Création de sites web — Design, UX & performance | Vitrine+"
-        description="Vitrine+ conçoit des sites web rapides, premium et optimisés pour l'expérience utilisateur, le référencement naturel et la conversion."
+        title="Création de site internet — Design, SEO & conversion | Vitrine+"
+        description="Vitrine+ conçoit des sites internet professionnels, rapides et optimisés pour le SEO, l’expérience utilisateur et la conversion."
         canonical="/services/web"
       />
 

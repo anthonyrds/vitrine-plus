@@ -25,34 +25,111 @@ const faqs = [
     "Nos solutions démarrent à 790 €. Le prix dépend du niveau de personnalisation, du contenu, des fonctionnalités et de l’accompagnement souhaité.",
   ],
   [
-    "Combien de temps faut-il ?",
-    "Un site simple peut être lancé en quelques semaines. Le calendrier exact est défini après cadrage selon le périmètre du projet.",
+    "Combien de temps faut-il pour créer un site ?",
+    "Un site simple peut être lancé en quelques semaines. Le calendrier exact est défini après cadrage selon le périmètre du projet, les contenus et les validations nécessaires.",
   ],
   [
-    "Puis-je prendre rendez-vous directement ?",
-    "Oui. Choisissez directement une date et une heure. Nous vous appellerons au numéro indiqué.",
+    "Est-ce que vous vous occupez de mon nom de domaine ?",
+    "Oui. Nous pouvons vous accompagner pour la mise en place ou la configuration de votre nom de domaine et de l’hébergement. Vous restez propriétaire de vos accès et de vos actifs.",
+  ],
+  [
+    "Puis-je conserver mon site et mon nom de domaine actuels ?",
+    "Oui. Une refonte peut être réalisée à partir de votre existant. Nous évaluons d’abord ce qui mérite d’être conservé, amélioré ou remplacé.",
+  ],
+  [
+    "Qui rédige les textes du site ?",
+    "Nous pouvons travailler à partir de vos contenus existants, les structurer et les améliorer, ou vous accompagner dans leur rédaction selon le périmètre du projet.",
+  ],
+  [
+    "Qui fournit les photos et visuels ?",
+    "Vous pouvez fournir vos propres visuels. Nous pouvons également vous guider sur les besoins iconographiques et la direction visuelle du site.",
+  ],
+  [
+    "Le site sera-t-il adapté au mobile ?",
+    "Oui. Chaque site est conçu pour fonctionner sur mobile, tablette et ordinateur avec une expérience adaptée à chaque écran.",
+  ],
+  [
+    "Le référencement naturel est-il inclus ?",
+    "Une base SEO technique est intégrée aux projets web. Pour aller plus loin, Vitrine+ propose également un accompagnement SEO dédié.",
+  ],
+  [
+    "Que se passe-t-il après la mise en ligne ?",
+    "Le projet ne s’arrête pas nécessairement à la livraison. Vous pouvez continuer avec V+ Care pour la maintenance et l’accompagnement de votre site.",
+  ],
+  [
+    "Puis-je demander des modifications après la livraison ?",
+    "Oui. Les modalités dépendent de votre projet et de votre formule d’accompagnement. Des évolutions peuvent être planifiées au besoin.",
+  ],
+  [
+    "Est-ce que je peux modifier mon site moi-même ?",
+    "Cela dépend de la technologie et de la configuration retenues. Nous vous expliquons le fonctionnement de votre projet et pouvons prendre en charge les modifications pour vous.",
+  ],
+  [
+    "Que comprend la maintenance V+ Care ?",
+    "V+ Care couvre selon la formule la maintenance technique, les mises à jour, les sauvegardes, la sécurité, la surveillance et les petites interventions nécessaires au bon fonctionnement du site.",
+  ],
+  [
+    "Puis-je faire évoluer mon site plus tard ?",
+    "Oui. Un bon site doit pouvoir évoluer avec votre entreprise. Nous pouvons ajouter de nouvelles pages, fonctionnalités, parcours ou optimisations au fil de vos besoins.",
   ],
   [
     "Travaillez-vous partout en France ?",
     "Oui. Les échanges et le suivi peuvent être réalisés à distance, avec le même niveau d’accompagnement.",
   ],
+  [
+    "Comment se déroule le premier échange ?",
+    "Nous commençons par comprendre votre entreprise, votre situation et votre objectif. Le premier échange sert à cadrer votre besoin et à déterminer si Vitrine+ est la bonne solution.",
+  ],
+  [
+    "Comment fonctionne le paiement ?",
+    "Les modalités de paiement sont définies avant le démarrage du projet et précisées dans le devis. Aucun projet ne commence sans validation claire du périmètre.",
+  ],
+  [
+    "Puis-je prendre rendez-vous directement ?",
+    "Oui. Choisissez directement une date et une heure. Nous vous appellerons au numéro indiqué.",
+  ],
 ];
 
 const method = [
-  ["01", "Révéler", "Audit et compréhension de l’existant."],
-  ["02", "Positionner", "Clarifier votre offre, votre message et votre cible."],
-  ["03", "Concevoir", "UX, direction artistique et parcours."],
-  ["04", "Construire", "Développement, SEO technique et performance."],
-  ["05", "Convertir", "CTA, formulaires et parcours commerciaux."],
-  ["06", "Accélérer", "SEO, contenu, automatisation et amélioration continue."],
+  [
+    "01",
+    "Révéler",
+    "Nous analysons l’existant, vos objectifs et les points qui freinent aujourd’hui votre présence digitale.",
+  ],
+  [
+    "02",
+    "Positionner",
+    "Nous clarifions votre offre, votre message, votre cible et la place que votre entreprise doit prendre en ligne.",
+  ],
+  [
+    "03",
+    "Concevoir",
+    "Nous construisons l’architecture, l’expérience utilisateur et la direction artistique avant de développer.",
+  ],
+  [
+    "04",
+    "Construire",
+    "Nous développons un site responsive, rapide, structuré pour le SEO et pensé pour rester maintenable.",
+  ],
+  [
+    "05",
+    "Convertir",
+    "Nous travaillons les appels à l’action, les formulaires et les parcours qui transforment une visite en prise de contact.",
+  ],
+  [
+    "06",
+    "Accélérer",
+    "Après la mise en ligne, nous pouvons poursuivre avec SEO, contenu, maintenance et amélioration continue.",
+  ],
 ];
+
 
 export default function Home() {
   return (
     <>
       <SEO
-        title="Vitrine+ — Agence digitale | Votre entreprise. En mieux."
-        description="Vitrine+ transforme votre présence digitale en véritable outil commercial : stratégie, création web, SEO, acquisition, IA et automatisation."
+        title="Vitrine+ — Création de sites internet & visibilité"
+        description="Vitrine+ crée des sites internet professionnels et accompagne les entreprises en SEO, visibilité et conversion. Audit digital gratuit et rendez-vous en ligne."
         canonical="/"
       />
 

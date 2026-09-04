@@ -124,7 +124,7 @@ export default function Realisations() {
     <main className="min-h-screen bg-white text-[#171717]">
       <SEO
   title="Réalisations — Projets web & identité digitale | Vitrine+"
-  description="Découvrez les réalisations et projets conceptuels de Vitrine+ : création web, webdesign, identité visuelle, SEO et expériences digitales."
+  description="Découvrez les projets conceptuels de Vitrine+ : création de sites internet, webdesign, identité visuelle, SEO et expériences digitales."
   canonical="/realisations"
        />
       {/* HERO */}

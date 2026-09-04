@@ -5,6 +5,7 @@ import Layout from "./components/Layout";
 const Home = lazy(() => import("./pages/Home"));
 const Services = lazy(() => import("./pages/Services"));
 const Web = lazy(() => import("./pages/Web"));
+const Maintenance = lazy(() => import("./pages/Maintenance"));
 const SEO = lazy(() => import("./pages/SEO"));
 const AI = lazy(() => import("./pages/AI"));
 const Realisations = lazy(() => import("./pages/Realisations"));
@@ -33,6 +34,7 @@ export default function App() {
 
           <Route path="/services" element={<Services />} />
           <Route path="/services/web" element={<Web />} />
+          <Route path="/services/maintenance" element={<Maintenance />} />
           <Route path="/services/seo" element={<SEO />} />
           <Route path="/services/ia" element={<AI />} />
 

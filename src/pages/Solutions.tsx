@@ -59,8 +59,8 @@ export default function Solutions() {
   return (
     <>
       <SEO
-        title="Solutions digitales — Start, Grow & Scale | Vitrine+"
-        description="Découvrez les solutions Vitrine+ : Start, Grow et Scale pour professionnaliser votre présence, développer votre acquisition et faire évoluer votre écosystème digital."
+        title="Tarifs & solutions — Création de site internet | Vitrine+"
+        description="Découvrez les solutions START, GROW et SCALE de Vitrine+ pour créer, développer et faire évoluer votre présence digitale."
         canonical="/solutions"
       />
 
@@ -182,29 +182,35 @@ export default function Solutions() {
       <section className="bg-[#f5f5f2] px-6 py-24 lg:px-8 lg:py-32">
         <div className="mx-auto max-w-7xl">
           <SectionLabel>
-            Après le lancement
+            V+ Care
           </SectionLabel>
 
-          <h2 className="display mt-5 text-4xl font-extrabold sm:text-6xl">
-            Votre présence digitale peut continuer à évoluer.
+          <h2 className="display mt-5 max-w-4xl text-4xl font-extrabold sm:text-6xl">
+            Votre site ne s’arrête pas à sa mise en ligne.
           </h2>
+
+          <p className="mt-6 max-w-3xl text-lg leading-8 text-black/55">
+            Un site professionnel doit rester sécurisé, stable et à jour.
+            Choisissez le niveau de suivi adapté à votre entreprise et gardez
+            un interlocuteur unique lorsque votre site doit évoluer.
+          </p>
 
           <div className="mt-12 grid gap-5 md:grid-cols-3">
             {[
               [
                 "CARE",
                 "49 €/mois",
-                "Maintenance, sécurité, sauvegardes et petites interventions.",
+                "Maintenance technique, sécurité, sauvegardes, surveillance et petites interventions.",
               ],
               [
                 "GROWTH",
                 "149 €/mois",
-                "Maintenance + SEO + visibilité locale + optimisation continue.",
+                "Maintenance + SEO + visibilité locale + optimisations régulières pour faire progresser votre présence.",
               ],
               [
                 "PERFORMANCE",
                 "299 €/mois+",
-                "SEO, contenu, acquisition, automatisation et stratégie.",
+                "Accompagnement global : SEO, contenu, acquisition, évolutions et suivi stratégique.",
               ],
             ].map(([name, price, description]) => (
               <div
@@ -225,6 +231,13 @@ export default function Solutions() {
               </div>
             ))}
           </div>
+
+          <Link
+            to="/services/maintenance"
+            className="mt-8 inline-flex rounded-full bg-[#080808] px-5 py-3 text-sm font-bold !text-white transition hover:bg-[#c8a45d] hover:!text-black"
+          >
+            Voir le détail de V+ Care
+          </Link>
         </div>
       </section>
 
