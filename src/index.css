@@ -96,3 +96,17 @@ button:disabled {
     transform: none;
   }
 }
+
+/* TEST PERFORMANCE SAFARI */
+@media (max-width: 767px) {
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
