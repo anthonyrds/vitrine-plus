@@ -123,3 +123,10 @@ button:disabled {
     filter: none !important;
   }
 }
+
+@media (max-width: 1023px) {
+  header > div > div {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
