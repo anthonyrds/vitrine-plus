@@ -31,7 +31,7 @@ export default function Services() {
             number="01"
             title="Création web"
             text="Sites vitrines, plateformes et expériences web pensées pour la conversion."
-            to="/services/web"
+            to="/creation-site-internet"
           />
 
           <ServiceCard
