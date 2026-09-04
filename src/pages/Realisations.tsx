@@ -152,11 +152,11 @@ export default function Realisations() {
               >
                 {/* VISUEL */}
                 <div className="relative aspect-[16/10] overflow-hidden bg-[#eeeae3]">
-                  <div className="absolute inset-0 bg-gradient-to-br from-[#f8f5ef] via-[#e8e1d5] to-[#d8c8aa] transition-transform duration-700 group-hover:scale-105" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#f8f5ef] via-[#e8e1d5] to-[#d8c8aa] transition-transform duration-700 group-hover:scale-105 md:will-change-transform" />
 
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center">
-                      <span className="mb-4 inline-flex rounded-full border border-black/10 bg-white/60 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] backdrop-blur">
+                      <span className="mb-4 inline-flex rounded-full border border-black/10 bg-white/90 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em]">
                         Projet conceptuel
                       </span>
 
@@ -166,7 +166,7 @@ export default function Realisations() {
                     </div>
                   </div>
 
-                  <div className="absolute left-6 top-6 flex h-10 w-10 items-center justify-center rounded-full bg-white/70 text-xs font-semibold backdrop-blur">
+                  <div className="absolute left-6 top-6 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-xs font-semibold">
                     0{index + 1}
                   </div>
 
@@ -257,7 +257,7 @@ export default function Realisations() {
               </button>
 
               <div className="relative z-10 max-w-3xl">
-                <span className="inline-flex rounded-full border border-black/10 bg-white/60 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] backdrop-blur">
+                <span className="inline-flex rounded-full border border-black/10 bg-white/90 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em]">
                   Projet conceptuel
                 </span>
 
