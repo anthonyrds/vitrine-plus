@@ -1075,89 +1075,70 @@ function analyzePage(
     array $fetch,
     string $rootHost
 ): array {
-    $html =
-        (string) $fetch['body'];
 
-    $text =
-        extractText($html);
+    $html = (string) $fetch['body'];
 
-    $title =
-        firstMatch(
-            $html,
-            '/<title\b[^>]*>(.*?)<\/title>/is'
-        );
+    $text = extractText($html);
 
-    $description =
-        metaContent(
-            $html,
-            'name',
-            'description'
-        );
+    /*
+    |--------------------------------------------------------------------------
+    | META
+    |--------------------------------------------------------------------------
+    */
 
-    $lang =
-        firstMatch(
-            $html,
-            '/<html\b[^>]*\blang\s*=\s*["\']([^"\']+)["\']/i'
-        );
+    $title = firstMatch(
+        $html,
+        '/<title\b[^>]*>(.*?)<\/title>/is'
+    );
 
-    $canonical =
-        firstMatch(
-            $html,
-            '/<link\b[^>]*\brel\s*=\s*["\']canonical["\'][^>]*\bhref\s*=\s*["\']([^"\']+)["\']/i'
-        );
+    $description = metaContent(
+        $html,
+        'name',
+        'description'
+    );
 
-    $h1 =
-        countTag(
-            $html,
-            'h1'
-        );
+    $lang = firstMatch(
+        $html,
+        '/<html\b[^>]*\blang\s*=\s*["\']([^"\']+)["\']/i'
+    );
 
-    $h2 =
-        countTag(
-            $html,
-            'h2'
-        );
+    $canonical = firstMatch(
+        $html,
+        '/<link\b[^>]*\brel\s*=\s*["\']canonical["\'][^>]*\bhref\s*=\s*["\']([^"\']+)["\']/i'
+    );
 
-    $h3 =
-        countTag(
-            $html,
-            'h3'
-        );
+    /*
+    |--------------------------------------------------------------------------
+    | STRUCTURE
+    |--------------------------------------------------------------------------
+    */
 
-    $viewport =
-        hasMeta(
-            $html,
-            'name',
-            'viewport'
-        );
+    $h1 = countTag(
+        $html,
+        'h1'
+    );
 
-    $ogTitle =
-        metaContent(
-            $html,
-            'property',
-            'og:title'
-        );
+    $h2 = countTag(
+        $html,
+        'h2'
+    );
 
-    $ogDescription =
-        metaContent(
-            $html,
-            'property',
-            'og:description'
-        );
+    $h3 = countTag(
+        $html,
+        'h3'
+    );
 
-    $ogImage =
-        metaContent(
-            $html,
-            'property',
-            'og:image'
-        );
+    $viewport = hasMeta(
+        $html,
+        'name',
+        'viewport'
+    );
 
-    $wordCount =
-        str_word_count(
-            $text,
-            0,
-            'ÀÁÂÃÄÅàáâãäåÆæÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝŸýÿABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-        );
+    /*
+    |--------------------------------------------------------------------------
+    | IMAGES
+    |--------------------------------------------------------------------------
+    */
 
     preg_match_all(
         '/<img\b[^>]*>/i',
@@ -1165,10 +1146,9 @@ function analyzePage(
         $imageMatches
     );
 
-    $imageTotal =
-        count(
-            $imageMatches[0] ?? []
-        );
+    $imageTotal = count(
+        $imageMatches[0] ?? []
+    );
 
     $imagesWithAlt = 0;
 
@@ -1185,6 +1165,24 @@ function analyzePage(
             $imagesWithAlt++;
         }
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | TEXTE
+    |--------------------------------------------------------------------------
+    */
+
+    $wordCount = str_word_count(
+        $text,
+        0,
+        'ÀÁÂÃÄÅàáâãäåÆæÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÝŸýÿABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONVERSION
+    |--------------------------------------------------------------------------
+    */
 
     $hasCta =
         preg_match(
@@ -1204,20 +1202,44 @@ function analyzePage(
             $html
         ) === 1;
 
-    $forms =
-        countTag(
-            $html,
-            'form'
-        );
+    $forms = countTag(
+        $html,
+        'form'
+    );
 
-    $scripts =
-        countTag(
-            $html,
-            'script'
-        );
+    $scripts = countTag(
+        $html,
+        'script'
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | DÉTECTION SPA
+    |--------------------------------------------------------------------------
+    |
+    | React / Vite / Next / Vue peuvent envoyer au crawler un HTML
+    | pratiquement vide alors que le navigateur construit ensuite
+    | toute la page.
+    |
+    */
+
+    $rootNodePresent =
+        preg_match(
+            '/<div\b[^>]*\bid\s*=\s*["\'](?:root|app|__next)["\'][^>]*>/i',
+            $html
+        ) === 1;
+
+    $moduleScript =
+        preg_match(
+            '/<script\b[^>]*type\s*=\s*["\']module["\'][^>]*>/i',
+            $html
+        ) === 1;
 
     $spa =
+        $rootNodePresent &&
+        $moduleScript &&
         $h1 === 0 &&
+        $h2 === 0 &&
         $wordCount < 150 &&
         $scripts > 0;
 
@@ -1229,9 +1251,8 @@ function analyzePage(
 
     $seo = 0;
 
-    if (
-        $title !== ''
-    ) {
+    if ($title !== '') {
+
         $seo +=
             textLength($title) >= 20 &&
             textLength($title) <= 65
@@ -1239,9 +1260,8 @@ function analyzePage(
                 : 15;
     }
 
-    if (
-        $description !== ''
-    ) {
+    if ($description !== '') {
+
         $seo +=
             textLength($description) >= 70 &&
             textLength($description) <= 170
@@ -1250,8 +1270,11 @@ function analyzePage(
     }
 
     if ($h1 === 1) {
+
         $seo += 20;
+
     } elseif ($h1 > 0) {
+
         $seo += 10;
     }
 
@@ -1263,11 +1286,23 @@ function analyzePage(
         $seo += 10;
     }
 
-    if ($ogTitle !== '') {
+    if (
+        metaContent(
+            $html,
+            'property',
+            'og:title'
+        ) !== ''
+    ) {
         $seo += 5;
     }
 
-    if ($ogDescription !== '') {
+    if (
+        metaContent(
+            $html,
+            'property',
+            'og:description'
+        ) !== ''
+    ) {
         $seo += 5;
     }
 
@@ -1279,38 +1314,61 @@ function analyzePage(
 
     $structure = 0;
 
-    $structure +=
-        $h1 === 1
-            ? 35
-            : ($h1 > 0
-                ? 20
-                : 0);
+    if ($h1 === 1) {
 
-    $structure +=
-        $h2 > 0
-            ? 25
-            : 0;
+        $structure += 35;
 
-    $structure +=
-        $h3 > 0
-            ? 10
-            : 0;
+    } elseif ($h1 > 0) {
 
-    $structure +=
+        $structure += 20;
+    }
+
+    if ($h2 > 0) {
+        $structure += 25;
+    }
+
+    if ($h3 > 0) {
+        $structure += 10;
+    }
+
+    if (
         preg_match(
             '/<nav\b/i',
             $html
         )
-            ? 15
-            : 0;
+    ) {
+        $structure += 15;
+    }
 
-    $structure +=
+    if (
         preg_match(
             '/<main\b/i',
             $html
         )
-            ? 15
-            : 0;
+    ) {
+        $structure += 15;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CORRECTION SPA
+    |--------------------------------------------------------------------------
+    |
+    | On ne met surtout pas 0/100 à une SPA simplement parce que
+    | ses titres ne sont pas présents dans le HTML initial.
+    |
+    | On donne un score conservateur basé sur ce que le crawler
+    | peut réellement vérifier.
+    |
+    */
+
+    if ($spa) {
+
+        $structure = max(
+            $structure,
+            50
+        );
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -1318,10 +1376,9 @@ function analyzePage(
     |--------------------------------------------------------------------------
     */
 
-    $mobile =
-        $viewport
-            ? 60
-            : 0;
+    $mobile = $viewport
+        ? 60
+        : 0;
 
     $mobile +=
         preg_match(
@@ -1332,13 +1389,17 @@ function analyzePage(
             : 0;
 
     if ($imageTotal === 0) {
+
         $mobile += 10;
+
     } elseif (
-        $imagesWithAlt ===
-        $imageTotal
+        $imagesWithAlt === $imageTotal
     ) {
+
         $mobile += 15;
+
     } else {
+
         $mobile += 5;
     }
 
@@ -1358,42 +1419,65 @@ function analyzePage(
 
     $content = 0;
 
-    $content +=
-        $wordCount >= 300
-            ? 35
-            : (
-                $wordCount >= 150
-                    ? 25
-                    : (
-                        $wordCount >= 80
-                            ? 15
-                            : 5
-                    )
-            );
+    if ($wordCount >= 300) {
 
-    $content +=
-        $h2 >= 2
-            ? 25
-            : (
-                $h2 === 1
-                    ? 15
-                    : 0
-            );
+        $content += 35;
 
-    $content +=
-        $h1 > 0
-            ? 15
-            : 0;
+    } elseif ($wordCount >= 150) {
 
-    $content +=
-        $imageTotal > 0
-            ? 10
-            : 0;
+        $content += 25;
 
-    $content +=
-        $hasContact
-            ? 15
-            : 0;
+    } elseif ($wordCount >= 80) {
+
+        $content += 15;
+
+    } else {
+
+        $content += 5;
+    }
+
+    if ($h2 >= 2) {
+
+        $content += 25;
+
+    } elseif ($h2 === 1) {
+
+        $content += 15;
+    }
+
+    if ($h1 > 0) {
+        $content += 15;
+    }
+
+    if ($imageTotal > 0) {
+        $content += 10;
+    }
+
+    if ($hasContact) {
+        $content += 15;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CORRECTION SPA CONTENT
+    |--------------------------------------------------------------------------
+    */
+
+    if ($spa) {
+
+        /*
+         * Le contenu réel est généré côté navigateur.
+         * On ne peut pas l'affirmer depuis le HTML brut.
+         *
+         * On utilise donc un score neutre/conservateur plutôt
+         * qu'un faux score catastrophique.
+         */
+
+        $content = max(
+            $content,
+            50
+        );
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -1454,6 +1538,24 @@ function analyzePage(
 
     $social = 0;
 
+    $ogTitle = metaContent(
+        $html,
+        'property',
+        'og:title'
+    );
+
+    $ogDescription = metaContent(
+        $html,
+        'property',
+        'og:description'
+    );
+
+    $ogImage = metaContent(
+        $html,
+        'property',
+        'og:image'
+    );
+
     $social +=
         $ogTitle !== ''
             ? 30
@@ -1513,7 +1615,26 @@ function analyzePage(
             ? 10
             : 0;
 
+    /*
+    |--------------------------------------------------------------------------
+    | LIENS
+    |--------------------------------------------------------------------------
+    */
+
+    $links = extractLinks(
+        $html,
+        $url,
+        $rootHost
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | RÉSULTAT
+    |--------------------------------------------------------------------------
+    */
+
     return [
+
         'url' =>
             $url,
 
@@ -1545,6 +1666,7 @@ function analyzePage(
             $fetch['bytes'],
 
         'categories' => [
+
             'seo' =>
                 min(
                     100,
@@ -1589,11 +1711,7 @@ function analyzePage(
         ],
 
         'links' =>
-            extractLinks(
-                $html,
-                $url,
-                $rootHost
-            )
+            $links
     ];
 }
 
