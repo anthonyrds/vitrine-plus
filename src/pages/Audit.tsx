@@ -156,6 +156,24 @@ export default function Audit() {
         pages_discovered: data.pagesDiscovered,
       });
 
+      fetch("/audit-notify.php", {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          website: normalizedUrl,
+          score: String(data.score),
+          pagesAnalyzed: String(data.pagesAnalyzed),
+          pagesDiscovered: String(data.pagesDiscovered),
+          responseTime: String(data.responseTime),
+          categories: JSON.stringify(data.categories),
+        }).toString(),
+      }).catch(() => {
+        // La notification ne doit jamais bloquer l'audit.
+      });
+
       setTimeout(() => {
         document
           .getElementById("audit-result")
