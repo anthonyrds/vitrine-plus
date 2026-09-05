@@ -67,10 +67,6 @@ const articles = [
           modification exceptionnelle annoncée par l'Organisateur.
         </p>
 
-        <p>
-          Pour la première période, les participations sont ouvertes à compter
-          de la mise en ligne officielle de l'opération.
-        </p>
 
         <p>
           L'Organisateur se réserve la possibilité de modifier les dates d'une
@@ -510,7 +506,7 @@ const articles = [
         </p>
 
         <p className="font-semibold text-[#080808]">
-          contact@vitrineplus.fr
+          vitrineplus@hotmail.com
         </p>
 
         <p>
@@ -648,7 +644,7 @@ const articles = [
         </p>
 
         <p className="font-semibold text-[#080808]">
-          contact@vitrineplus.fr
+          vitrineplus@hotmail.com
         </p>
 
         <p>Les réclamations devront, dans la mesure du possible, préciser :</p>
