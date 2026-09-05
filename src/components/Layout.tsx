@@ -6,6 +6,7 @@ import Logo from "./Logo";
 const nav: [string, string][] = [
   ["/creation-site-internet", "Création de site"],
   ["/services", "Services"],
+  ["/le-grand-plus", "Le Grand +"],
   ["/services/seo", "SEO"],
   ["/realisations", "Réalisations"],
   ["/a-propos", "À propos"],
@@ -45,19 +46,32 @@ export default function Layout() {
             aria-label="Navigation principale"
             className="hidden items-center gap-7 text-sm font-semibold text-black/55 lg:flex"
           >
-            {nav.map(([to, label]) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  `transition hover:text-black ${
-                    isActive ? "text-black" : ""
-                  }`
-                }
-              >
-                {label}
-              </NavLink>
-            ))}
+            
+  {nav.map(([to, label]) => (
+  <NavLink
+    key={to}
+    to={to}
+    className={({ isActive }) =>
+      `flex items-center gap-2 transition ${
+        to === "/le-grand-plus"
+          ? isActive
+            ? "font-bold text-[#080808]"
+            : "font-bold text-[#b08d4f] hover:text-[#080808]"
+          : isActive
+            ? "text-black"
+            : "hover:text-black"
+      }`
+    }
+  >
+    <span>{label}</span>
+
+    {to === "/le-grand-plus" && (
+      <span className="rounded-full bg-[#c8a45d]/15 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#9a773d]">
+        Nouveau
+      </span>
+    )}
+  </NavLink>
+))}
           </nav>
 
           <div className="hidden items-center gap-2 lg:flex">
@@ -98,14 +112,22 @@ export default function Layout() {
               className="grid gap-2"
             >
               {nav.map(([to, label]) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="rounded-2xl px-4 py-3 font-semibold hover:bg-black/5"
-                >
-                  {label}
-                </Link>
-              ))}
+  <Link
+    key={to}
+    to={to}
+    className={`flex items-center justify-between rounded-2xl px-4 py-3 font-semibold hover:bg-black/5 ${
+      to === "/le-grand-plus" ? "text-[#9a773d]" : ""
+    }`}
+  >
+    <span>{label}</span>
+
+    {to === "/le-grand-plus" && (
+      <span className="rounded-full bg-[#c8a45d]/15 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#9a773d]">
+        Nouveau
+      </span>
+    )}
+  </Link>
+))}
 
               <Link
                 to="/services/web"

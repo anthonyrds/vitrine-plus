@@ -175,6 +175,23 @@ const pages = {
     intro:
       "Un projet web, une refonte, une problématique de visibilité ou une idée à transformer en solution ? Écrivez-nous.",
   },
+
+  "/le-grand-plus": {
+    title:
+      "Le Grand + — Gagnez la refonte de votre site | Vitrine+",
+    description:
+      "Chaque mois, Vitrine+ offre la refonte complète du site internet d'une entreprise. Participez gratuitement au Grand +.",
+    h1:
+      "Et si votre site était le prochain ?",
+    intro:
+      "Chaque mois, Vitrine+ sélectionne une entreprise et lui offre la refonte complète de son site internet.",
+    sections: [
+      "Une refonte complète offerte chaque mois",
+      "Une expérience digitale pensée pour votre entreprise",
+      "Participez gratuitement",
+    ],
+  },
+
 };
 
 function escapeHtml(value) {

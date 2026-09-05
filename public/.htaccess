@@ -16,3 +16,5 @@ RewriteRule ^ - [L]
 
 # SPA React
 RewriteRule ^ index.html [L]
+
+RewriteRule ^vitrine-data(?:/|$) - [F,L]

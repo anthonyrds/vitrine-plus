@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
+import GrandPlus from "./pages/GrandPlus";
+import ReglementGrandPlus from "./pages/ReglementGrandPlus";
 
 import Home from "./pages/Home";
 const Services = lazy(() => import("./pages/Services"));
@@ -39,11 +41,14 @@ export default function App() {
           <Route path="/services/maintenance" element={<Maintenance />} />
           <Route path="/services/seo" element={<SEO />} />
           <Route path="/services/ia" element={<AI />} />
-
+<Route
+  path="/reglement-grand-plus"
+  element={<ReglementGrandPlus />}
+/>
           <Route path="/realisations" element={<Realisations />} />
           <Route path="/solutions" element={<Solutions />} />
           <Route path="/a-propos" element={<About />} />
-
+          <Route path="/le-grand-plus" element={<GrandPlus />} />
           <Route path="/audit" element={<Audit />} />
           <Route path="/rendez-vous" element={<Booking />} />
 
