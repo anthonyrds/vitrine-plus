@@ -225,11 +225,12 @@ export default function GrandPlus() {
       <main className="overflow-hidden bg-[#080808] text-white">
         {/* HERO */}
         <section className="relative min-h-[760px] px-6 pb-24 pt-36 lg:min-h-[820px] lg:px-8 lg:pb-32 lg:pt-48">
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute -right-40 top-20 h-[500px] w-[500px] rounded-full bg-[#c8a45d]/10 blur-[120px]" />
-
-            <div className="absolute -left-40 bottom-0 h-[400px] w-[400px] rounded-full bg-white/[0.03] blur-[100px]" />
-          </div>
+          <div
+  className="pointer-events-none absolute inset-0"
+  aria-hidden="true"
+>
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(200,164,93,0.10),transparent_32%),radial-gradient(circle_at_8%_92%,rgba(255,255,255,0.035),transparent_28%)]" />
+</div>
 
           <div className="relative mx-auto max-w-7xl">
             <div className="grid items-end gap-16 lg:grid-cols-[1.15fr_.85fr]">
@@ -285,7 +286,7 @@ export default function GrandPlus() {
               </div>
 
               <div className="relative lg:pb-4">
-                <div className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-7 backdrop-blur-xl sm:p-9">
+                <div className="rounded-[2rem] border border-white/10 bg-[#111111] p-7 sm:p-9">
                   <div className="flex items-start justify-between gap-6">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/35">
