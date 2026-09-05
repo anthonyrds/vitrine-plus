@@ -7,3 +7,4 @@ dist/
 !.env.example
 vitrine-mail-config.php
 vitrine-data/
+out/

@@ -4,15 +4,20 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/generate-seo-pages.mjs",
-    "preview": "vite preview"
-  },
+  "dev": "vite",
+  "build": "tsc -b && vite build && node scripts/generate-seo-pages.mjs",
+  "video:studio": "remotion studio src/video/index.ts",
+  "video:render": "remotion render src/video/index.ts GrandPlusReel out/grand-plus-reel.mp4"
+},
   "dependencies": {
+    "@remotion/cli": "^4.0.520",
+    "@remotion/player": "^4.0.520",
+    "@remotion/renderer": "^4.0.520",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0"
+    "react-router-dom": "^7.0.0",
+    "remotion": "^4.0.520"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
