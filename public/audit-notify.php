@@ -6,17 +6,38 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
-const NOTIFY_TO = 'vitrineplus@hotmail.com';
-const DATA_DIR = __DIR__ . '/vitrine-data';
-const LOG_FILE = DATA_DIR . '/audits.jsonl';
-const RATE_FILE = DATA_DIR . '/audit-rate.json';
+/*
+|--------------------------------------------------------------------------
+| CONFIGURATION
+|--------------------------------------------------------------------------
+*/
 
-function respond(array $data, int $status = 200): void
-{
-    http_response_code($status);
+const NOTIFY_TO = 'vitrineplus@hotmail.com';
+
+const MAX_WEBSITE_LENGTH = 500;
+const MAX_CATEGORIES_LENGTH = 5000;
+
+/*
+|--------------------------------------------------------------------------
+| RÉPONSE JSON
+|--------------------------------------------------------------------------
+*/
+
+function respond(
+    bool $success,
+    string $message = '',
+    array $extra = []
+): void {
+    http_response_code($success ? 200 : 400);
 
     echo json_encode(
-        $data,
+        array_merge(
+            [
+                'success' => $success,
+                'message' => $message,
+            ],
+            $extra
+        ),
         JSON_UNESCAPED_UNICODE |
         JSON_UNESCAPED_SLASHES
     );
@@ -24,8 +45,16 @@ function respond(array $data, int $status = 200): void
     exit;
 }
 
-function cleanValue(string $value, int $max = 2000): string
-{
+/*
+|--------------------------------------------------------------------------
+| NETTOYAGE
+|--------------------------------------------------------------------------
+*/
+
+function cleanValue(
+    string $value,
+    int $maxLength = 1000
+): string {
     $value = trim($value);
 
     $value = preg_replace(
@@ -35,256 +64,171 @@ function cleanValue(string $value, int $max = 2000): string
     ) ?? '';
 
     if (function_exists('mb_substr')) {
-        return mb_substr($value, 0, $max, 'UTF-8');
+        return mb_substr(
+            $value,
+            0,
+            $maxLength,
+            'UTF-8'
+        );
     }
 
-    return substr($value, 0, $max);
-}
-
-function jsonWrite(string $file, array $data): bool
-{
-    $json = json_encode(
-        $data,
-        JSON_UNESCAPED_UNICODE |
-        JSON_UNESCAPED_SLASHES
-    );
-
-    if ($json === false) {
-        return false;
-    }
-
-    return file_put_contents(
-        $file,
-        $json . PHP_EOL,
-        FILE_APPEND | LOCK_EX
-    ) !== false;
-}
-
-/**
- * Envoie un email via le SMTP IONOS déjà utilisé par Vitrine+.
- */
-function sendSmtpEmail(
-    string $to,
-    string $subject,
-    string $body
-): bool {
-
-    $configFile = __DIR__ . '/../vitrine-mail-config.php';
-
-    if (!is_file($configFile)) {
-        return false;
-    }
-
-    $config = require $configFile;
-
-    $host = (string) ($config['smtp_host'] ?? '');
-    $port = (int) ($config['smtp_port'] ?? 465);
-    $username = (string) ($config['smtp_username'] ?? '');
-    $password = (string) ($config['smtp_password'] ?? '');
-    $fromEmail = (string) ($config['from_email'] ?? '');
-    $fromName = (string) ($config['from_name'] ?? 'Vitrine+');
-
-    if (
-        $host === '' ||
-        $username === '' ||
-        $password === '' ||
-        $fromEmail === ''
-    ) {
-        return false;
-    }
-
-    $socket = @fsockopen(
-        'ssl://' . $host,
-        $port,
-        $errno,
-        $errstr,
-        10
-    );
-
-    if (!$socket) {
-        return false;
-    }
-
-    stream_set_timeout($socket, 10);
-
-    $read = function () use ($socket): string {
-        $response = '';
-
-        while (($line = fgets($socket, 515)) !== false) {
-            $response .= $line;
-
-            if (
-                strlen($line) < 4 ||
-                $line[3] !== '-'
-            ) {
-                break;
-            }
-        }
-
-        return $response;
-    };
-
-    $send = function (string $command) use (
-        $socket,
-        $read
-    ): bool {
-
-        fwrite($socket, $command . "\r\n");
-
-        $response = $read();
-
-        if ($response === '') {
-            return false;
-        }
-
-        $code = (int) substr($response, 0, 3);
-
-        return $code >= 200 && $code < 400;
-    };
-
-    $read();
-
-    if (!$send('EHLO vitrineplus.fr')) {
-        fclose($socket);
-        return false;
-    }
-
-    if (!$send('AUTH LOGIN')) {
-        fclose($socket);
-        return false;
-    }
-
-    if (!$send(base64_encode($username))) {
-        fclose($socket);
-        return false;
-    }
-
-    if (!$send(base64_encode($password))) {
-        fclose($socket);
-        return false;
-    }
-
-    if (!$send('MAIL FROM:<' . $fromEmail . '>')) {
-        fclose($socket);
-        return false;
-    }
-
-    if (!$send('RCPT TO:<' . $to . '>')) {
-        fclose($socket);
-        return false;
-    }
-
-    fwrite($socket, "DATA\r\n");
-
-    $dataResponse = $read();
-
-    if ((int) substr($dataResponse, 0, 3) !== 354) {
-        fclose($socket);
-        return false;
-    }
-
-    $safeSubject = str_replace(
-        ["\r", "\n"],
-        '',
-        $subject
-    );
-
-    $safeFromName = str_replace(
-        ["\r", "\n"],
-        '',
-        $fromName
-    );
-
-    $headers =
-        'From: ' .
-        $safeFromName .
-        ' <' .
-        $fromEmail .
-        ">\r\n" .
-
-        'To: ' .
-        $to .
-        "\r\n" .
-
-        'Subject: ' .
-        $safeSubject .
-        "\r\n" .
-
-        "MIME-Version: 1.0\r\n" .
-
-        "Content-Type: text/plain; charset=UTF-8\r\n" .
-
-        "Content-Transfer-Encoding: 8bit\r\n";
-
-    $message =
-        $headers .
-        "\r\n" .
-        $body .
-        "\r\n.";
-
-    fwrite($socket, $message . "\r\n");
-
-    $finalResponse = $read();
-
-    $send('QUIT');
-
-    fclose($socket);
-
-    $code = (int) substr(
-        $finalResponse,
+    return substr(
+        $value,
         0,
-        3
+        $maxLength
     );
-
-    return $code >= 200 && $code < 400;
 }
 
 /*
 |--------------------------------------------------------------------------
-| POST uniquement
+| MÉTHODE HTTP
 |--------------------------------------------------------------------------
 */
 
 if (
-    ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+    ($_SERVER['REQUEST_METHOD'] ?? '')
+    !== 'POST'
 ) {
-    respond([
-        'success' => false,
-        'message' => 'Méthode non autorisée.'
-    ], 405);
+    respond(
+        false,
+        'Méthode non autorisée.'
+    );
 }
 
 /*
 |--------------------------------------------------------------------------
-| DONNÉES
+| RÉCUPÉRATION
 |--------------------------------------------------------------------------
 */
 
 $website = cleanValue(
-    (string) ($_POST['website'] ?? ''),
-    2000
+    (string) (
+        $_POST['website'] ?? ''
+    ),
+    MAX_WEBSITE_LENGTH
 );
 
-$score = (int) (
-    $_POST['score'] ?? 0
+$score = cleanValue(
+    (string) (
+        $_POST['score'] ?? ''
+    ),
+    20
 );
 
-$pagesAnalyzed = (int) (
-    $_POST['pagesAnalyzed'] ?? 0
+$pagesAnalyzed = cleanValue(
+    (string) (
+        $_POST['pagesAnalyzed'] ?? ''
+    ),
+    20
 );
 
-$pagesDiscovered = (int) (
-    $_POST['pagesDiscovered'] ?? 0
+$pagesDiscovered = cleanValue(
+    (string) (
+        $_POST['pagesDiscovered'] ?? ''
+    ),
+    20
 );
 
 $responseTime = cleanValue(
-    (string) ($_POST['responseTime'] ?? ''),
-    50
+    (string) (
+        $_POST['responseTime'] ?? ''
+    ),
+    30
 );
 
-$categoriesRaw = (string) (
-    $_POST['categories'] ?? ''
+$categoriesRaw = cleanValue(
+    (string) (
+        $_POST['categories'] ?? ''
+    ),
+    MAX_CATEGORIES_LENGTH
 );
+
+/*
+|--------------------------------------------------------------------------
+| VALIDATION
+|--------------------------------------------------------------------------
+*/
+
+if ($website === '') {
+    respond(
+        false,
+        'Site non renseigné.'
+    );
+}
+
+if (!filter_var($website, FILTER_VALIDATE_URL)) {
+    respond(
+        false,
+        'Adresse du site invalide.'
+    );
+}
+
+$websiteParts = parse_url($website);
+
+if (
+    !$websiteParts ||
+    empty($websiteParts['host'])
+) {
+    respond(
+        false,
+        'Adresse du site invalide.'
+    );
+}
+
+$websiteHost = strtolower(
+    (string) $websiteParts['host']
+);
+
+$websiteHost = preg_replace(
+    '/^www\./i',
+    '',
+    $websiteHost
+) ?? $websiteHost;
+
+/*
+|--------------------------------------------------------------------------
+| VALIDATION DES CHIFFRES
+|--------------------------------------------------------------------------
+*/
+
+if (
+    $score === '' ||
+    !is_numeric($score) ||
+    (float) $score < 0 ||
+    (float) $score > 100
+) {
+    $score = 'N/A';
+}
+
+if (
+    $pagesAnalyzed === '' ||
+    !is_numeric($pagesAnalyzed) ||
+    (int) $pagesAnalyzed < 0
+) {
+    $pagesAnalyzed = 'N/A';
+}
+
+if (
+    $pagesDiscovered === '' ||
+    !is_numeric($pagesDiscovered) ||
+    (int) $pagesDiscovered < 0
+) {
+    $pagesDiscovered = 'N/A';
+}
+
+if (
+    $responseTime === '' ||
+    !is_numeric($responseTime) ||
+    (float) $responseTime < 0
+) {
+    $responseTime = 'N/A';
+}
+
+/*
+|--------------------------------------------------------------------------
+| CATÉGORIES
+|--------------------------------------------------------------------------
+*/
 
 $categories = [];
 
@@ -295,214 +239,502 @@ if ($categoriesRaw !== '') {
     );
 
     if (is_array($decoded)) {
-        $categories = $decoded;
-    }
-}
+        foreach ($decoded as $key => $category) {
+            if (
+                !is_string($key) ||
+                !is_array($category)
+            ) {
+                continue;
+            }
 
-if ($website === '') {
-    respond([
-        'success' => false,
-        'message' => 'Site manquant.'
-    ], 422);
-}
+            $allowedKeys = [
+                'seo',
+                'structure',
+                'mobile',
+                'content',
+                'performance',
+                'social',
+                'conversion',
+            ];
 
-/*
-|--------------------------------------------------------------------------
-| RATE LIMIT
-|--------------------------------------------------------------------------
-|
-| Une notification maximum par IP toutes les 60 secondes.
-| L'IP n'est jamais enregistrée dans le journal des audits.
-|--------------------------------------------------------------------------
-*/
+            if (
+                !in_array(
+                    $key,
+                    $allowedKeys,
+                    true
+                )
+            ) {
+                continue;
+            }
 
-$ip = (string) (
-    $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-);
+            $categoryScore = $category['score'] ?? null;
 
-$ipHash = hash(
-    'sha256',
-    $ip . '|VitrinePlusAudit'
-);
+            if (
+                !is_numeric($categoryScore)
+            ) {
+                continue;
+            }
 
-$now = time();
+            $categoryScore = max(
+                0,
+                min(
+                    100,
+                    (int) round(
+                        (float) $categoryScore
+                    )
+                )
+            );
 
-$rateData = [];
-
-if (is_file(RATE_FILE)) {
-    $contents = @file_get_contents(
-        RATE_FILE
-    );
-
-    if ($contents !== false) {
-        $decodedRate = json_decode(
-            $contents,
-            true
-        );
-
-        if (is_array($decodedRate)) {
-            $rateData = $decodedRate;
+            $categories[$key] = $categoryScore;
         }
     }
 }
 
-$lastNotification = (int) (
-    $rateData[$ipHash] ?? 0
+/*
+|--------------------------------------------------------------------------
+| CONFIGURATION SMTP
+|--------------------------------------------------------------------------
+|
+| Même configuration que audit-lead.php.
+|
+*/
+
+$configFile = __DIR__ . '/vitrine-mail-config.php';
+
+if (!file_exists($configFile)) {
+    /*
+     * L'audit doit continuer même si la notification
+     * ne peut pas être envoyée.
+     */
+    respond(
+        true,
+        'Audit terminé.',
+        [
+            'notified' => false,
+        ]
+    );
+}
+
+$config = require $configFile;
+
+$host = $config['smtp_host'] ?? '';
+$port = (int) (
+    $config['smtp_port'] ?? 465
 );
+
+$username = $config['smtp_username'] ?? '';
+$password = $config['smtp_password'] ?? '';
+
+$fromEmail = $config['from_email'] ?? '';
+$fromName = $config['from_name'] ?? 'Vitrine+';
+
+/*
+|--------------------------------------------------------------------------
+| VÉRIFICATION CONFIGURATION
+|--------------------------------------------------------------------------
+*/
 
 if (
-    $lastNotification > 0 &&
-    ($now - $lastNotification) < 60
+    $host === '' ||
+    $username === '' ||
+    $password === '' ||
+    $fromEmail === ''
 ) {
-    respond([
-        'success' => true,
-        'notified' => false,
-        'rateLimited' => true
-    ]);
+    respond(
+        true,
+        'Audit terminé.',
+        [
+            'notified' => false,
+        ]
+    );
 }
-
-$rateData[$ipHash] = $now;
 
 /*
 |--------------------------------------------------------------------------
-| NETTOYAGE DU RATE LIMIT
+| SMTP READ
 |--------------------------------------------------------------------------
 */
 
-foreach ($rateData as $key => $timestamp) {
-    if (
-        !is_int($timestamp) ||
-        ($now - $timestamp) > 3600
+function smtpRead($socket): string
+{
+    $response = '';
+
+    while (
+        ($line = fgets($socket, 515))
+        !== false
     ) {
-        unset($rateData[$key]);
+        $response .= $line;
+
+        if (
+            isset($line[3]) &&
+            $line[3] === ' '
+        ) {
+            break;
+        }
     }
-}
 
-if (!is_dir(DATA_DIR)) {
-    @mkdir(
-        DATA_DIR,
-        0755,
-        true
-    );
+    return $response;
 }
-
-@file_put_contents(
-    RATE_FILE,
-    json_encode(
-        $rateData,
-        JSON_UNESCAPED_UNICODE |
-        JSON_UNESCAPED_SLASHES
-    ),
-    LOCK_EX
-);
 
 /*
 |--------------------------------------------------------------------------
-| JOURNAL
+| SMTP COMMAND
 |--------------------------------------------------------------------------
 */
 
-$categorySummary = [];
-
-foreach ($categories as $key => $category) {
-    if (!is_array($category)) {
-        continue;
+function smtpCommand(
+    $socket,
+    ?string $command,
+    array $expectedCodes = []
+): string {
+    if ($command !== null) {
+        fwrite(
+            $socket,
+            $command . "\r\n"
+        );
     }
 
-    $categoryScore = (int) (
-        $category['score'] ?? 0
-    );
+    $response = smtpRead($socket);
 
-    $categoryLabel = cleanValue(
-        (string) (
-            $category['label'] ??
-            ucfirst((string) $key)
-        ),
-        100
-    );
-
-    $categorySummary[$key] = [
-        'label' => $categoryLabel,
-        'score' => max(
+    if (!empty($expectedCodes)) {
+        $code = substr(
+            $response,
             0,
-            min(100, $categoryScore)
-        )
-    ];
+            3
+        );
+
+        if (
+            !in_array(
+                $code,
+                $expectedCodes,
+                true
+            )
+        ) {
+            throw new Exception(
+                'Réponse SMTP inattendue.'
+            );
+        }
+    }
+
+    return $response;
 }
 
-$event = [
-    'timestamp' => date(
-        'c'
-    ),
-    'website' => $website,
-    'score' => max(
-        0,
-        min(100, $score)
-    ),
-    'pagesAnalyzed' => max(
-        0,
-        $pagesAnalyzed
-    ),
-    'pagesDiscovered' => max(
-        0,
-        $pagesDiscovered
-    ),
-    'responseTime' => $responseTime,
-    'categories' => $categorySummary
+/*
+|--------------------------------------------------------------------------
+| CATÉGORIES DANS L'E-MAIL
+|--------------------------------------------------------------------------
+*/
+
+$categoryLabels = [
+    'seo' => 'SEO',
+    'structure' => 'Structure',
+    'mobile' => 'Mobile',
+    'content' => 'Contenu',
+    'performance' => 'Performance',
+    'social' => 'Partage social',
+    'conversion' => 'Conversion',
 ];
 
-jsonWrite(
-    LOG_FILE,
-    $event
-);
+$categoryLines = [];
+
+foreach (
+    $categoryLabels as $key => $label
+) {
+    if (
+        isset($categories[$key])
+    ) {
+        $categoryLines[] =
+            $label .
+            ' : ' .
+            $categories[$key] .
+            '/100';
+    }
+}
+
+if (empty($categoryLines)) {
+    $categoryLines[] =
+        'Aucune donnée disponible.';
+}
 
 /*
 |--------------------------------------------------------------------------
-| EMAIL
+| INFORMATIONS COMPLÉMENTAIRES
+|--------------------------------------------------------------------------
+*/
+
+$ip = cleanValue(
+    (string) (
+        $_SERVER['REMOTE_ADDR'] ?? ''
+    ),
+    100
+);
+
+$userAgent = cleanValue(
+    (string) (
+        $_SERVER['HTTP_USER_AGENT'] ?? ''
+    ),
+    500
+);
+
+/*
+ * On ne met pas l'adresse IP dans le sujet.
+ * Elle reste uniquement dans le corps du message.
+ */
+
+/*
+|--------------------------------------------------------------------------
+| SUJET
 |--------------------------------------------------------------------------
 */
 
 $subject =
-    '🔎 Nouveau audit Vitrine+ — ' .
+    '🔎 Nouvel audit Vitrine+ — ' .
+    $websiteHost .
+    ' — ' .
     $score .
     '/100';
 
-$lines = [
-    'NOUVEL AUDIT VITRINE+',
+/*
+|--------------------------------------------------------------------------
+| CORPS DU MAIL
+|--------------------------------------------------------------------------
+*/
+
+$bodyLines = [
+    'NOUVEL AUDIT DIGITAL — VITRINE+',
     '',
     'Un visiteur vient de lancer un audit sur Vitrine+.',
     '',
-    'Site analysé : ' . $website,
+    'SITE ANALYSÉ',
+    '────────────────────────────',
+    $website,
+    '',
+    'RÉSULTAT',
+    '────────────────────────────',
     'Score global : ' . $score . '/100',
     'Pages analysées : ' . $pagesAnalyzed,
     'Pages découvertes : ' . $pagesDiscovered,
     'Temps d’analyse : ' . $responseTime . ' s',
     '',
-    'SCORES',
+    'SCORES PAR CATÉGORIE',
+    '────────────────────────────',
 ];
 
-foreach ($categorySummary as $category) {
-    $lines[] =
-        $category['label'] .
-        ' : ' .
-        $category['score'] .
-        '/100';
+foreach ($categoryLines as $line) {
+    $bodyLines[] = $line;
 }
 
-$lines[] = '';
-$lines[] = 'Date : ' . date(
-    'd/m/Y à H:i:s'
-);
-$lines[] = '';
-$lines[] = 'Vitrine+ — Votre entreprise. En mieux.';
+$bodyLines[] = '';
+$bodyLines[] = 'INFORMATIONS TECHNIQUES';
+$bodyLines[] = '────────────────────────────';
 
-$emailSent = sendSmtpEmail(
-    NOTIFY_TO,
-    $subject,
-    implode("\n", $lines)
+if ($ip !== '') {
+    $bodyLines[] =
+        'Adresse IP : ' . $ip;
+}
+
+if ($userAgent !== '') {
+    $bodyLines[] =
+        'Navigateur : ' . $userAgent;
+}
+
+$bodyLines[] = '';
+$bodyLines[] =
+    'Cet e-mail est une notification interne générée automatiquement par l’outil Audit de Vitrine+.';
+$bodyLines[] = '';
+$bodyLines[] = 'Vitrine+';
+
+$messageBody = implode(
+    "\r\n",
+    $bodyLines
 );
 
-respond([
-    'success' => true,
-    'notified' => $emailSent
-]);
+/*
+|--------------------------------------------------------------------------
+| ENCODAGE DU SUJET
+|--------------------------------------------------------------------------
+*/
+
+$encodedSubject =
+    '=?UTF-8?B?' .
+    base64_encode($subject) .
+    '?=';
+
+/*
+|--------------------------------------------------------------------------
+| HEADERS
+|--------------------------------------------------------------------------
+*/
+
+$headers = [
+    'From: ' .
+        $fromName .
+        ' <' .
+        $fromEmail .
+        '>',
+
+    'To: <' .
+        NOTIFY_TO .
+        '>',
+
+    'Subject: ' .
+        $encodedSubject,
+
+    'Date: ' .
+        date(DATE_RFC2822),
+
+    'MIME-Version: 1.0',
+
+    'Content-Type: text/plain; charset=UTF-8',
+
+    'Content-Transfer-Encoding: 8bit',
+];
+
+$message =
+    implode(
+        "\r\n",
+        $headers
+    ) .
+    "\r\n\r\n" .
+    $messageBody;
+
+/*
+|--------------------------------------------------------------------------
+| CONNEXION SMTP IONOS
+|--------------------------------------------------------------------------
+*/
+
+$socket = @fsockopen(
+    'ssl://' . $host,
+    $port,
+    $errno,
+    $errstr,
+    20
+);
+
+if (!$socket) {
+    /*
+     * IMPORTANT :
+     * l'échec de l'e-mail ne doit pas
+     * faire échouer l'audit.
+     */
+    respond(
+        true,
+        'Audit terminé.',
+        [
+            'notified' => false,
+        ]
+    );
+}
+
+stream_set_timeout(
+    $socket,
+    20
+);
+
+/*
+|--------------------------------------------------------------------------
+| ENVOI
+|--------------------------------------------------------------------------
+*/
+
+try {
+    smtpCommand(
+        $socket,
+        null,
+        ['220']
+    );
+
+    smtpCommand(
+        $socket,
+        'EHLO vitrineplus.fr',
+        ['250']
+    );
+
+    smtpCommand(
+        $socket,
+        'AUTH LOGIN',
+        ['334']
+    );
+
+    smtpCommand(
+        $socket,
+        base64_encode($username),
+        ['334']
+    );
+
+    smtpCommand(
+        $socket,
+        base64_encode($password),
+        ['235']
+    );
+
+    smtpCommand(
+        $socket,
+        'MAIL FROM:<' .
+        $fromEmail .
+        '>',
+        ['250']
+    );
+
+    smtpCommand(
+        $socket,
+        'RCPT TO:<' .
+        NOTIFY_TO .
+        '>',
+        ['250', '251']
+    );
+
+    smtpCommand(
+        $socket,
+        'DATA',
+        ['354']
+    );
+
+    fwrite(
+        $socket,
+        $message .
+        "\r\n.\r\n"
+    );
+
+    smtpCommand(
+        $socket,
+        null,
+        ['250']
+    );
+
+    smtpCommand(
+        $socket,
+        'QUIT',
+        ['221']
+    );
+
+    fclose($socket);
+
+    respond(
+        true,
+        'Audit terminé.',
+        [
+            'notified' => true,
+        ]
+    );
+
+} catch (Throwable $e) {
+
+    if (is_resource($socket)) {
+        fclose($socket);
+    }
+
+    /*
+     * L'audit a déjà réussi.
+     * Une panne SMTP ne doit jamais
+     * modifier le résultat côté visiteur.
+     */
+    respond(
+        true,
+        'Audit terminé.',
+        [
+            'notified' => false,
+        ]
+    );
+}

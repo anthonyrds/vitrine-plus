@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+
 import {
   AlertCircle,
   ArrowRight,
@@ -13,7 +14,9 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
+
 import { Link } from "react-router-dom";
+
 import SEO from "../components/SEO";
 import SectionLabel from "../components/SectionLabel";
 
@@ -41,6 +44,7 @@ const categoryLabels: Record<string, string> = {
   content: "Contenu",
   performance: "Performance",
   social: "Partage social",
+  conversion: "Conversion",
 };
 
 type TrackingParams = Record<
@@ -60,6 +64,7 @@ function trackEvent(
       eventName: string,
       eventParams?: TrackingParams
     ) => void;
+
     dataLayer?: Array<Record<string, unknown>>;
   };
 
@@ -125,6 +130,7 @@ export default function Audit() {
 
     try {
       const body = new URLSearchParams();
+
       body.set("action", "analyze");
       body.set("url", normalizedUrl);
 
@@ -137,7 +143,7 @@ export default function Audit() {
         body: body.toString(),
       });
 
-      const data = await response.json();
+      const data: AuditResult = await response.json();
 
       if (!response.ok || !data.success) {
         throw new Error(
@@ -156,23 +162,16 @@ export default function Audit() {
         pages_discovered: data.pagesDiscovered,
       });
 
-      fetch("/audit-notify.php", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/x-www-form-urlencoded",
-  },
-  body: new URLSearchParams({
-    website: normalizedUrl,
-    score: String(data.score),
-    pagesAnalyzed: String(data.pagesAnalyzed),
-    pagesDiscovered: String(data.pagesDiscovered),
-    responseTime: String(data.responseTime),
-    categories: JSON.stringify(data.categories),
-  }).toString(),
-}).catch(() => {
-  // La notification ne doit jamais bloquer l'audit.
-});
-
+      /*
+       * Notification interne Vitrine+
+       *
+       * Cette requête est volontairement indépendante
+       * de l’audit. Si l’e-mail ne part pas, le résultat
+       * de l’audit reste affiché normalement.
+       *
+       * IMPORTANT :
+       * ce bloc ne doit apparaître qu'une seule fois.
+       */
       fetch("/audit-notify.php", {
         method: "POST",
         headers: {
@@ -188,7 +187,10 @@ export default function Audit() {
           categories: JSON.stringify(data.categories),
         }).toString(),
       }).catch(() => {
-        // La notification ne doit jamais bloquer l'audit.
+        /*
+         * La notification ne doit jamais bloquer
+         * ou faire échouer l'audit.
+         */
       });
 
       setTimeout(() => {
@@ -231,7 +233,11 @@ export default function Audit() {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(leadEmail)) {
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        leadEmail
+      )
+    ) {
       setLeadError(
         "Indiquez une adresse e-mail valide."
       );
@@ -333,6 +339,7 @@ export default function Audit() {
 
           <h1 className="display mt-7 max-w-5xl text-5xl font-extrabold leading-[.95] sm:text-7xl lg:text-[92px]">
             Votre site vous apporte-t-il vraiment des clients ?
+
             <span className="block text-black/25">
               Découvrez ce qui bloque.
             </span>
@@ -422,6 +429,7 @@ export default function Audit() {
                       size={17}
                       className="mt-0.5 shrink-0"
                     />
+
                     <span>{error}</span>
                   </div>
                 )}
@@ -472,6 +480,7 @@ export default function Audit() {
           className="scroll-mt-20 px-6 pb-20 lg:px-8 lg:pb-28"
         >
           <div className="mx-auto max-w-7xl">
+
             {/* SCORE */}
             <div className="grid gap-5 lg:grid-cols-[.7fr_1.3fr]">
               <div className="rounded-[2rem] bg-[#080808] p-8 text-white sm:p-10">
@@ -772,6 +781,7 @@ export default function Audit() {
                               size={15}
                               className="mt-0.5 shrink-0"
                             />
+
                             <span>{leadError}</span>
                           </div>
                         )}
@@ -901,6 +911,7 @@ export default function Audit() {
 
                 <h2 className="display mt-5 text-4xl font-extrabold sm:text-6xl">
                   Vous savez maintenant où agir.
+
                   <span className="block text-white/35">
                     Nous pouvons vous aider à le faire.
                   </span>
