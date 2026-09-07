@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+
 import {
   Activity,
   ArrowLeft,
@@ -7,7 +9,6 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
-  Clock3,
   FileSearch,
   Gift,
   LayoutDashboard,
@@ -19,10 +20,13 @@ import {
   Search,
   Target,
   TrendingUp,
-  UserRound,
   Users,
   X,
 } from "lucide-react";
+
+/* ================================================================
+   CONSTANTES
+================================================================ */
 
 const statuses = [
   ["new", "Nouveau"],
@@ -44,6 +48,10 @@ const offers = [
   "V+ Performance",
 ];
 
+/* ================================================================
+   TYPES
+================================================================ */
+
 type Interaction = {
   id: string;
   created_at: string;
@@ -55,6 +63,7 @@ type Prospect = {
   id: string;
   source: string;
   created_at: string;
+
   name: string;
   company: string;
   email: string;
@@ -98,13 +107,31 @@ type Booking = {
   name?: string;
   company?: string;
   phone?: string;
+  email?: string;
   date?: string;
   time?: string;
   reason?: string;
   status?: string;
 };
 
+type GrandPlusParticipant = {
+  id?: string;
+  month_key?: string;
+  month_label?: string;
+
+  name?: string;
+  company?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+
+  marketing_consent?: boolean;
+  status?: string;
+};
+
 type Data = {
+  success?: boolean;
+
   stats: {
     prospects: number;
     new: number;
@@ -122,7 +149,7 @@ type Data = {
   pipeline: Record<string, number>;
 
   prospects: Prospect[];
-  grand_plus: any[];
+  grand_plus: GrandPlusParticipant[];
   bookings: Booking[];
 };
 
@@ -139,12 +166,30 @@ const emptyData: Data = {
     today_actions: 0,
     overdue_actions: 0,
   },
+
   sources: {},
   pipeline: {},
   prospects: [],
   grand_plus: [],
   bookings: [],
 };
+
+/* ================================================================
+   STYLES BOUTONS
+================================================================ */
+
+const buttonDark =
+  "inline-flex items-center justify-center gap-2 rounded-full !bg-[#080808] !text-white font-bold transition-all duration-200 hover:!bg-[#1a1a1a] disabled:cursor-not-allowed disabled:opacity-40";
+
+const buttonLight =
+  "inline-flex items-center justify-center gap-2 rounded-full !border !border-black/10 !bg-white !text-[#080808] font-bold transition-all duration-200 hover:!border-black/20 hover:!bg-[#f5f5f3] disabled:cursor-not-allowed disabled:opacity-40";
+
+const buttonGold =
+  "inline-flex items-center justify-center gap-2 rounded-full !bg-[#c8a45d] !text-[#080808] font-bold transition-all duration-200 hover:!bg-[#d5b873] disabled:cursor-not-allowed disabled:opacity-40";
+
+/* ================================================================
+   HELPERS
+================================================================ */
 
 function euro(value: number) {
   return new Intl.NumberFormat("fr-FR", {
@@ -192,43 +237,61 @@ function sourceLabel(source: string) {
   switch (source) {
     case "grand-plus":
       return "Grand+";
+
     case "audit":
       return "Audit";
+
     case "booking":
       return "Rendez-vous";
+
     case "contact":
       return "Contact";
+
     default:
       return "Manuel";
   }
 }
 
 function statusLabel(status: string) {
-  return statuses.find(([key]) => key === status)?.[1] ?? status;
+  return (
+    statuses.find(([key]) => key === status)?.[1] ??
+    status
+  );
 }
 
 function statusClass(status: string) {
   switch (status) {
     case "won":
-      return "bg-emerald-100 text-emerald-700";
+      return "!bg-emerald-100 !text-emerald-700";
+
     case "lost":
-      return "bg-red-100 text-red-700";
+      return "!bg-red-100 !text-red-700";
+
     case "meeting":
-      return "bg-blue-100 text-blue-700";
+      return "!bg-blue-100 !text-blue-700";
+
     case "proposal":
-      return "bg-purple-100 text-purple-700";
+      return "!bg-purple-100 !text-purple-700";
+
     case "negotiation":
-      return "bg-orange-100 text-orange-700";
+      return "!bg-orange-100 !text-orange-700";
+
     case "qualified":
-      return "bg-[#c8a45d]/20 text-[#8a6a25]";
+      return "!bg-[#c8a45d]/20 !text-[#8a6a25]";
+
     case "contacted":
-      return "bg-slate-100 text-slate-700";
+      return "!bg-slate-100 !text-slate-700";
+
     default:
-      return "bg-black/5 text-black/60";
+      return "!bg-black/5 !text-black/60";
   }
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+}: {
+  status: string;
+}) {
   return (
     <span
       className={`inline-flex rounded-full px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] ${statusClass(
@@ -240,22 +303,44 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/* ================================================================
+   COMPOSANT PRINCIPAL
+================================================================ */
+
 export default function AdminDashboard() {
-  const [data, setData] = useState<Data>(emptyData);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] =
+    useState<Data>(emptyData);
 
-  const [section, setSection] = useState("dashboard");
+  const [loading, setLoading] =
+    useState(true);
 
-  const [selected, setSelected] = useState<Prospect | null>(null);
+  const [section, setSection] =
+    useState("dashboard");
 
-  const [query, setQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [selected, setSelected] =
+    useState<Prospect | null>(null);
 
-  const [mobileMenu, setMobileMenu] = useState(false);
-  const [toast, setToast] = useState("");
+  const [query, setQuery] =
+    useState("");
 
-  const [newProspect, setNewProspect] = useState(false);
+  const [sourceFilter, setSourceFilter] =
+    useState("all");
+
+  const [statusFilter, setStatusFilter] =
+    useState("all");
+
+  const [mobileMenu, setMobileMenu] =
+    useState(false);
+
+  const [toast, setToast] =
+    useState("");
+
+  const [newProspect, setNewProspect] =
+    useState(false);
+
+  /* ==============================================================
+     CHARGEMENT
+  ============================================================== */
 
   async function load() {
     setLoading(true);
@@ -265,11 +350,14 @@ export default function AdminDashboard() {
         `/crm-api.php?ts=${Date.now()}`,
         {
           cache: "no-store",
+          credentials: "same-origin",
         },
       );
 
       if (response.status === 401) {
-        window.location.href = "/grand-plus-admin.php";
+        window.location.href =
+          "/grand-plus-admin.php";
+
         return;
       }
 
@@ -277,18 +365,21 @@ export default function AdminDashboard() {
 
       if (!response.ok || !json.success) {
         throw new Error(
-          json.message || "Impossible de charger le CRM.",
+          json.message ||
+            "Impossible de charger le CRM.",
         );
       }
 
       setData(json);
 
       if (selected) {
-        setSelected(
+        const refreshed =
           json.prospects.find(
-            (prospect: Prospect) => prospect.id === selected.id,
-          ) ?? null,
-        );
+            (prospect: Prospect) =>
+              prospect.id === selected.id,
+          ) ?? null;
+
+        setSelected(refreshed);
       }
     } catch (error) {
       setToast(
@@ -305,17 +396,30 @@ export default function AdminDashboard() {
     load();
   }, []);
 
-  async function action(payload: Record<string, unknown>) {
-    const response = await fetch("/crm-api.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+  /* ==============================================================
+     ACTION API
+  ============================================================== */
+
+  async function action(
+    payload: Record<string, unknown>,
+  ) {
+    const response = await fetch(
+      "/crm-api.php",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+    );
 
     if (response.status === 401) {
-      window.location.href = "/grand-plus-admin.php";
+      window.location.href =
+        "/grand-plus-admin.php";
+
       return;
     }
 
@@ -323,7 +427,8 @@ export default function AdminDashboard() {
 
     if (!response.ok || !json.success) {
       throw new Error(
-        json.message || "Action impossible.",
+        json.message ||
+          "Action impossible.",
       );
     }
 
@@ -332,39 +437,50 @@ export default function AdminDashboard() {
     return json;
   }
 
+  /* ==============================================================
+     FILTRES
+  ============================================================== */
+
   const filtered = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery =
+      query.trim().toLowerCase();
 
-    return data.prospects.filter((prospect) => {
-      const haystack = [
-        prospect.name,
-        prospect.company,
-        prospect.email,
-        prospect.phone,
-        prospect.website,
-        prospect.sector,
-      ]
-        .join(" ")
-        .toLowerCase();
+    return data.prospects.filter(
+      (prospect) => {
+        const haystack = [
+          prospect.name,
+          prospect.company,
+          prospect.email,
+          prospect.phone,
+          prospect.website,
+          prospect.sector,
+        ]
+          .join(" ")
+          .toLowerCase();
 
-      const matchesQuery =
-        !normalizedQuery ||
-        haystack.includes(normalizedQuery);
+        const matchesQuery =
+          !normalizedQuery ||
+          haystack.includes(
+            normalizedQuery,
+          );
 
-      const matchesSource =
-        sourceFilter === "all" ||
-        prospect.source === sourceFilter;
+        const matchesSource =
+          sourceFilter === "all" ||
+          prospect.source ===
+            sourceFilter;
 
-      const matchesStatus =
-        statusFilter === "all" ||
-        prospect.status === statusFilter;
+        const matchesStatus =
+          statusFilter === "all" ||
+          prospect.status ===
+            statusFilter;
 
-      return (
-        matchesQuery &&
-        matchesSource &&
-        matchesStatus
-      );
-    });
+        return (
+          matchesQuery &&
+          matchesSource &&
+          matchesStatus
+        );
+      },
+    );
   }, [
     data.prospects,
     query,
@@ -372,38 +488,75 @@ export default function AdminDashboard() {
     statusFilter,
   ]);
 
+  /* ==============================================================
+     RELANCES
+  ============================================================== */
+
   const today = new Date()
     .toISOString()
     .slice(0, 10);
 
-  const urgent = data.prospects
-    .filter((prospect) => {
-      if (
-        !prospect.next_action_at ||
-        ["won", "lost"].includes(prospect.status)
-      ) {
-        return false;
-      }
+  const urgent =
+    data.prospects
+      .filter((prospect) => {
+        if (
+          !prospect.next_action_at ||
+          ["won", "lost"].includes(
+            prospect.status,
+          )
+        ) {
+          return false;
+        }
 
-      return (
-        prospect.next_action_at === today ||
-        prospect.next_action_at < today
-      );
-    })
-    .sort((a, b) =>
-      a.next_action_at.localeCompare(
-        b.next_action_at,
-      ),
-    )
-    .slice(0, 8);
+        return (
+          prospect.next_action_at ===
+            today ||
+          prospect.next_action_at <
+            today
+        );
+      })
+      .sort((a, b) =>
+        a.next_action_at.localeCompare(
+          b.next_action_at,
+        ),
+      )
+      .slice(0, 8);
+
+  /* ==============================================================
+     NAVIGATION
+  ============================================================== */
 
   const menu = [
-    ["dashboard", "Vue d'ensemble", LayoutDashboard],
-    ["prospects", "Prospects", Users],
-    ["pipeline", "Pipeline", Target],
-    ["calendar", "Rendez-vous", CalendarDays],
-    ["grand-plus", "Grand+", Gift],
-    ["stats", "Statistiques", BarChart3],
+    [
+      "dashboard",
+      "Vue d'ensemble",
+      LayoutDashboard,
+    ],
+    [
+      "prospects",
+      "Prospects",
+      Users,
+    ],
+    [
+      "pipeline",
+      "Pipeline",
+      Target,
+    ],
+    [
+      "calendar",
+      "Rendez-vous",
+      CalendarDays,
+    ],
+    [
+      "grand-plus",
+      "Grand+",
+      Gift,
+    ],
+    [
+      "stats",
+      "Statistiques",
+      BarChart3,
+    ],
   ] as const;
 
   function navigate(name: string) {
@@ -412,14 +565,18 @@ export default function AdminDashboard() {
     setMobileMenu(false);
   }
 
+  /* ==============================================================
+     RENDER
+  ============================================================== */
+
   return (
-    <div className="min-h-screen bg-[#f5f5f3] text-[#080808]">
+    <div className="min-h-screen !bg-[#f5f5f3] !text-[#080808]">
       {/* =========================================================
           SIDEBAR
       ========================================================= */}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-[270px] border-r border-white/10 bg-[#080808] text-white transition-transform duration-300 ${
+        className={`fixed inset-y-0 left-0 z-50 w-[270px] border-r border-white/10 !bg-[#080808] !text-white transition-transform duration-300 ${
           mobileMenu
             ? "translate-x-0"
             : "-translate-x-full lg:translate-x-0"
@@ -427,44 +584,54 @@ export default function AdminDashboard() {
       >
         <div className="flex h-full flex-col p-5">
           <div className="flex items-center justify-between px-2 py-3">
-            <div className="text-2xl font-black tracking-[-0.06em]">
+            <div className="text-2xl font-black tracking-[-0.06em] !text-white">
               Vitrine
-              <span className="text-[#c8a45d]">+</span>
+              <span className="!text-[#c8a45d]">
+                +
+              </span>
             </div>
 
             <button
-              onClick={() => setMobileMenu(false)}
-              className="rounded-xl p-2 text-white/50 lg:hidden"
+              type="button"
+              onClick={() =>
+                setMobileMenu(false)
+              }
+              className="!inline-flex !items-center !justify-center !rounded-full !border-0 !bg-white/10 !p-2 !text-white hover:!bg-white/20 lg:hidden"
             >
               <X size={20} />
             </button>
           </div>
 
-          <div className="mt-8 px-2 text-[10px] font-bold uppercase tracking-[0.24em] text-white/30">
+          <div className="mt-8 px-2 text-[10px] font-bold uppercase tracking-[0.24em] !text-white/30">
             Cockpit commercial
           </div>
 
           <nav className="mt-3 grid gap-1">
-            {menu.map(([key, label, Icon]) => (
-              <button
-                key={key}
-                onClick={() => navigate(key)}
-                className={`flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left text-sm font-semibold transition ${
-                  section === key
-                    ? "bg-white text-[#080808]"
-                    : "text-white/55 hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                <Icon size={18} />
-                {label}
-              </button>
-            ))}
+            {menu.map(
+              ([key, label, Icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() =>
+                    navigate(key)
+                  }
+                  className={`flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left text-sm font-semibold transition ${
+                    section === key
+                      ? "!bg-white !text-[#080808]"
+                      : "!text-white/55 hover:!bg-white/5 hover:!text-white"
+                  }`}
+                >
+                  <Icon size={18} />
+                  {label}
+                </button>
+              ),
+            )}
           </nav>
 
           <div className="mt-auto grid gap-2 border-t border-white/10 pt-5">
             <a
               href="/"
-              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold text-white/50 hover:bg-white/5 hover:text-white"
+              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold !text-white/55 hover:!bg-white/5 hover:!text-white"
             >
               <ArrowLeft size={18} />
               Retour au site
@@ -472,7 +639,7 @@ export default function AdminDashboard() {
 
             <a
               href="/grand-plus-admin.php"
-              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold text-white/50 hover:bg-white/5 hover:text-white"
+              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold !text-white/55 hover:!bg-white/5 hover:!text-white"
             >
               <Gift size={18} />
               Administration Grand+
@@ -480,7 +647,7 @@ export default function AdminDashboard() {
 
             <a
               href="/grand-plus-admin.php?logout=1"
-              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold text-white/50 hover:bg-white/5 hover:text-white"
+              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold !text-white/55 hover:!bg-white/5 hover:!text-white"
             >
               <LogOut size={18} />
               Déconnexion
@@ -494,31 +661,39 @@ export default function AdminDashboard() {
       ========================================================= */}
 
       <main className="min-h-screen lg:ml-[270px]">
-        <header className="sticky top-0 z-40 border-b border-black/10 bg-[#f5f5f3]/90 backdrop-blur-xl">
+        <header className="sticky top-0 z-40 border-b border-black/10 !bg-[#f5f5f3]/90 backdrop-blur-xl">
           <div className="flex h-[74px] items-center justify-between px-5 sm:px-8 lg:px-10">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setMobileMenu(true)}
-                className="rounded-xl border border-black/10 p-2 lg:hidden"
+                type="button"
+                onClick={() =>
+                  setMobileMenu(true)
+                }
+                className="!inline-flex !items-center !justify-center !rounded-xl !border !border-black/10 !bg-white !p-2 !text-[#080808] lg:hidden"
               >
                 <Menu size={20} />
               </button>
 
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-black/35">
+                <div className="text-[10px] font-bold uppercase tracking-[0.24em] !text-black/35">
                   Administration privée
                 </div>
 
-                <div className="mt-1 text-lg font-extrabold tracking-[-0.03em]">
-                  {section === "dashboard"
+                <div className="mt-1 text-lg font-extrabold tracking-[-0.03em] !text-[#080808]">
+                  {section ===
+                  "dashboard"
                     ? "Vue d'ensemble"
-                    : section === "grand-plus"
+                    : section ===
+                        "grand-plus"
                       ? "Le Grand+"
-                      : section === "stats"
+                      : section ===
+                          "stats"
                         ? "Statistiques"
-                        : section === "calendar"
+                        : section ===
+                            "calendar"
                           ? "Rendez-vous"
-                          : section === "pipeline"
+                          : section ===
+                              "pipeline"
                             ? "Pipeline commercial"
                             : "Prospects"}
                 </div>
@@ -527,13 +702,14 @@ export default function AdminDashboard() {
 
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={load}
-                className="hidden rounded-full border border-black/10 px-4 py-2 text-xs font-bold sm:block"
+                className={`${buttonLight} hidden px-4 py-2 text-xs sm:inline-flex`}
               >
                 Actualiser
               </button>
 
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#080808] text-xs font-black text-[#c8a45d]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full !bg-[#080808] text-xs font-black !text-[#c8a45d]">
                 V+
               </div>
             </div>
@@ -542,10 +718,16 @@ export default function AdminDashboard() {
 
         <div className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
           {toast && (
-            <div className="mb-5 flex items-center justify-between rounded-2xl border border-[#c8a45d]/30 bg-[#c8a45d]/10 px-4 py-3 text-sm font-semibold">
+            <div className="mb-5 flex items-center justify-between rounded-2xl border border-[#c8a45d]/30 !bg-[#c8a45d]/10 px-4 py-3 text-sm font-semibold !text-[#080808]">
               <span>{toast}</span>
 
-              <button onClick={() => setToast("")}>
+              <button
+                type="button"
+                onClick={() =>
+                  setToast("")
+                }
+                className="!inline-flex !items-center !justify-center !border-0 !bg-transparent !p-1 !text-[#080808]"
+              >
                 <X size={16} />
               </button>
             </div>
@@ -555,54 +737,72 @@ export default function AdminDashboard() {
             <div className="flex min-h-[50vh] items-center justify-center">
               <div className="h-7 w-7 animate-spin rounded-full border-2 border-black/10 border-t-[#c8a45d]" />
             </div>
-          ) : section === "dashboard" ? (
+          ) : section ===
+            "dashboard" ? (
             <Dashboard
               data={data}
               urgent={urgent}
               onOpen={setSelected}
               onNavigate={navigate}
             />
-          ) : section === "prospects" ? (
+          ) : section ===
+            "prospects" ? (
             <Prospects
               data={data}
               filtered={filtered}
               query={query}
               setQuery={setQuery}
               source={sourceFilter}
-              setSource={setSourceFilter}
+              setSource={
+                setSourceFilter
+              }
               status={statusFilter}
-              setStatus={setStatusFilter}
+              setStatus={
+                setStatusFilter
+              }
               onOpen={setSelected}
-              onNew={() => setNewProspect(true)}
+              onNew={() =>
+                setNewProspect(true)
+              }
             />
-          ) : section === "pipeline" ? (
+          ) : section ===
+            "pipeline" ? (
             <Pipeline
               data={data}
               onOpen={setSelected}
-              onMove={async (id, status) => {
+              onMove={async (
+                id,
+                status,
+              ) => {
                 try {
                   await action({
-                    action: "update_prospect",
+                    action:
+                      "update_prospect",
                     id,
                     status,
                   });
 
-                  setToast("Statut mis à jour.");
+                  setToast(
+                    "Statut mis à jour.",
+                  );
                 } catch (error) {
                   setToast(
-                    error instanceof Error
+                    error instanceof
+                      Error
                       ? error.message
                       : "Erreur",
                   );
                 }
               }}
             />
-          ) : section === "calendar" ? (
+          ) : section ===
+            "calendar" ? (
             <Calendar
               data={data}
               onOpen={setSelected}
             />
-          ) : section === "grand-plus" ? (
+          ) : section ===
+            "grand-plus" ? (
             <GrandPlusPanel
               data={data}
               onOpen={setSelected}
@@ -620,16 +820,21 @@ export default function AdminDashboard() {
       {selected && (
         <ProspectModal
           prospect={selected}
-          onClose={() => setSelected(null)}
+          onClose={() =>
+            setSelected(null)
+          }
           onSave={async (payload) => {
             try {
               await action({
-                action: "update_prospect",
+                action:
+                  "update_prospect",
                 id: selected.id,
                 ...payload,
               });
 
-              setToast("Prospect mis à jour.");
+              setToast(
+                "Prospect mis à jour.",
+              );
             } catch (error) {
               setToast(
                 error instanceof Error
@@ -638,16 +843,22 @@ export default function AdminDashboard() {
               );
             }
           }}
-          onInteraction={async (text, type) => {
+          onInteraction={async (
+            text,
+            type,
+          ) => {
             try {
               await action({
-                action: "add_interaction",
+                action:
+                  "add_interaction",
                 id: selected.id,
                 text,
                 type,
               });
 
-              setToast("Interaction ajoutée.");
+              setToast(
+                "Interaction ajoutée.",
+              );
             } catch (error) {
               setToast(
                 error instanceof Error
@@ -665,17 +876,25 @@ export default function AdminDashboard() {
 
       {newProspect && (
         <NewProspectModal
-          onClose={() => setNewProspect(false)}
-          onCreate={async (prospect) => {
+          onClose={() =>
+            setNewProspect(false)
+          }
+          onCreate={async (
+            prospect,
+          ) => {
             try {
               await action({
-                action: "create_prospect",
+                action:
+                  "create_prospect",
                 ...prospect,
               });
 
               setNewProspect(false);
               setSection("prospects");
-              setToast("Prospect créé.");
+
+              setToast(
+                "Prospect créé.",
+              );
             } catch (error) {
               setToast(
                 error instanceof Error
@@ -702,35 +921,40 @@ function Dashboard({
 }: {
   data: Data;
   urgent: Prospect[];
-  onOpen: (prospect: Prospect) => void;
-  onNavigate: (section: string) => void;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
+  onNavigate: (
+    section: string,
+  ) => void;
 }) {
   const conversion =
     data.stats.prospects > 0
-      ? (data.stats.won / data.stats.prospects) * 100
+      ? (data.stats.won /
+          data.stats.prospects) *
+        100
       : 0;
 
   return (
     <div className="grid gap-8">
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#c8a45d]">
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
           Vitrine+ / Commercial
         </div>
 
-        <h1 className="mt-3 text-4xl font-black tracking-[-0.06em] sm:text-6xl">
+        <h1 className="mt-3 text-4xl font-black tracking-[-0.06em] !text-[#080808] sm:text-6xl">
           Pilotez votre
           <br />
           activité.
         </h1>
 
-        <p className="mt-5 max-w-2xl text-base leading-7 text-black/50">
-          Un seul cockpit pour suivre vos prospects,
-          vos rendez-vous, votre pipeline et votre
-          chiffre d'affaires.
+        <p className="mt-5 max-w-2xl text-base leading-7 !text-black/50">
+          Un seul cockpit pour
+          suivre vos prospects, vos
+          rendez-vous, votre pipeline
+          et votre chiffre d'affaires.
         </p>
       </div>
-
-      {/* KPIs */}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -746,94 +970,108 @@ function Dashboard({
         <MetricCard
           icon={CircleDollarSign}
           label="CA signé"
-          value={euro(data.stats.signed_revenue)}
+          value={euro(
+            data.stats.signed_revenue,
+          )}
         />
 
         <MetricCard
           icon={TrendingUp}
           label="CA potentiel"
-          value={euro(data.stats.potential_revenue)}
+          value={euro(
+            data.stats.potential_revenue,
+          )}
         />
 
         <MetricCard
           icon={Target}
           label="Conversion"
-          value={`${conversion.toFixed(1)} %`}
+          value={`${conversion.toFixed(
+            1,
+          )} %`}
         />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
-        {/* PIPELINE */}
-
-        <div className="rounded-[30px] border border-black/10 bg-white p-6 sm:p-8">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-black/35">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
                 Pipeline
               </div>
 
-              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
                 Opportunités commerciales
               </h2>
             </div>
 
             <button
-              onClick={() => onNavigate("pipeline")}
-              className="rounded-full border border-black/10 px-4 py-2 text-xs font-bold"
+              type="button"
+              onClick={() =>
+                onNavigate("pipeline")
+              }
+              className={`${buttonLight} px-4 py-2 text-xs`}
             >
               Voir le pipeline
             </button>
           </div>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {statuses.slice(0, 6).map(([key, label]) => (
-              <div
-                key={key}
-                className="rounded-2xl bg-[#f5f5f3] p-4"
-              >
-                <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-black/35">
-                  {label}
-                </div>
+            {statuses
+              .slice(0, 6)
+              .map(([key, label]) => (
+                <div
+                  key={key}
+                  className="rounded-2xl !bg-[#f5f5f3] p-4"
+                >
+                  <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+                    {label}
+                  </div>
 
-                <div className="mt-3 text-2xl font-black">
-                  {data.pipeline[key] || 0}
+                  <div className="mt-3 text-2xl font-black !text-[#080808]">
+                    {data.pipeline[
+                      key
+                    ] || 0}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
 
-        {/* ACTIONS */}
-
-        <div className="rounded-[30px] bg-[#080808] p-6 text-white sm:p-8">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#c8a45d]">
+        <div className="rounded-[30px] !bg-[#080808] p-6 !text-white sm:p-8">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-[#c8a45d]">
             À traiter
           </div>
 
-          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-white">
             Relances
           </h2>
 
           <div className="mt-6 grid gap-3">
             {urgent.length === 0 ? (
-              <div className="rounded-2xl border border-white/10 p-4 text-sm text-white/45">
+              <div className="rounded-2xl border border-white/10 p-4 text-sm !text-white/45">
                 Aucune relance urgente.
               </div>
             ) : (
-              urgent.map((prospect) => (
-                <button
-                  key={prospect.id}
-                  onClick={() => onOpen(prospect)}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.08]"
-                >
-                  <div className="flex items-start justify-between gap-3">
+              urgent.map(
+                (prospect) => (
+                  <button
+                    type="button"
+                    key={prospect.id}
+                    onClick={() =>
+                      onOpen(
+                        prospect,
+                      )
+                    }
+                    className="!flex !w-full !items-start !justify-between !rounded-2xl !border !border-white/10 !bg-white/[0.04] !p-4 !text-left !text-white transition hover:!bg-white/[0.08]"
+                  >
                     <div>
-                      <div className="font-bold">
+                      <div className="font-bold !text-white">
                         {prospect.company ||
                           prospect.name}
                       </div>
 
-                      <div className="mt-1 text-xs text-white/40">
+                      <div className="mt-1 text-xs !text-white/40">
                         {prospect.next_action ||
                           "Relancer le prospect"}
                       </div>
@@ -841,83 +1079,106 @@ function Dashboard({
 
                     <ChevronRight
                       size={17}
-                      className="text-white/30"
+                      className="!text-white/30"
                     />
-                  </div>
-                </button>
-              ))
+                  </button>
+                ),
+              )
             )}
           </div>
         </div>
       </div>
 
-      {/* SOURCES + GRAND+ */}
-
       <div className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-[30px] border border-black/10 bg-white p-6 sm:p-8">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-black/35">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
             Acquisition
           </div>
 
-          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">
-            D'où viennent vos prospects ?
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+            D'où viennent vos
+            prospects ?
           </h2>
 
           <div className="mt-8 grid gap-5">
-            {Object.entries(data.sources)
-              .sort((a, b) => b[1] - a[1])
-              .map(([source, count]) => {
-                const total =
-                  data.stats.prospects || 1;
+            {Object.entries(
+              data.sources,
+            )
+              .sort(
+                (a, b) =>
+                  b[1] - a[1],
+              )
+              .map(
+                ([
+                  source,
+                  count,
+                ]) => {
+                  const total =
+                    data.stats
+                      .prospects ||
+                    1;
 
-                return (
-                  <div key={source}>
-                    <div className="flex justify-between text-sm">
-                      <span className="font-bold">
-                        {sourceLabel(source)}
-                      </span>
+                  return (
+                    <div
+                      key={source}
+                    >
+                      <div className="flex justify-between text-sm">
+                        <span className="font-bold !text-[#080808]">
+                          {sourceLabel(
+                            source,
+                          )}
+                        </span>
 
-                      <span className="text-black/40">
-                        {count} lead
-                        {count > 1 ? "s" : ""}
-                      </span>
+                        <span className="!text-black/40">
+                          {count} lead
+                          {count >
+                          1
+                            ? "s"
+                            : ""}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 h-2 overflow-hidden rounded-full !bg-black/5">
+                        <div
+                          className="h-full rounded-full !bg-[#080808]"
+                          style={{
+                            width: `${Math.max(
+                              4,
+                              (count /
+                                total) *
+                                100,
+                            )}%`,
+                          }}
+                        />
+                      </div>
                     </div>
+                  );
+                },
+              )}
 
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/5">
-                      <div
-                        className="h-full rounded-full bg-[#080808]"
-                        style={{
-                          width: `${Math.max(
-                            4,
-                            (count / total) * 100,
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-
-            {Object.keys(data.sources).length === 0 && (
-              <div className="text-sm text-black/35">
-                Aucune donnée pour le moment.
+            {Object.keys(
+              data.sources,
+            ).length === 0 && (
+              <div className="text-sm !text-black/35">
+                Aucune donnée pour
+                le moment.
               </div>
             )}
           </div>
         </div>
 
-        <div className="rounded-[30px] border border-[#c8a45d]/30 bg-[#080808] p-6 text-white sm:p-8">
+        <div className="rounded-[30px] border border-[#c8a45d]/30 !bg-[#080808] p-6 !text-white sm:p-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#c8a45d] text-[#080808]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl !bg-[#c8a45d] !text-[#080808]">
               <Gift size={21} />
             </div>
 
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#c8a45d]">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-[#c8a45d]">
                 Acquisition
               </div>
 
-              <h2 className="mt-1 text-2xl font-black">
+              <h2 className="mt-1 text-2xl font-black !text-white">
                 Le Grand+
               </h2>
             </div>
@@ -927,7 +1188,8 @@ function Dashboard({
             <DarkStat
               label="Participants"
               value={String(
-                data.grand_plus.length,
+                data.grand_plus
+                  .length,
               )}
             />
 
@@ -939,46 +1201,69 @@ function Dashboard({
                     item.month_key ===
                     new Date()
                       .toISOString()
-                      .slice(0, 7),
+                      .slice(
+                        0,
+                        7,
+                      ),
                 ).length,
               )}
             />
           </div>
 
           <button
-            onClick={() => onNavigate("grand-plus")}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#080808]"
+            type="button"
+            onClick={() =>
+              onNavigate(
+                "grand-plus",
+              )
+            }
+            className={`${buttonLight} mt-5 !w-full px-5 py-3 text-sm`}
           >
             Voir les participants
-            <ChevronRight size={16} />
+            <ChevronRight
+              size={16}
+            />
           </button>
         </div>
       </div>
-
-      {/* ACTIONS */}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <QuickAction
           icon={Plus}
           title="Nouveau prospect"
           text="Ajouter une opportunité manuellement"
-          onClick={() => onNavigate("prospects")}
+          onClick={() =>
+            onNavigate(
+              "prospects",
+            )
+          }
         />
 
         <QuickAction
           icon={CalendarDays}
           title="Rendez-vous"
           text={`${data.stats.meetings} prospect${
-            data.stats.meetings > 1 ? "s" : ""
+            data.stats.meetings >
+            1
+              ? "s"
+              : ""
           } actuellement au stade rendez-vous`}
-          onClick={() => onNavigate("calendar")}
+          onClick={() =>
+            onNavigate(
+              "calendar",
+            )
+          }
         />
 
         <QuickAction
           icon={Activity}
           title="Relances"
           text={`${data.stats.today_actions} à traiter aujourd'hui`}
-          onClick={() => onNavigate("prospects")}
+          onClick={() =>
+            onNavigate(
+              "prospects",
+            )
+          }
         />
       </div>
     </div>
@@ -1004,66 +1289,86 @@ function Prospects({
   data: Data;
   filtered: Prospect[];
   query: string;
-  setQuery: (value: string) => void;
+  setQuery: (
+    value: string,
+  ) => void;
   source: string;
-  setSource: (value: string) => void;
+  setSource: (
+    value: string,
+  ) => void;
   status: string;
-  setStatus: (value: string) => void;
-  onOpen: (prospect: Prospect) => void;
+  setStatus: (
+    value: string,
+  ) => void;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
   onNew: () => void;
 }) {
   return (
     <div className="grid gap-7">
       <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#c8a45d]">
+          <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
             CRM
           </div>
 
-          <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">
+          <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
             Prospects
           </h1>
 
-          <p className="mt-3 text-sm text-black/45">
-            {data.prospects.length} prospect
-            {data.prospects.length > 1 ? "s" : ""} dans
-            votre base commerciale.
+          <p className="mt-3 text-sm !text-black/45">
+            {data.prospects.length}{" "}
+            prospect
+            {data.prospects
+              .length > 1
+              ? "s"
+              : ""}{" "}
+            dans votre base
+            commerciale.
           </p>
         </div>
 
         <button
+          type="button"
           onClick={onNew}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#080808] px-5 py-3 text-sm font-bold text-white"
+          className={`${buttonDark} px-5 py-3 text-sm`}
         >
           <Plus size={17} />
           Nouveau prospect
         </button>
       </div>
 
-      <div className="rounded-[28px] border border-black/10 bg-white p-4">
+      <div className="rounded-[28px] border border-black/10 !bg-white p-4">
         <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
-          <div className="flex items-center gap-3 rounded-2xl bg-[#f5f5f3] px-4">
+          <div className="flex items-center gap-3 rounded-2xl !bg-[#f5f5f3] px-4">
             <Search
               size={17}
-              className="text-black/30"
+              className="!text-black/30"
             />
 
             <input
               value={query}
               onChange={(event) =>
-                setQuery(event.target.value)
+                setQuery(
+                  event.target
+                    .value,
+                )
               }
               placeholder="Rechercher un nom, une entreprise, un e-mail..."
-              className="w-full bg-transparent py-3 text-sm font-medium outline-none"
+              className="w-full !bg-transparent py-3 text-sm font-medium !text-[#080808] outline-none placeholder:!text-black/30"
             />
           </div>
 
           <select
             value={source}
             onChange={(event) =>
-              setSource(event.target.value)
+              setSource(
+                event.target
+                  .value,
+              )
             }
-            className="rounded-2xl bg-[#f5f5f3] px-4 py-3 text-sm font-semibold outline-none"
+            className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
           >
             <option value="all">
               Toutes les sources
@@ -1093,45 +1398,53 @@ function Prospects({
           <select
             value={status}
             onChange={(event) =>
-              setStatus(event.target.value)
+              setStatus(
+                event.target
+                  .value,
+              )
             }
-            className="rounded-2xl bg-[#f5f5f3] px-4 py-3 text-sm font-semibold outline-none"
+            className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
           >
             <option value="all">
               Tous les statuts
             </option>
 
-            {statuses.map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
+            {statuses.map(
+              ([key, label]) => (
+                <option
+                  key={key}
+                  value={key}
+                >
+                  {label}
+                </option>
+              ),
+            )}
           </select>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[30px] border border-black/10 bg-white">
+      <div className="overflow-hidden rounded-[30px] border border-black/10 !bg-white">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
             <thead>
               <tr className="border-b border-black/10 text-left">
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Prospect
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Source
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Statut
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Valeur
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Créé
                 </th>
 
@@ -1140,77 +1453,98 @@ function Prospects({
             </thead>
 
             <tbody>
-              {filtered.map((prospect) => (
-                <tr
-                  key={prospect.id}
-                  className="border-b border-black/5 transition hover:bg-[#f8f8f6]"
-                >
-                  <td className="px-6 py-5">
-                    <button
-                      onClick={() => onOpen(prospect)}
-                      className="text-left"
-                    >
-                      <div className="font-extrabold">
-                        {prospect.company ||
-                          prospect.name}
-                      </div>
+              {filtered.map(
+                (prospect) => (
+                  <tr
+                    key={prospect.id}
+                    className="border-b border-black/5 transition hover:!bg-[#f8f8f6]"
+                  >
+                    <td className="px-6 py-5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpen(
+                            prospect,
+                          )
+                        }
+                        className="!border-0 !bg-transparent !p-0 !text-left"
+                      >
+                        <div className="font-extrabold !text-[#080808]">
+                          {prospect.company ||
+                            prospect.name}
+                        </div>
 
-                      <div className="mt-1 text-xs text-black/40">
-                        {prospect.name}
-                        {prospect.email
-                          ? ` · ${prospect.email}`
-                          : ""}
-                      </div>
-                    </button>
-                  </td>
+                        <div className="mt-1 text-xs !text-black/40">
+                          {
+                            prospect.name
+                          }
 
-                  <td className="px-6 py-5">
-                    <span className="rounded-full bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em]">
-                      {sourceLabel(
-                        prospect.source,
+                          {prospect.email
+                            ? ` · ${prospect.email}`
+                            : ""}
+                        </div>
+                      </button>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <span className="rounded-full !bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-[#080808]">
+                        {sourceLabel(
+                          prospect.source,
+                        )}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <StatusBadge
+                        status={
+                          prospect.status
+                        }
+                      />
+                    </td>
+
+                    <td className="px-6 py-5 text-sm font-bold !text-[#080808]">
+                      {prospect.estimated_value
+                        ? euro(
+                            prospect.estimated_value,
+                          )
+                        : "—"}
+                    </td>
+
+                    <td className="px-6 py-5 text-sm !text-black/45">
+                      {dateFr(
+                        prospect.created_at,
                       )}
-                    </span>
-                  </td>
+                    </td>
 
-                  <td className="px-6 py-5">
-                    <StatusBadge
-                      status={prospect.status}
-                    />
-                  </td>
+                    <td className="px-6 py-5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpen(
+                            prospect,
+                          )
+                        }
+                        className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808] hover:!bg-[#f5f5f3]"
+                      >
+                        <ChevronRight
+                          size={16}
+                        />
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
 
-                  <td className="px-6 py-5 text-sm font-bold">
-                    {prospect.estimated_value
-                      ? euro(
-                          prospect.estimated_value,
-                        )
-                      : "—"}
-                  </td>
-
-                  <td className="px-6 py-5 text-sm text-black/45">
-                    {dateFr(
-                      prospect.created_at,
-                    )}
-                  </td>
-
-                  <td className="px-6 py-5">
-                    <button
-                      onClick={() => onOpen(prospect)}
-                      className="rounded-full border border-black/10 p-2"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-
-              {filtered.length === 0 && (
+              {filtered.length ===
+                0 && (
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-6 py-20 text-center text-sm text-black/35"
+                    className="px-6 py-20 text-center text-sm !text-black/35"
                   >
-                    Aucun prospect ne correspond à
-                    votre recherche.
+                    Aucun prospect ne
+                    correspond à votre
+                    recherche.
                   </td>
                 </tr>
               )}
@@ -1232,7 +1566,9 @@ function Pipeline({
   onMove,
 }: {
   data: Data;
-  onOpen: (prospect: Prospect) => void;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
   onMove: (
     id: string,
     status: string,
@@ -1241,120 +1577,152 @@ function Pipeline({
   return (
     <div className="grid gap-7">
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#c8a45d]">
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
           CRM
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
           Pipeline commercial
         </h1>
 
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-black/45">
-          Visualisez chaque opportunité de la première
-          prise de contact jusqu'à la signature.
+        <p className="mt-3 max-w-2xl text-sm leading-6 !text-black/45">
+          Visualisez chaque
+          opportunité de la première
+          prise de contact jusqu'à la
+          signature.
         </p>
       </div>
 
       <div className="overflow-x-auto pb-4">
         <div className="flex min-w-[1500px] gap-4">
-          {statuses.map(([status, label]) => {
-            const prospects = data.prospects.filter(
-              (prospect) =>
-                prospect.status === status,
-            );
+          {statuses.map(
+            ([status, label]) => {
+              const prospects =
+                data.prospects.filter(
+                  (prospect) =>
+                    prospect.status ===
+                    status,
+                );
 
-            const value = prospects.reduce(
-              (sum, prospect) =>
-                sum +
-                Number(
-                  prospect.estimated_value || 0,
-                ),
-              0,
-            );
+              const value =
+                prospects.reduce(
+                  (
+                    sum,
+                    prospect,
+                  ) =>
+                    sum +
+                    Number(
+                      prospect.estimated_value ||
+                        0,
+                    ),
+                  0,
+                );
 
-            return (
-              <div
-                key={status}
-                className="flex w-[180px] shrink-0 flex-col rounded-[26px] border border-black/10 bg-white p-3"
-                onDragOver={(event) =>
-                  event.preventDefault()
-                }
-                onDrop={async (event) => {
-                  const id =
-                    event.dataTransfer.getData(
-                      "prospect-id",
-                    );
-
-                  if (id) {
-                    await onMove(id, status);
+              return (
+                <div
+                  key={status}
+                  className="flex w-[180px] shrink-0 flex-col rounded-[26px] border border-black/10 !bg-white p-3"
+                  onDragOver={(
+                    event,
+                  ) =>
+                    event.preventDefault()
                   }
-                }}
-              >
-                <div className="flex items-center justify-between px-2 py-2">
-                  <div className="text-xs font-extrabold">
-                    {label}
+                  onDrop={async (
+                    event,
+                  ) => {
+                    const id =
+                      event.dataTransfer.getData(
+                        "prospect-id",
+                      );
+
+                    if (id) {
+                      await onMove(
+                        id,
+                        status,
+                      );
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-between px-2 py-2">
+                    <div className="text-xs font-extrabold !text-[#080808]">
+                      {label}
+                    </div>
+
+                    <span className="rounded-full !bg-black/5 px-2 py-1 text-[10px] font-bold !text-[#080808]">
+                      {
+                        prospects.length
+                      }
+                    </span>
                   </div>
 
-                  <span className="rounded-full bg-black/5 px-2 py-1 text-[10px] font-bold">
-                    {prospects.length}
-                  </span>
-                </div>
+                  <div className="px-2 pb-2 text-[10px] font-semibold !text-black/35">
+                    {euro(value)}
+                  </div>
 
-                <div className="px-2 pb-2 text-[10px] font-semibold text-black/35">
-                  {euro(value)}
-                </div>
+                  <div className="grid min-h-[180px] gap-2">
+                    {prospects.map(
+                      (prospect) => (
+                        <button
+                          type="button"
+                          key={prospect.id}
+                          draggable
+                          onDragStart={(
+                            event,
+                          ) =>
+                            event.dataTransfer.setData(
+                              "prospect-id",
+                              prospect.id,
+                            )
+                          }
+                          onClick={() =>
+                            onOpen(
+                              prospect,
+                            )
+                          }
+                          className="!block !rounded-2xl !border !border-black/10 !bg-[#f7f7f5] !p-3 !text-left !text-[#080808] transition hover:!border-[#c8a45d]/50 hover:!bg-white"
+                        >
+                          <div className="truncate text-sm font-extrabold !text-[#080808]">
+                            {prospect.company ||
+                              prospect.name}
+                          </div>
 
-                <div className="grid min-h-[180px] gap-2">
-                  {prospects.map((prospect) => (
-                    <button
-                      key={prospect.id}
-                      draggable
-                      onDragStart={(event) =>
-                        event.dataTransfer.setData(
-                          "prospect-id",
-                          prospect.id,
-                        )
-                      }
-                      onClick={() =>
-                        onOpen(prospect)
-                      }
-                      className="rounded-2xl border border-black/10 bg-[#f7f7f5] p-3 text-left transition hover:border-[#c8a45d]/50 hover:bg-white"
-                    >
-                      <div className="truncate text-sm font-extrabold">
-                        {prospect.company ||
-                          prospect.name}
-                      </div>
+                          <div className="mt-1 truncate text-[11px] !text-black/40">
+                            {
+                              prospect.name
+                            }
+                          </div>
 
-                      <div className="mt-1 truncate text-[11px] text-black/40">
-                        {prospect.name}
-                      </div>
-
-                      {prospect.estimated_value >
-                        0 && (
-                        <div className="mt-3 text-xs font-bold">
-                          {euro(
-                            prospect.estimated_value,
+                          {prospect.estimated_value >
+                            0 && (
+                            <div className="mt-3 text-xs font-bold !text-[#080808]">
+                              {euro(
+                                prospect.estimated_value,
+                              )}
+                            </div>
                           )}
-                        </div>
-                      )}
 
-                      {prospect.next_action && (
-                        <div className="mt-3 border-t border-black/5 pt-2 text-[10px] leading-4 text-black/40">
-                          {prospect.next_action}
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                          {prospect.next_action && (
+                            <div className="mt-3 border-t border-black/5 pt-2 text-[10px] leading-4 !text-black/40">
+                              {
+                                prospect.next_action
+                              }
+                            </div>
+                          )}
+                        </button>
+                      ),
+                    )}
 
-                  {prospects.length === 0 && (
-                    <div className="flex items-center justify-center rounded-2xl border border-dashed border-black/10 p-5 text-center text-[10px] font-semibold text-black/25">
-                      Déposer ici
-                    </div>
-                  )}
+                    {prospects.length ===
+                      0 && (
+                      <div className="flex items-center justify-center rounded-2xl border border-dashed border-black/10 p-5 text-center text-[10px] font-semibold !text-black/25">
+                        Déposer ici
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            },
+          )}
         </div>
       </div>
     </div>
@@ -1370,103 +1738,121 @@ function Calendar({
   onOpen,
 }: {
   data: Data;
-  onOpen: (prospect: Prospect) => void;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
 }) {
-  const bookings = [...data.bookings].sort(
-    (a, b) =>
-      `${a.date || ""} ${a.time || ""}`.localeCompare(
-        `${b.date || ""} ${b.time || ""}`,
-      ),
+  const bookings = [
+    ...data.bookings,
+  ].sort((a, b) =>
+    `${a.date || ""} ${a.time || ""}`.localeCompare(
+      `${b.date || ""} ${b.time || ""}`,
+    ),
   );
 
   return (
     <div className="grid gap-7">
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#c8a45d]">
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
           Agenda
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
           Rendez-vous
         </h1>
       </div>
 
       <div className="grid gap-3">
         {bookings.length === 0 ? (
-          <div className="rounded-[30px] border border-black/10 bg-white p-16 text-center text-sm text-black/35">
-            Aucun rendez-vous enregistré.
+          <div className="rounded-[30px] border border-black/10 !bg-white p-16 text-center text-sm !text-black/35">
+            Aucun rendez-vous
+            enregistré.
           </div>
         ) : (
-          bookings.map((booking, index) => {
-            const matchingProspect =
-              data.prospects.find(
-                (prospect) =>
-                  prospect.booking_reference ===
+          bookings.map(
+            (booking, index) => {
+              const matchingProspect =
+                data.prospects.find(
+                  (prospect) =>
+                    prospect.booking_reference ===
+                      booking.reference ||
+                    (prospect.name ===
+                      booking.name &&
+                      prospect.phone ===
+                        booking.phone),
+                );
+
+              return (
+                <button
+                  type="button"
+                  key={
                     booking.reference ||
-                  (prospect.name ===
-                    booking.name &&
-                    prospect.phone ===
-                      booking.phone),
-              );
-
-            return (
-              <button
-                key={
-                  booking.reference ||
-                  `${booking.name}-${index}`
-                }
-                onClick={() => {
-                  if (matchingProspect) {
-                    onOpen(matchingProspect);
+                    `${booking.name}-${index}`
                   }
-                }}
-                className="grid gap-5 rounded-[28px] border border-black/10 bg-white p-5 text-left transition hover:border-[#c8a45d]/50 sm:grid-cols-[150px_1fr_auto] sm:items-center sm:p-6"
-              >
-                <div>
-                  <div className="text-2xl font-black tracking-[-0.04em]">
-                    {booking.time || "—"}
-                  </div>
-
-                  <div className="mt-1 text-xs font-bold text-black/35">
-                    {booking.date || "—"}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="font-extrabold">
-                    {booking.company ||
-                      booking.name ||
-                      "Sans nom"}
-                  </div>
-
-                  <div className="mt-1 text-sm text-black/45">
-                    {booking.name}
-                    {booking.phone
-                      ? ` · ${booking.phone}`
-                      : ""}
-                  </div>
-
-                  {booking.reason && (
-                    <div className="mt-3 text-xs leading-5 text-black/40">
-                      {booking.reason}
+                  onClick={() => {
+                    if (
+                      matchingProspect
+                    ) {
+                      onOpen(
+                        matchingProspect,
+                      );
+                    }
+                  }}
+                  className="grid gap-5 !rounded-[28px] !border !border-black/10 !bg-white !p-5 !text-left !text-[#080808] transition hover:!border-[#c8a45d]/50 sm:grid-cols-[150px_1fr_auto] sm:items-center sm:!p-6"
+                >
+                  <div>
+                    <div className="text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+                      {booking.time ||
+                        "—"}
                     </div>
-                  )}
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-700">
-                    {booking.status ||
-                      "confirmé"}
-                  </span>
+                    <div className="mt-1 text-xs font-bold !text-black/35">
+                      {booking.date ||
+                        "—"}
+                    </div>
+                  </div>
 
-                  <ChevronRight
-                    size={17}
-                    className="text-black/25"
-                  />
-                </div>
-              </button>
-            );
-          })
+                  <div>
+                    <div className="font-extrabold !text-[#080808]">
+                      {booking.company ||
+                        booking.name ||
+                        "Sans nom"}
+                    </div>
+
+                    <div className="mt-1 text-sm !text-black/45">
+                      {
+                        booking.name
+                      }
+
+                      {booking.phone
+                        ? ` · ${booking.phone}`
+                        : ""}
+                    </div>
+
+                    {booking.reason && (
+                      <div className="mt-3 text-xs leading-5 !text-black/40">
+                        {
+                          booking.reason
+                        }
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full !bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-emerald-700">
+                      {booking.status ||
+                        "confirmé"}
+                    </span>
+
+                    <ChevronRight
+                      size={17}
+                      className="!text-black/25"
+                    />
+                  </div>
+                </button>
+              );
+            },
+          )
         )}
       </div>
     </div>
@@ -1482,30 +1868,36 @@ function GrandPlusPanel({
   onOpen,
 }: {
   data: Data;
-  onOpen: (prospect: Prospect) => void;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
 }) {
-  const currentMonth = new Date()
-    .toISOString()
-    .slice(0, 7);
+  const currentMonth =
+    new Date()
+      .toISOString()
+      .slice(0, 7);
 
-  const current = data.grand_plus.filter(
-    (participant) =>
-      participant.month_key === currentMonth,
-  );
+  const current =
+    data.grand_plus.filter(
+      (participant) =>
+        participant.month_key ===
+        currentMonth,
+    );
 
   return (
     <div className="grid gap-7">
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#c8a45d]">
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
           Acquisition
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
           Le Grand+
         </h1>
 
-        <p className="mt-3 text-sm text-black/45">
-          Participants et historique de l'opération.
+        <p className="mt-3 text-sm !text-black/45">
+          Participants et historique
+          de l'opération.
         </p>
       </div>
 
@@ -1513,14 +1905,17 @@ function GrandPlusPanel({
         <MetricCard
           icon={Gift}
           label="Participants ce mois"
-          value={String(current.length)}
+          value={String(
+            current.length,
+          )}
         />
 
         <MetricCard
           icon={Users}
           label="Participants historiques"
           value={String(
-            data.grand_plus.length,
+            data.grand_plus
+              .length,
           )}
         />
 
@@ -1536,24 +1931,24 @@ function GrandPlusPanel({
         />
       </div>
 
-      <div className="overflow-hidden rounded-[30px] border border-black/10 bg-white">
+      <div className="overflow-hidden rounded-[30px] border border-black/10 !bg-white">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
             <thead>
               <tr className="border-b border-black/10 text-left">
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Participant
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Mois
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Marketing
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] text-black/35">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
                   Statut
                 </th>
 
@@ -1563,7 +1958,10 @@ function GrandPlusPanel({
 
             <tbody>
               {data.grand_plus.map(
-                (participant, index) => {
+                (
+                  participant,
+                  index,
+                ) => {
                   const prospect =
                     data.prospects.find(
                       (item) =>
@@ -1582,18 +1980,23 @@ function GrandPlusPanel({
                       className="border-b border-black/5"
                     >
                       <td className="px-6 py-5">
-                        <div className="font-extrabold">
+                        <div className="font-extrabold !text-[#080808]">
                           {participant.company ||
                             participant.name}
                         </div>
 
-                        <div className="mt-1 text-xs text-black/40">
-                          {participant.name} ·{" "}
-                          {participant.email}
+                        <div className="mt-1 text-xs !text-black/40">
+                          {
+                            participant.name
+                          }{" "}
+                          ·{" "}
+                          {
+                            participant.email
+                          }
                         </div>
                       </td>
 
-                      <td className="px-6 py-5 text-sm">
+                      <td className="px-6 py-5 text-sm !text-[#080808]">
                         {participant.month_label ||
                           participant.month_key ||
                           "—"}
@@ -1601,11 +2004,11 @@ function GrandPlusPanel({
 
                       <td className="px-6 py-5">
                         {participant.marketing_consent ? (
-                          <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-700">
+                          <span className="rounded-full !bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-emerald-700">
                             Oui
                           </span>
                         ) : (
-                          <span className="rounded-full bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-black/40">
+                          <span className="rounded-full !bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-black/40">
                             Non
                           </span>
                         )}
@@ -1615,7 +2018,7 @@ function GrandPlusPanel({
                         <StatusBadge
                           status={
                             participant.status ||
-                            "pending"
+                            "new"
                           }
                         />
                       </td>
@@ -1623,13 +2026,18 @@ function GrandPlusPanel({
                       <td className="px-6 py-5">
                         {prospect && (
                           <button
+                            type="button"
                             onClick={() =>
-                              onOpen(prospect)
+                              onOpen(
+                                prospect,
+                              )
                             }
-                            className="rounded-full border border-black/10 p-2"
+                            className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808] hover:!bg-[#f5f5f3]"
                           >
                             <ChevronRight
-                              size={16}
+                              size={
+                                16
+                              }
                             />
                           </button>
                         )}
@@ -1639,13 +2047,15 @@ function GrandPlusPanel({
                 },
               )}
 
-              {data.grand_plus.length === 0 && (
+              {data.grand_plus
+                .length === 0 && (
                 <tr>
                   <td
                     colSpan={5}
-                    className="px-6 py-20 text-center text-sm text-black/35"
+                    className="px-6 py-20 text-center text-sm !text-black/35"
                   >
-                    Aucun participant enregistré.
+                    Aucun participant
+                    enregistré.
                   </td>
                 </tr>
               )}
@@ -1661,7 +2071,11 @@ function GrandPlusPanel({
    STATS
 ================================================================ */
 
-function Stats({ data }: { data: Data }) {
+function Stats({
+  data,
+}: {
+  data: Data;
+}) {
   const conversion =
     data.stats.prospects > 0
       ? (data.stats.won /
@@ -1681,11 +2095,11 @@ function Stats({ data }: { data: Data }) {
   return (
     <div className="grid gap-7">
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#c8a45d]">
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
           Pilotage
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
           Statistiques commerciales
         </h1>
       </div>
@@ -1694,13 +2108,17 @@ function Stats({ data }: { data: Data }) {
         <MetricCard
           icon={Target}
           label="Conversion"
-          value={`${conversion.toFixed(1)} %`}
+          value={`${conversion.toFixed(
+            1,
+          )} %`}
         />
 
         <MetricCard
           icon={CircleDollarSign}
           label="Panier moyen gagné"
-          value={euro(averageWon)}
+          value={euro(
+            averageWon,
+          )}
         />
 
         <MetricCard
@@ -1721,69 +2139,96 @@ function Stats({ data }: { data: Data }) {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-[30px] border border-black/10 bg-white p-6 sm:p-8">
-          <h2 className="text-xl font-black">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <h2 className="text-xl font-black !text-[#080808]">
             Sources d'acquisition
           </h2>
 
           <div className="mt-7 grid gap-5">
-            {Object.entries(data.sources)
-              .sort((a, b) => b[1] - a[1])
-              .map(([source, count]) => (
-                <div key={source}>
-                  <div className="flex justify-between text-sm">
-                    <b>{sourceLabel(source)}</b>
+            {Object.entries(
+              data.sources,
+            )
+              .sort(
+                (a, b) =>
+                  b[1] - a[1],
+              )
+              .map(
+                ([
+                  source,
+                  count,
+                ]) => (
+                  <div
+                    key={source}
+                  >
+                    <div className="flex justify-between text-sm">
+                      <b className="!text-[#080808]">
+                        {sourceLabel(
+                          source,
+                        )}
+                      </b>
 
-                    <span className="text-black/45">
-                      {count} lead
-                      {count > 1 ? "s" : ""}
-                    </span>
+                      <span className="!text-black/45">
+                        {count} lead
+                        {count >
+                        1
+                          ? "s"
+                          : ""}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 h-3 rounded-full !bg-[#f0f0ed]">
+                      <div
+                        className="h-full rounded-full !bg-[#080808]"
+                        style={{
+                          width: `${Math.max(
+                            3,
+                            (count /
+                              total) *
+                              100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
                   </div>
+                ),
+              )}
 
-                  <div className="mt-2 h-3 rounded-full bg-[#f0f0ed]">
-                    <div
-                      className="h-full rounded-full bg-[#080808]"
-                      style={{
-                        width: `${Math.max(
-                          3,
-                          (count / total) *
-                            100,
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-
-            {Object.keys(data.sources).length ===
+            {Object.keys(
+              data.sources,
+            ).length ===
               0 && (
-              <div className="text-sm text-black/35">
+              <div className="text-sm !text-black/35">
                 Aucune donnée.
               </div>
             )}
           </div>
         </div>
 
-        <div className="rounded-[30px] border border-black/10 bg-white p-6 sm:p-8">
-          <h2 className="text-xl font-black">
-            Répartition du pipeline
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <h2 className="text-xl font-black !text-[#080808]">
+            Répartition du
+            pipeline
           </h2>
 
           <div className="mt-7 grid gap-3">
-            {statuses.map(([status, label]) => (
-              <div
-                key={status}
-                className="flex items-center justify-between rounded-2xl bg-[#f5f5f3] px-4 py-3"
-              >
-                <span className="text-sm font-semibold">
-                  {label}
-                </span>
+            {statuses.map(
+              ([status, label]) => (
+                <div
+                  key={status}
+                  className="flex items-center justify-between rounded-2xl !bg-[#f5f5f3] px-4 py-3"
+                >
+                  <span className="text-sm font-semibold !text-[#080808]">
+                    {label}
+                  </span>
 
-                <b>
-                  {data.pipeline[status] || 0}
-                </b>
-              </div>
-            ))}
+                  <b className="!text-[#080808]">
+                    {data.pipeline[
+                      status
+                    ] || 0}
+                  </b>
+                </div>
+              ),
+            )}
           </div>
         </div>
       </div>
@@ -1792,7 +2237,7 @@ function Stats({ data }: { data: Data }) {
 }
 
 /* ================================================================
-   METRIC
+   METRIC CARD
 ================================================================ */
 
 function MetricCard({
@@ -1805,24 +2250,28 @@ function MetricCard({
   value: string;
 }) {
   return (
-    <div className="rounded-[26px] border border-black/10 bg-white p-6">
+    <div className="rounded-[26px] border border-black/10 !bg-white p-6">
       <div className="flex items-center justify-between">
-        <div className="text-xs font-bold uppercase tracking-[0.13em] text-black/35">
+        <div className="text-xs font-bold uppercase tracking-[0.13em] !text-black/35">
           {label}
         </div>
 
         <Icon
           size={18}
-          className="text-[#c8a45d]"
+          className="!text-[#c8a45d]"
         />
       </div>
 
-      <div className="mt-7 text-3xl font-black tracking-[-0.04em]">
+      <div className="mt-7 text-3xl font-black tracking-[-0.04em] !text-[#080808]">
         {value}
       </div>
     </div>
   );
 }
+
+/* ================================================================
+   DARK STAT
+================================================================ */
 
 function DarkStat({
   label,
@@ -1832,17 +2281,21 @@ function DarkStat({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-      <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-white/35">
+    <div className="rounded-2xl border border-white/10 !bg-white/[0.04] p-4">
+      <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-white/35">
         {label}
       </div>
 
-      <div className="mt-2 text-2xl font-black">
+      <div className="mt-2 text-2xl font-black !text-white">
         {value}
       </div>
     </div>
   );
 }
+
+/* ================================================================
+   QUICK ACTION
+================================================================ */
 
 function QuickAction({
   icon: Icon,
@@ -1857,18 +2310,19 @@ function QuickAction({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="group rounded-[26px] border border-black/10 bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-[#c8a45d]/40"
+      className="group rounded-[26px] !border !border-black/10 !bg-white !p-5 !text-left !text-[#080808] transition hover:-translate-y-0.5 hover:!border-[#c8a45d]/40"
     >
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#080808] text-[#c8a45d]">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl !bg-[#080808] !text-[#c8a45d]">
         <Icon size={18} />
       </div>
 
-      <div className="mt-5 font-black">
+      <div className="mt-5 font-black !text-[#080808]">
         {title}
       </div>
 
-      <div className="mt-1 text-sm leading-6 text-black/40">
+      <div className="mt-1 text-sm leading-6 !text-black/40">
         {text}
       </div>
     </button>
@@ -1888,29 +2342,45 @@ function ProspectModal({
   prospect: Prospect;
   onClose: () => void;
   onSave: (
-    payload: Record<string, unknown>,
+    payload: Record<
+      string,
+      unknown
+    >,
   ) => Promise<void>;
   onInteraction: (
     text: string,
     type: string,
   ) => Promise<void>;
 }) {
-  const [form, setForm] = useState({
-    status: prospect.status,
-    offer: prospect.offer,
-    estimated_value: String(
-      prospect.estimated_value || "",
-    ),
-    recurring_value: String(
-      prospect.recurring_value || "",
-    ),
-    last_contact_at:
-      prospect.last_contact_at || "",
-    next_action: prospect.next_action || "",
-    next_action_at:
-      prospect.next_action_at || "",
-    notes: prospect.notes || "",
-  });
+  const [form, setForm] =
+    useState({
+      status: prospect.status,
+      offer: prospect.offer,
+
+      estimated_value: String(
+        prospect.estimated_value ||
+          "",
+      ),
+
+      recurring_value: String(
+        prospect.recurring_value ||
+          "",
+      ),
+
+      last_contact_at:
+        prospect.last_contact_at ||
+        "",
+
+      next_action:
+        prospect.next_action ||
+        "",
+
+      next_action_at:
+        prospect.next_action_at ||
+        "",
+
+      notes: prospect.notes || "",
+    });
 
   const [interaction, setInteraction] =
     useState("");
@@ -1919,23 +2389,24 @@ function ProspectModal({
     useState("Note");
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/50 p-4 backdrop-blur-sm">
-      <div className="mx-auto my-6 max-w-5xl rounded-[30px] bg-[#f5f5f3] shadow-2xl">
+    <div className="fixed inset-0 z-[100] overflow-y-auto !bg-black/50 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-6 max-w-5xl rounded-[30px] !bg-[#f5f5f3] shadow-2xl">
         <div className="flex items-center justify-between border-b border-black/10 px-6 py-5 sm:px-8">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c8a45d]">
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] !text-[#c8a45d]">
               Fiche prospect
             </div>
 
-            <h2 className="mt-1 text-2xl font-black tracking-[-0.04em]">
+            <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
               {prospect.company ||
                 prospect.name}
             </h2>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-full border border-black/10 bg-white p-2"
+            className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808]"
           >
             <X size={18} />
           </button>
@@ -1943,16 +2414,14 @@ function ProspectModal({
 
         <div className="grid gap-5 p-5 sm:p-8 lg:grid-cols-[1.1fr_.9fr]">
           <div className="grid gap-5">
-            {/* CONTACT */}
-
-            <div className="rounded-[24px] bg-white p-6">
+            <div className="rounded-[24px] !bg-white p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <div className="font-bold">
+                  <div className="font-bold !text-[#080808]">
                     {prospect.name}
                   </div>
 
-                  <div className="mt-2 text-xs text-black/45">
+                  <div className="mt-2 text-xs !text-black/45">
                     {sourceLabel(
                       prospect.source,
                     )}{" "}
@@ -1964,7 +2433,9 @@ function ProspectModal({
                 </div>
 
                 <StatusBadge
-                  status={form.status}
+                  status={
+                    form.status
+                  }
                 />
               </div>
 
@@ -1972,7 +2443,7 @@ function ProspectModal({
                 {prospect.email && (
                   <a
                     href={`mailto:${prospect.email}`}
-                    className="flex items-center gap-3 font-semibold"
+                    className="flex items-center gap-3 font-semibold !text-[#080808]"
                   >
                     <Mail size={16} />
                     {prospect.email}
@@ -1982,7 +2453,7 @@ function ProspectModal({
                 {prospect.phone && (
                   <a
                     href={`tel:${prospect.phone}`}
-                    className="flex items-center gap-3 font-semibold"
+                    className="flex items-center gap-3 font-semibold !text-[#080808]"
                   >
                     <Phone size={16} />
                     {prospect.phone}
@@ -2000,9 +2471,11 @@ function ProspectModal({
                     }
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-3 font-semibold"
+                    className="flex items-center gap-3 font-semibold !text-[#080808]"
                   >
-                    <FileSearch size={16} />
+                    <FileSearch
+                      size={16}
+                    />
                     {prospect.website}
                   </a>
                 )}
@@ -2012,39 +2485,50 @@ function ProspectModal({
                 {prospect.sector && (
                   <InfoBox
                     label="Secteur"
-                    value={prospect.sector}
+                    value={
+                      prospect.sector
+                    }
                   />
                 )}
 
                 {prospect.reason && (
                   <InfoBox
                     label="Motif"
-                    value={prospect.reason}
+                    value={
+                      prospect.reason
+                    }
                   />
                 )}
               </div>
 
               {prospect.problem && (
-                <div className="mt-4 rounded-2xl bg-[#f5f5f3] p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-black/35">
-                    Problématique déclarée
+                <div className="mt-4 rounded-2xl !bg-[#f5f5f3] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+                    Problématique
+                    déclarée
                   </div>
 
-                  <div className="mt-2 text-sm leading-6 text-black/60">
-                    {prospect.problem}
+                  <div className="mt-2 text-sm leading-6 !text-black/60">
+                    {
+                      prospect.problem
+                    }
                   </div>
                 </div>
               )}
 
-              {prospect.audit_score != null && (
-                <div className="mt-6 rounded-2xl bg-[#080808] p-4 text-white">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#c8a45d]">
+              {prospect.audit_score !=
+                null && (
+                <div className="mt-6 rounded-2xl !bg-[#080808] p-4 !text-white">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] !text-[#c8a45d]">
                     Score Audit
                   </div>
 
-                  <div className="mt-2 text-3xl font-black">
-                    {prospect.audit_score}
-                    <span className="text-base text-white/35">
+                  <div className="mt-2 text-3xl font-black !text-white">
+                    {
+                      prospect.audit_score
+                    }
+
+                    <span className="text-base !text-white/35">
                       /100
                     </span>
                   </div>
@@ -2052,26 +2536,36 @@ function ProspectModal({
               )}
 
               {prospect.recommendations &&
-                prospect.recommendations.length >
+                prospect
+                  .recommendations
+                  .length >
                   0 && (
                   <div className="mt-6">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-black/35">
-                      Recommandations Audit
+                    <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+                      Recommandations
+                      Audit
                     </div>
 
                     <div className="mt-3 grid gap-2">
                       {prospect.recommendations
-                        .slice(0, 3)
+                        .slice(
+                          0,
+                          3,
+                        )
                         .map(
                           (
                             recommendation,
                             index,
                           ) => (
                             <div
-                              key={index}
-                              className="rounded-2xl bg-[#f5f5f3] px-4 py-3 text-sm text-black/60"
+                              key={
+                                index
+                              }
+                              className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm !text-black/60"
                             >
-                              {recommendation}
+                              {
+                                recommendation
+                              }
                             </div>
                           ),
                         )}
@@ -2080,32 +2574,45 @@ function ProspectModal({
                 )}
             </div>
 
-            {/* COMMERCIAL */}
-
-            <div className="rounded-[24px] bg-white p-6">
-              <h3 className="font-black">
+            <div className="rounded-[24px] !bg-white p-6">
+              <h3 className="font-black !text-[#080808]">
                 Suivi commercial
               </h3>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <Field label="Statut">
                   <select
-                    value={form.status}
-                    onChange={(event) =>
+                    value={
+                      form.status
+                    }
+                    onChange={(
+                      event,
+                    ) =>
                       setForm({
                         ...form,
                         status:
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                       })
                     }
                   >
                     {statuses.map(
-                      ([key, label]) => (
+                      ([
+                        key,
+                        label,
+                      ]) => (
                         <option
-                          key={key}
-                          value={key}
+                          key={
+                            key
+                          }
+                          value={
+                            key
+                          }
                         >
-                          {label}
+                          {
+                            label
+                          }
                         </option>
                       ),
                     )}
@@ -2114,12 +2621,18 @@ function ProspectModal({
 
                 <Field label="Offre">
                   <select
-                    value={form.offer}
-                    onChange={(event) =>
+                    value={
+                      form.offer
+                    }
+                    onChange={(
+                      event,
+                    ) =>
                       setForm({
                         ...form,
                         offer:
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                       })
                     }
                   >
@@ -2127,14 +2640,22 @@ function ProspectModal({
                       À définir
                     </option>
 
-                    {offers.map((offer) => (
-                      <option
-                        key={offer}
-                        value={offer}
-                      >
-                        {offer}
-                      </option>
-                    ))}
+                    {offers.map(
+                      (offer) => (
+                        <option
+                          key={
+                            offer
+                          }
+                          value={
+                            offer
+                          }
+                        >
+                          {
+                            offer
+                          }
+                        </option>
+                      ),
+                    )}
                   </select>
                 </Field>
 
@@ -2145,11 +2666,15 @@ function ProspectModal({
                     value={
                       form.estimated_value
                     }
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       setForm({
                         ...form,
                         estimated_value:
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                       })
                     }
                     placeholder="1990"
@@ -2163,11 +2688,15 @@ function ProspectModal({
                     value={
                       form.recurring_value
                     }
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       setForm({
                         ...form,
                         recurring_value:
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                       })
                     }
                     placeholder="49"
@@ -2179,11 +2708,15 @@ function ProspectModal({
                     value={
                       form.next_action
                     }
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       setForm({
                         ...form,
                         next_action:
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                       })
                     }
                     placeholder="Relancer le prospect"
@@ -2196,11 +2729,15 @@ function ProspectModal({
                     value={
                       form.next_action_at
                     }
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       setForm({
                         ...form,
                         next_action_at:
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                       })
                     }
                   />
@@ -2211,12 +2748,18 @@ function ProspectModal({
                 <Field label="Notes">
                   <textarea
                     rows={5}
-                    value={form.notes}
-                    onChange={(event) =>
+                    value={
+                      form.notes
+                    }
+                    onChange={(
+                      event,
+                    ) =>
                       setForm({
                         ...form,
                         notes:
-                          event.target.value,
+                          event
+                            .target
+                            .value,
                       })
                     }
                   />
@@ -2224,6 +2767,7 @@ function ProspectModal({
               </div>
 
               <button
+                type="button"
                 onClick={() =>
                   onSave({
                     ...form,
@@ -2237,7 +2781,7 @@ function ProspectModal({
                       ) || 0,
                   })
                 }
-                className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#080808] px-5 py-3 text-sm font-bold text-white"
+                className={`${buttonDark} mt-5 px-5 py-3 text-sm`}
               >
                 <Check size={16} />
                 Enregistrer
@@ -2245,43 +2789,65 @@ function ProspectModal({
             </div>
           </div>
 
-          {/* HISTORIQUE */}
-
-          <div className="rounded-[24px] bg-white p-6">
-            <h3 className="font-black">
-              Ajouter une interaction
+          <div className="rounded-[24px] !bg-white p-6">
+            <h3 className="font-black !text-[#080808]">
+              Ajouter une
+              interaction
             </h3>
 
             <div className="mt-4 grid gap-3">
               <select
                 value={type}
-                onChange={(event) =>
-                  setType(event.target.value)
+                onChange={(
+                  event,
+                ) =>
+                  setType(
+                    event.target
+                      .value,
+                  )
                 }
-                className="rounded-2xl bg-[#f5f5f3] px-4 py-3 text-sm font-semibold outline-none"
+                className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
               >
-                <option>Note</option>
-                <option>Appel</option>
-                <option>E-mail</option>
-                <option>Rendez-vous</option>
-                <option>Proposition</option>
-                <option>Relance</option>
+                <option>
+                  Note
+                </option>
+                <option>
+                  Appel
+                </option>
+                <option>
+                  E-mail
+                </option>
+                <option>
+                  Rendez-vous
+                </option>
+                <option>
+                  Proposition
+                </option>
+                <option>
+                  Relance
+                </option>
               </select>
 
               <textarea
                 rows={4}
                 value={interaction}
-                onChange={(event) =>
+                onChange={(
+                  event,
+                ) =>
                   setInteraction(
-                    event.target.value,
+                    event.target
+                      .value,
                   )
                 }
                 placeholder="Ex. Prospect intéressé par une refonte GROW…"
-                className="rounded-2xl bg-[#f5f5f3] px-4 py-3 text-sm outline-none"
+                className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm !text-[#080808] outline-none placeholder:!text-black/30"
               />
 
               <button
-                disabled={!interaction.trim()}
+                type="button"
+                disabled={
+                  !interaction.trim()
+                }
                 onClick={async () => {
                   await onInteraction(
                     interaction,
@@ -2290,41 +2856,53 @@ function ProspectModal({
 
                   setInteraction("");
                 }}
-                className="rounded-full border border-black/10 px-5 py-3 text-sm font-bold disabled:opacity-40"
+                className={`${buttonLight} px-5 py-3 text-sm`}
               >
-                Ajouter à l'historique
+                Ajouter à
+                l'historique
               </button>
             </div>
 
             <div className="mt-7 border-t border-black/10 pt-5">
-              <h3 className="font-black">
+              <h3 className="font-black !text-[#080808]">
                 Historique
               </h3>
 
               <div className="mt-5 grid gap-5">
-                {prospect.interactions?.length ? (
+                {prospect.interactions
+                  ?.length ? (
                   prospect.interactions.map(
-                    (interaction) => (
+                    (
+                      interaction,
+                    ) => (
                       <div
-                        key={interaction.id}
+                        key={
+                          interaction.id
+                        }
                         className="border-l-2 border-[#c8a45d] pl-4"
                       >
-                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-black/35">
-                          {interaction.type} ·{" "}
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] !text-black/35">
+                          {
+                            interaction.type
+                          }{" "}
+                          ·{" "}
                           {dateTimeFr(
                             interaction.created_at,
                           )}
                         </div>
 
-                        <div className="mt-1 text-sm leading-6 text-black/65">
-                          {interaction.text}
+                        <div className="mt-1 text-sm leading-6 !text-black/65">
+                          {
+                            interaction.text
+                          }
                         </div>
                       </div>
                     ),
                   )
                 ) : (
-                  <div className="text-sm text-black/35">
-                    Aucune interaction enregistrée.
+                  <div className="text-sm !text-black/35">
+                    Aucune interaction
+                    enregistrée.
                   </div>
                 )}
               </div>
@@ -2337,7 +2915,7 @@ function ProspectModal({
 }
 
 /* ================================================================
-   NEW PROSPECT
+   NEW PROSPECT MODAL
 ================================================================ */
 
 function NewProspectModal({
@@ -2346,35 +2924,41 @@ function NewProspectModal({
 }: {
   onClose: () => void;
   onCreate: (
-    prospect: Record<string, string>,
+    prospect: Record<
+      string,
+      string
+    >,
   ) => Promise<void>;
 }) {
-  const [form, setForm] = useState({
-    name: "",
-    company: "",
-    email: "",
-    phone: "",
-    website: "",
-    notes: "",
-  });
+  const [form, setForm] =
+    useState({
+      name: "",
+      company: "",
+      email: "",
+      phone: "",
+      website: "",
+      notes: "",
+    });
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-[30px] bg-[#f5f5f3] p-6 shadow-2xl sm:p-8">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center !bg-black/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-[30px] !bg-[#f5f5f3] p-6 shadow-2xl sm:p-8">
         <div className="flex justify-between">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c8a45d]">
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] !text-[#c8a45d]">
               Nouveau
             </div>
 
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">
-              Ajouter un prospect
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.05em] !text-[#080808]">
+              Ajouter un
+              prospect
             </h2>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-full border border-black/10 bg-white p-2"
+            className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808]"
           >
             <X size={18} />
           </button>
@@ -2383,11 +2967,17 @@ function NewProspectModal({
         <div className="mt-7 grid gap-4 sm:grid-cols-2">
           <Field label="Nom">
             <input
-              value={form.name}
-              onChange={(event) =>
+              value={
+                form.name
+              }
+              onChange={(
+                event,
+              ) =>
                 setForm({
                   ...form,
-                  name: event.target.value,
+                  name: event
+                    .target
+                    .value,
                 })
               }
             />
@@ -2395,12 +2985,18 @@ function NewProspectModal({
 
           <Field label="Entreprise">
             <input
-              value={form.company}
-              onChange={(event) =>
+              value={
+                form.company
+              }
+              onChange={(
+                event,
+              ) =>
                 setForm({
                   ...form,
                   company:
-                    event.target.value,
+                    event
+                      .target
+                      .value,
                 })
               }
             />
@@ -2409,12 +3005,18 @@ function NewProspectModal({
           <Field label="E-mail">
             <input
               type="email"
-              value={form.email}
-              onChange={(event) =>
+              value={
+                form.email
+              }
+              onChange={(
+                event,
+              ) =>
                 setForm({
                   ...form,
                   email:
-                    event.target.value,
+                    event
+                      .target
+                      .value,
                 })
               }
             />
@@ -2422,12 +3024,18 @@ function NewProspectModal({
 
           <Field label="Téléphone">
             <input
-              value={form.phone}
-              onChange={(event) =>
+              value={
+                form.phone
+              }
+              onChange={(
+                event,
+              ) =>
                 setForm({
                   ...form,
                   phone:
-                    event.target.value,
+                    event
+                      .target
+                      .value,
                 })
               }
             />
@@ -2435,12 +3043,18 @@ function NewProspectModal({
 
           <Field label="Site internet">
             <input
-              value={form.website}
-              onChange={(event) =>
+              value={
+                form.website
+              }
+              onChange={(
+                event,
+              ) =>
                 setForm({
                   ...form,
                   website:
-                    event.target.value,
+                    event
+                      .target
+                      .value,
                 })
               }
             />
@@ -2448,12 +3062,18 @@ function NewProspectModal({
 
           <Field label="Notes">
             <input
-              value={form.notes}
-              onChange={(event) =>
+              value={
+                form.notes
+              }
+              onChange={(
+                event,
+              ) =>
                 setForm({
                   ...form,
                   notes:
-                    event.target.value,
+                    event
+                      .target
+                      .value,
                 })
               }
             />
@@ -2462,18 +3082,23 @@ function NewProspectModal({
 
         <div className="mt-7 flex justify-end gap-2">
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-bold"
+            className={`${buttonLight} px-5 py-3 text-sm`}
           >
             Annuler
           </button>
 
           <button
+            type="button"
             disabled={
-              !form.name && !form.company
+              !form.name &&
+              !form.company
             }
-            onClick={() => onCreate(form)}
-            className="rounded-full bg-[#080808] px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+            onClick={() =>
+              onCreate(form)
+            }
+            className={`${buttonDark} px-5 py-3 text-sm`}
           >
             Créer le prospect
           </button>
@@ -2492,13 +3117,13 @@ function Field({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <label className="grid gap-2 text-xs font-bold text-black/45">
+    <label className="grid gap-2 text-xs font-bold !text-black/45">
       {label}
 
-      <div className="[&_input]:w-full [&_input]:rounded-2xl [&_input]:bg-[#f5f5f3] [&_input]:px-4 [&_input]:py-3 [&_input]:text-sm [&_input]:font-medium [&_input]:text-black [&_input]:outline-none [&_select]:w-full [&_select]:rounded-2xl [&_select]:bg-[#f5f5f3] [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:font-medium [&_select]:text-black [&_select]:outline-none [&_textarea]:w-full [&_textarea]:rounded-2xl [&_textarea]:bg-[#f5f5f3] [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:font-medium [&_textarea]:text-black [&_textarea]:outline-none">
+      <div className="[&_input]:w-full [&_input]:rounded-2xl [&_input]:!bg-[#f5f5f3] [&_input]:px-4 [&_input]:py-3 [&_input]:text-sm [&_input]:font-medium [&_input]:!text-[#080808] [&_input]:outline-none [&_input]:placeholder:!text-black/30 [&_select]:w-full [&_select]:rounded-2xl [&_select]:!bg-[#f5f5f3] [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:font-medium [&_select]:!text-[#080808] [&_select]:outline-none [&_textarea]:w-full [&_textarea]:rounded-2xl [&_textarea]:!bg-[#f5f5f3] [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:font-medium [&_textarea]:!text-[#080808] [&_textarea]:outline-none">
         {children}
       </div>
     </label>
@@ -2517,12 +3142,12 @@ function InfoBox({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl bg-[#f5f5f3] p-4">
-      <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-black/35">
+    <div className="rounded-2xl !bg-[#f5f5f3] p-4">
+      <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
         {label}
       </div>
 
-      <div className="mt-2 text-sm font-semibold text-black/65">
+      <div className="mt-2 text-sm font-semibold !text-black/65">
         {value}
       </div>
     </div>

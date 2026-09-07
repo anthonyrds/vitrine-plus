@@ -3,17 +3,40 @@ Options -MultiViews
 RewriteEngine On
 RewriteBase /
 
-# Protection des données privées
+# ============================================================
+# PROTECTION DES DONNÉES PRIVÉES
+# ============================================================
+
 RewriteRule ^\.data(?:/|$) - [F,L]
 RewriteRule ^vitrine-data(?:/|$) - [F,L]
 
-# Protection de la configuration SMTP
+# ============================================================
+# PROTECTION DE LA CONFIGURATION SMTP
+# ============================================================
+
 RewriteRule ^vitrine-mail-config\.php$ - [F,L]
 
-# Ne pas réécrire les vrais fichiers
+# ============================================================
+# PROTECTION DU COCKPIT ADMIN
+# ============================================================
+#
+# /admin passe obligatoirement par admin-gate.php.
+#
+# Le PHP vérifie le Basic Auth AVANT de servir index.html.
+#
+
+RewriteRule ^admin/?$ admin-gate.php [L]
+
+# ============================================================
+# NE PAS RÉÉCRIRE LES VRAIS FICHIERS / DOSSIERS
+# ============================================================
+
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# SPA React
+# ============================================================
+# SPA REACT
+# ============================================================
+
 RewriteRule ^ index.html [L]
