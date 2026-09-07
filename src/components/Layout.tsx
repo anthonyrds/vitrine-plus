@@ -82,6 +82,13 @@ export default function Layout() {
               Audit gratuit
             </Link>
 
+            <a
+  href="/grand-plus-admin.php"
+  className="focus-ring rounded-full border border-black/10 px-4 py-3 text-sm font-bold text-black/55 transition hover:border-black/20 hover:text-black"
+>
+  Administration
+</a>
+
             <Link
               to="/rendez-vous"
               className="focus-ring rounded-full bg-[#080808] px-5 py-3 text-sm font-bold !text-white transition hover:bg-[#c8a45d] hover:!text-[#080808]"
@@ -149,6 +156,14 @@ export default function Layout() {
               >
                 Audit gratuit
               </Link>
+
+<a
+  href="/grand-plus-admin.php"
+  className="mt-2 rounded-2xl border border-black/10 px-4 py-3 text-center font-bold"
+>
+  Administration
+</a>
+
 
               <Link
                 to="/rendez-vous"
@@ -218,6 +233,12 @@ export default function Layout() {
               <Link to="/audit">
                 Audit digital gratuit
               </Link>
+              <a
+  href="/grand-plus-admin.php"
+  className="mt-2 rounded-2xl border border-black/10 px-4 py-3 text-center font-bold"
+>
+  Administration
+</a>
 
               <Link to="/realisations">
                 Réalisations

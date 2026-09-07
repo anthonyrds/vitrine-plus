@@ -2,68 +2,31 @@
 
 declare(strict_types=1);
 
-header(
-    'Content-Type: text/html; charset=utf-8'
-);
+header('Content-Type: text/html; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
-header(
-    'Cache-Control: no-store, no-cache, must-revalidate, max-age=0'
-);
+const DATA_DIR = __DIR__ . '/vitrine-data/grand-plus';
+const PARTICIPATIONS_FILE = DATA_DIR . '/participations.json';
+const CONFIG_FILE = __DIR__ . '/vitrine-mail-config.php';
 
-header(
-    'Pragma: no-cache'
-);
-
-
-const DATA_DIR =
-    __DIR__ . '/vitrine-data/grand-plus';
-
-const PARTICIPATIONS_FILE =
-    DATA_DIR . '/participations.json';
-
-const UNSUBSCRIBE_FILE =
-    DATA_DIR . '/unsubscribed.json';
-
-const CONFIG_FILE =
-    __DIR__ . '/vitrine-mail-config.php';
-
-const DEFAULT_SITE_URL =
-    'https://vitrineplus.fr';
-
-
-/*
-|--------------------------------------------------------------------------
-| HTML
-|--------------------------------------------------------------------------
-*/
-
-function h(string $value): string
+function h(mixed $value): string
 {
     return htmlspecialchars(
-        $value,
+        (string) $value,
         ENT_QUOTES | ENT_SUBSTITUTE,
         'UTF-8'
     );
 }
 
-
-/*
-|--------------------------------------------------------------------------
-| JSON
-|--------------------------------------------------------------------------
-*/
-
 function read_json_file(
     string $file,
     mixed $default
 ): mixed {
-
     if (!file_exists($file)) {
         return $default;
     }
 
-    $content =
-        @file_get_contents($file);
+    $content = @file_get_contents($file);
 
     if (
         $content === false ||
@@ -72,15 +35,13 @@ function read_json_file(
         return $default;
     }
 
-    $decoded =
-        json_decode(
-            $content,
-            true
-        );
+    $decoded = json_decode(
+        $content,
+        true
+    );
 
     if (
-        json_last_error() !==
-        JSON_ERROR_NONE
+        json_last_error() !== JSON_ERROR_NONE
     ) {
         return $default;
     }
@@ -88,19 +49,16 @@ function read_json_file(
     return $decoded;
 }
 
-
 function write_json_file(
     string $file,
     mixed $data
 ): bool {
-
-    $json =
-        json_encode(
-            $data,
-            JSON_PRETTY_PRINT |
-            JSON_UNESCAPED_UNICODE |
-            JSON_UNESCAPED_SLASHES
-        );
+    $json = json_encode(
+        $data,
+        JSON_PRETTY_PRINT |
+        JSON_UNESCAPED_UNICODE |
+        JSON_UNESCAPED_SLASHES
+    );
 
     if ($json === false) {
         return false;
@@ -113,271 +71,136 @@ function write_json_file(
     ) !== false;
 }
 
-
-/*
-|--------------------------------------------------------------------------
-| SECRET
-|--------------------------------------------------------------------------
-*/
-
 function load_secret(): string
 {
     if (!file_exists(CONFIG_FILE)) {
         return '';
     }
 
-    $config =
-        require CONFIG_FILE;
+    $config = require CONFIG_FILE;
 
     if (!is_array($config)) {
         return '';
     }
 
-    return trim(
-        (string) (
-            $config[
-                'grand_plus_unsubscribe_secret'
-            ]
-            ?? ''
-        )
+    return (string) (
+        $config['grand_plus_unsubscribe_secret']
+        ?? ''
     );
 }
 
+$email = trim(
+    (string) (
+        $_GET['email']
+        ?? ''
+    )
+);
 
-/*
-|--------------------------------------------------------------------------
-| TOKEN
-|--------------------------------------------------------------------------
-*/
+$token = trim(
+    (string) (
+        $_GET['token']
+        ?? ''
+    )
+);
 
-function token_for_email(
-    string $email
-): string {
+$secret = load_secret();
 
-    $secret =
-        load_secret();
+$valid = false;
 
-    if ($secret === '') {
-        return '';
-    }
-
-    return hash_hmac(
-        'sha256',
-        strtolower(
-            trim($email)
-        ),
-        $secret
-    );
-}
-
-
-/*
-|--------------------------------------------------------------------------
-| DONNÉES DU LIEN
-|--------------------------------------------------------------------------
-*/
-
-$email =
-    trim(
-        (string) (
-            $_GET['email']
-            ?? ''
-        )
-    );
-
-$token =
-    trim(
-        (string) (
-            $_GET['token']
-            ?? ''
-        )
-    );
-
-
-$validEmail =
+if (
+    $email !== '' &&
     filter_var(
         $email,
         FILTER_VALIDATE_EMAIL
-    ) !== false;
-
-
-$expectedToken =
-    $validEmail
-        ? token_for_email($email)
-        : '';
-
-
-$validToken =
-    $validEmail &&
-    $expectedToken !== '' &&
+    ) &&
     $token !== '' &&
-    hash_equals(
-        $expectedToken,
-        $token
+    $secret !== ''
+) {
+    $expected = hash_hmac(
+        'sha256',
+        strtolower($email),
+        $secret
     );
 
+    $valid = hash_equals(
+        $expected,
+        $token
+    );
+}
 
-/*
-|--------------------------------------------------------------------------
-| TRAITEMENT
-|--------------------------------------------------------------------------
-*/
+$message = '';
 
-if (!$validToken) {
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    $valid
+) {
+    $participations = read_json_file(
+        PARTICIPATIONS_FILE,
+        []
+    );
 
-    http_response_code(400);
-
-    $title =
-        'Lien invalide';
-
-    $message =
-        'Ce lien de désinscription est invalide ou incomplet.';
-
-} else {
-
-    if (!is_dir(DATA_DIR)) {
-
-        @mkdir(
-            DATA_DIR,
-            0750,
-            true
-        );
+    if (!is_array($participations)) {
+        $participations = [];
     }
 
+    $changed = false;
 
-    /*
-     * ENREGISTREMENT DE LA DÉSINSCRIPTION
-     */
-
-    $unsubscribed =
-        read_json_file(
-            UNSUBSCRIBE_FILE,
-            []
-        );
-
-    if (!is_array($unsubscribed)) {
-        $unsubscribed = [];
-    }
-
-
-    $normalizedEmail =
-        strtolower($email);
-
-
-    $unsubscribed[
-        $normalizedEmail
-    ] = [
-
-        'email' =>
-            $normalizedEmail,
-
-        'unsubscribed_at' =>
-            date('c'),
-
-    ];
-
-
-    $saved =
-        write_json_file(
-            UNSUBSCRIBE_FILE,
-            $unsubscribed
-        );
-
-
-    if (!$saved) {
-
-        http_response_code(500);
-
-        $title =
-            'Impossible de traiter la demande';
-
-        $message =
-            'Une erreur temporaire est survenue. Veuillez réessayer plus tard.';
-
-    } else {
-
-
-        /*
-         * MISE À JOUR DES PARTICIPATIONS EXISTANTES
-         */
-
-        $participations =
-            read_json_file(
-                PARTICIPATIONS_FILE,
-                []
-            );
-
-
-        if (is_array($participations)) {
-
-            foreach (
-                $participations
-                as $index =>
-                $participant
-            ) {
-
-                if (
-                    !is_array(
-                        $participant
-                    )
-                ) {
-                    continue;
-                }
-
-
-                $participantEmail =
-                    strtolower(
-                        trim(
-                            (string) (
-                                $participant[
-                                    'email'
-                                ]
-                                ?? ''
-                            )
-                        )
-                    );
-
-
-                if (
-                    $participantEmail ===
-                    $normalizedEmail
-                ) {
-
-                    $participations[
-                        $index
-                    ][
-                        'marketing_consent'
-                    ] =
-                        false;
-
-                    $participations[
-                        $index
-                    ][
-                        'marketing_unsubscribed_at'
-                    ] =
-                        date('c');
-                }
-            }
-
-
-            write_json_file(
-                PARTICIPATIONS_FILE,
-                $participations
-            );
+    foreach (
+        $participations as $index => $participant
+    ) {
+        if (!is_array($participant)) {
+            continue;
         }
 
+        $participantEmail =
+            strtolower(
+                trim(
+                    (string) (
+                        $participant['email']
+                        ?? ''
+                    )
+                )
+            );
 
-        $title =
-            'Désinscription confirmée';
+        if (
+            $participantEmail ===
+            strtolower($email)
+        ) {
+            if (
+                !empty(
+                    $participant['marketing_consent']
+                )
+            ) {
+                $participations[$index][
+                    'marketing_consent'
+                ] = false;
 
+                $participations[$index][
+                    'marketing_unsubscribed_at'
+                ] = date('c');
+
+                $changed = true;
+            }
+        }
+    }
+
+    if (
+        $changed &&
+        write_json_file(
+            PARTICIPATIONS_FILE,
+            $participations
+        )
+    ) {
         $message =
-            'Votre demande a bien été enregistrée. Vous ne recevrez plus les offres et actualités commerciales de Vitrine+ à cette adresse.';
+            'Votre désinscription a bien été enregistrée.';
+    } else {
+        $message =
+            'Votre demande a été prise en compte.';
     }
 }
 
 ?>
 <!DOCTYPE html>
-
 <html lang="fr">
 
 <head>
@@ -386,134 +209,71 @@ if (!$validToken) {
 
 <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0"
+    content="width=device-width, initial-scale=1"
 >
 
-<title>
-    <?= h($title) ?>
-    — Vitrine+
-</title>
+<title>Désinscription — Vitrine+</title>
 
 <style>
 
 body {
     margin: 0;
-
-    min-height:
-        100vh;
-
-    display:
-        grid;
-
-    place-items:
-        center;
-
-    background:
-        #080808;
-
-    color:
-        #fff;
-
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: #080808;
+    color: white;
     font-family:
         -apple-system,
         BlinkMacSystemFont,
         "Helvetica Neue",
         Arial,
         sans-serif;
-
-    padding:
-        24px;
 }
 
-main {
-    width:
-        min(
-            620px,
-            100%
-        );
-
-    padding:
-        42px;
-
-    border:
-        1px solid
-        rgba(
-            255,
-            255,
-            255,
-            .1
-        );
-
-    border-radius:
-        28px;
-
-    background:
-        #111;
+.card {
+    width: min(560px, 100%);
+    padding: 40px;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 28px;
+    background: #111;
+    text-align: center;
 }
 
-.brand {
-    color:
-        #c8a45d;
+.logo {
+    font-weight: 900;
+    font-size: 22px;
+}
 
-    font-size:
-        11px;
-
-    font-weight:
-        800;
-
-    letter-spacing:
-        .2em;
-
-    text-transform:
-        uppercase;
+.logo span {
+    color: #c8a45d;
 }
 
 h1 {
-    margin:
-        18px 0 0;
-
-    font-size:
-        clamp(
-            36px,
-            7vw,
-            60px
-        );
-
-    line-height:
-        .95;
-
-    letter-spacing:
-        -.05em;
+    margin: 30px 0 12px;
+    font-size: 38px;
+    letter-spacing: -.05em;
 }
 
 p {
-    color:
-        rgba(
-            255,
-            255,
-            255,
-            .55
-        );
-
-    line-height:
-        1.7;
+    color: rgba(255,255,255,.55);
+    line-height: 1.7;
 }
 
-a {
-    display:
-        inline-block;
+.button {
+    display: inline-flex;
+    margin-top: 18px;
+    padding: 13px 20px;
+    border-radius: 999px;
+    background: white;
+    color: #080808;
+    text-decoration: none;
+    font-weight: 800;
+}
 
-    margin-top:
-        18px;
-
-    color:
-        #c8a45d;
-
-    font-weight:
-        800;
-
-    text-decoration:
-        none;
+.error {
+    color: #ef8f8f;
 }
 
 </style>
@@ -522,27 +282,64 @@ a {
 
 <body>
 
-<main>
+<div class="card">
 
-    <div class="brand">
-        Vitrine+
+    <div class="logo">
+        Vitrine<span>+</span>
     </div>
 
-    <h1>
-        <?= h($title) ?>
-    </h1>
+    <?php if (!$valid): ?>
 
-    <p>
-        <?= h($message) ?>
-    </p>
+        <h1>
+            Lien invalide
+        </h1>
 
-    <a
-        href="<?= h(DEFAULT_SITE_URL) ?>"
-    >
-        Retour sur vitrineplus.fr →
-    </a>
+        <p class="error">
+            Ce lien de désinscription est invalide ou a expiré.
+        </p>
 
-</main>
+    <?php elseif ($message !== ''): ?>
+
+        <h1>
+            C’est fait.
+        </h1>
+
+        <p>
+            <?= h($message) ?>
+        </p>
+
+        <a
+            href="https://vitrineplus.fr/"
+            class="button"
+        >
+            Retour sur Vitrine+
+        </a>
+
+    <?php else: ?>
+
+        <h1>
+            Se désinscrire
+        </h1>
+
+        <p>
+            Vous êtes sur le point de ne plus recevoir
+            les communications commerciales de Vitrine+.
+        </p>
+
+        <form method="post">
+
+            <button
+                type="submit"
+                class="button"
+            >
+                Confirmer ma désinscription
+            </button>
+
+        </form>
+
+    <?php endif; ?>
+
+</div>
 
 </body>
 
