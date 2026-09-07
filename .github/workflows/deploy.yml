@@ -26,11 +26,14 @@ jobs:
         run: npm run build
 
       - name: Installer le client SFTP
-        run: sudo apt-get update && sudo apt-get install -y lftp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lftp
 
       - name: Déployer sur IONOS via SFTP
         env:
           SFTP_PASSWORD: ${{ secrets.IONOS_SFTP_PASSWORD }}
+
         run: |
           lftp -u "su1574645,$SFTP_PASSWORD" sftp://access-5019473596.webspace-host.com:22 <<EOF
           set sftp:auto-confirm yes
@@ -38,6 +41,6 @@ jobs:
           set net:max-retries 2
           set net:reconnect-interval-base 5
           cd /public
-          mirror --reverse --verbose --exclude-glob vitrine-mail-config.php dist/ .
+          mirror --reverse --verbose --exclude-glob vitrine-mail-config.php --exclude-glob grand-plus-winner.json dist/ .
           bye
           EOF
