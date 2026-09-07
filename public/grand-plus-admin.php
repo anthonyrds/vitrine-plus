@@ -633,7 +633,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (save_winner($winner)) {
                         $actionMessage = 'Le gagnant a été enregistré.';
                     } else {
-                        $actionError = 'Impossible d'enregistrer le gagnant.';
+                       $actionError = "Impossible d'enregistrer le gagnant.";
                     }
                 }
             }
@@ -653,7 +653,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (save_winner($winner)) {
                 $actionMessage = 'Le gagnant a été réinitialisé.';
             } else {
-                $actionError = 'Impossible de réinitialiser le gagnant.';
+                $actionError = "Impossible de réinitialiser le gagnant.";
             }
         }
     }
