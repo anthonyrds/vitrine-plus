@@ -45,7 +45,7 @@ const WINNER_FILE =
     __DIR__ . '/grand-plus-winner.json';
 
 const CONFIG_FILE =
-    dirname(__DIR__) . '/vitrine-mail-config.php';
+    __DIR__ . '/vitrine-mail-config.php';
 
 const UNSUBSCRIBE_FILE =
     DATA_DIR . '/unsubscribed.json';
