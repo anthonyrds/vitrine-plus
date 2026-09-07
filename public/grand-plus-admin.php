@@ -1,113 +1,19 @@
 <?php
-
 declare(strict_types=1);
 
-/*
-|--------------------------------------------------------------------------
-| LE GRAND + — ADMINISTRATION
-|--------------------------------------------------------------------------
-|
-| Administration privée des participations.
-|
-| Fonctionnalités :
-| - consulter les participations
-| - désigner un gagnant
-| - envoyer le mail au gagnant
-| - envoyer le mail aux autres participants
-| - offre commerciale uniquement si consentement marketing
-| - réinitialiser le gagnant
-|
-|--------------------------------------------------------------------------
-*/
+session_start();
 
-header('Content-Type: text/html; charset=utf-8');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-
+const CONFIG_FILE = __DIR__ . '/vitrine-mail-config.php';
+const WINNER_FILE = __DIR__ . '/grand-plus-winner.json';
 const DATA_DIR = __DIR__ . '/vitrine-data/grand-plus';
 const PARTICIPATIONS_FILE = DATA_DIR . '/participations.json';
-const WINNER_FILE = __DIR__ . '/grand-plus-winner.json';
-const CONFIG_FILE = __DIR__ . '/vitrine-mail-config.php';
 
 const DEFAULT_TO_EMAIL = 'vitrineplus@hotmail.com';
 const DEFAULT_FROM_NAME = 'Vitrine+';
 
-const OFFER_AMOUNT = 300;
 const OFFER_VALIDITY_DAYS = 30;
+const OFFER_AMOUNT = 300;
 
-/*
-|--------------------------------------------------------------------------
-| AUTHENTIFICATION
-|--------------------------------------------------------------------------
-*/
-
-function load_admin_credentials(): array
-{
-    if (!file_exists(CONFIG_FILE)) {
-        http_response_code(500);
-        exit('Configuration Vitrine+ introuvable.');
-    }
-
-    $config = require CONFIG_FILE;
-
-    if (!is_array($config)) {
-        http_response_code(500);
-        exit('Configuration Vitrine+ invalide.');
-    }
-
-    $username = trim(
-        (string) ($config['grand_plus_admin_user'] ?? '')
-    );
-
-    $password = (string) (
-        $config['grand_plus_admin_password'] ?? ''
-    );
-
-    if ($username === '' || $password === '') {
-        http_response_code(500);
-        exit(
-            'Les identifiants administrateur du Grand + ne sont pas configurés.'
-        );
-    }
-
-    return [
-        'username' => $username,
-        'password' => $password,
-    ];
-}
-
-function require_auth(): void
-{
-    $credentials = load_admin_credentials();
-
-    if (
-        !isset($_SERVER['PHP_AUTH_USER']) ||
-        !isset($_SERVER['PHP_AUTH_PW'])
-    ) {
-        header(
-            'WWW-Authenticate: Basic realm="Le Grand + — Administration"'
-        );
-
-        http_response_code(401);
-
-        exit('Authentification requise.');
-    }
-
-    $user = (string) $_SERVER['PHP_AUTH_USER'];
-    $password = (string) $_SERVER['PHP_AUTH_PW'];
-
-    if (
-        !hash_equals($credentials['username'], $user) ||
-        !hash_equals($credentials['password'], $password)
-    ) {
-        header(
-            'WWW-Authenticate: Basic realm="Le Grand + — Administration"'
-        );
-
-        http_response_code(401);
-
-        exit('Identifiants incorrects.');
-    }
-}
 
 /*
 |--------------------------------------------------------------------------
@@ -115,173 +21,230 @@ function require_auth(): void
 |--------------------------------------------------------------------------
 */
 
-function read_json_file(string $file, mixed $default): mixed
+function config(): array
 {
-    if (!file_exists($file)) {
-        return $default;
-    }
+    $config = file_exists(CONFIG_FILE) ? require CONFIG_FILE : [];
 
-    $content = @file_get_contents($file);
-
-    if ($content === false || trim($content) === '') {
-        return $default;
-    }
-
-    $decoded = json_decode($content, true);
-
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        return $default;
-    }
-
-    return $decoded;
+    return is_array($config) ? $config : [];
 }
 
-function write_json_file(string $file, mixed $data): bool
-{
-    $directory = dirname($file);
-
-    if (!is_dir($directory)) {
-        if (
-            !mkdir($directory, 0750, true) &&
-            !is_dir($directory)
-        ) {
-            return false;
-        }
-    }
-
-    $json = json_encode(
-        $data,
-        JSON_PRETTY_PRINT |
-        JSON_UNESCAPED_UNICODE |
-        JSON_UNESCAPED_SLASHES
-    );
-
-    if ($json === false) {
-        return false;
-    }
-
-    return @file_put_contents(
-        $file,
-        $json,
-        LOCK_EX
-    ) !== false;
-}
-
-function h(string $value): string
+function h(mixed $value): string
 {
     return htmlspecialchars(
-        $value,
+        (string) $value,
         ENT_QUOTES | ENT_SUBSTITUTE,
         'UTF-8'
     );
 }
 
-function current_month_key(): string
+function redirect(string $url): never
 {
-    return date('Y-m');
+    header('Location: ' . $url);
+    exit;
 }
 
-function current_month_label(): string
+function is_logged_in(): bool
 {
-    $months = [
-        1 => 'Janvier',
-        2 => 'Février',
-        3 => 'Mars',
-        4 => 'Avril',
-        5 => 'Mai',
-        6 => 'Juin',
-        7 => 'Juillet',
-        8 => 'Août',
-        9 => 'Septembre',
-        10 => 'Octobre',
-        11 => 'Novembre',
-        12 => 'Décembre',
-    ];
-
-    $month = (int) date('n');
-    $year = date('Y');
-
-    return $months[$month] . ' ' . $year;
+    return !empty($_SESSION['grand_plus_admin_authenticated']);
 }
 
-function format_date(string $date): string
+function csrf_token(): string
 {
-    if ($date === '') {
-        return '';
+    if (empty($_SESSION['grand_plus_admin_csrf'])) {
+        $_SESSION['grand_plus_admin_csrf'] = bin2hex(random_bytes(32));
     }
 
-    $timestamp = strtotime($date);
-
-    if ($timestamp === false) {
-        return $date;
-    }
-
-    return date('d/m/Y à H:i', $timestamp);
+    return $_SESSION['grand_plus_admin_csrf'];
 }
+
+function verify_csrf(): bool
+{
+    return isset(
+        $_POST['csrf'],
+        $_SESSION['grand_plus_admin_csrf']
+    ) && hash_equals(
+        $_SESSION['grand_plus_admin_csrf'],
+        (string) $_POST['csrf']
+    );
+}
+
 
 /*
 |--------------------------------------------------------------------------
-| DONNÉES
+| PARTICIPATIONS
 |--------------------------------------------------------------------------
 */
 
 function load_participations(): array
 {
-    $data = read_json_file(
-        PARTICIPATIONS_FILE,
-        []
-    );
+    if (!file_exists(PARTICIPATIONS_FILE)) {
+        return [];
+    }
+
+    $json = file_get_contents(PARTICIPATIONS_FILE);
+
+    if ($json === false || trim($json) === '') {
+        return [];
+    }
+
+    $data = json_decode($json, true);
 
     return is_array($data) ? $data : [];
 }
 
 function save_participations(array $participations): bool
 {
-    return write_json_file(
-        PARTICIPATIONS_FILE,
-        $participations
+    if (
+        !is_dir(DATA_DIR)
+        && !mkdir(DATA_DIR, 0755, true)
+        && !is_dir(DATA_DIR)
+    ) {
+        return false;
+    }
+
+    $json = json_encode(
+        $participations,
+        JSON_PRETTY_PRINT
+        | JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES
     );
+
+    if ($json === false) {
+        return false;
+    }
+
+    return file_put_contents(
+        PARTICIPATIONS_FILE,
+        $json,
+        LOCK_EX
+    ) !== false;
 }
+
+
+/*
+|--------------------------------------------------------------------------
+| MOIS
+|--------------------------------------------------------------------------
+*/
+
+function current_month_key(): string
+{
+    return date('Y-m');
+}
+
+function month_label(string $key): string
+{
+    $months = [
+        '01' => 'Janvier',
+        '02' => 'Février',
+        '03' => 'Mars',
+        '04' => 'Avril',
+        '05' => 'Mai',
+        '06' => 'Juin',
+        '07' => 'Juillet',
+        '08' => 'Août',
+        '09' => 'Septembre',
+        '10' => 'Octobre',
+        '11' => 'Novembre',
+        '12' => 'Décembre',
+    ];
+
+    $parts = explode('-', $key);
+
+    if (count($parts) !== 2) {
+        return $key;
+    }
+
+    return ($months[$parts[1]] ?? $parts[1])
+        . ' '
+        . $parts[0];
+}
+
+function selected_month(): string
+{
+    $month = (string) (
+        $_GET['month']
+        ?? $_POST['month']
+        ?? current_month_key()
+    );
+
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+        return current_month_key();
+    }
+
+    return $month;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| GAGNANT
+|--------------------------------------------------------------------------
+*/
 
 function load_winner(): array
 {
-    $default = [
-        'hasWinner' => false,
-        'month' => '',
-        'month_key' => '',
-        'company' => '',
-        'description' => '',
-        'website' => '',
-        'image' => '',
-        'winner_id' => '',
-        'winner_email_sent' => false,
-        'winner_email_sent_at' => '',
-        'loser_emails_sent' => 0,
-        'notification_completed_at' => '',
-    ];
-
-    $winner = read_json_file(
-        WINNER_FILE,
-        $default
-    );
-
-    if (!is_array($winner)) {
-        return $default;
+    if (!file_exists(WINNER_FILE)) {
+        return [
+            'hasWinner' => false,
+            'month' => '',
+            'month_key' => '',
+            'company' => '',
+            'description' => '',
+            'website' => '',
+            'image' => '',
+        ];
     }
 
-    return array_merge(
-        $default,
-        $winner
-    );
+    $json = file_get_contents(WINNER_FILE);
+
+    if ($json === false || trim($json) === '') {
+        return [
+            'hasWinner' => false,
+            'month' => '',
+            'month_key' => '',
+            'company' => '',
+            'description' => '',
+            'website' => '',
+            'image' => '',
+        ];
+    }
+
+    $winner = json_decode($json, true);
+
+    return is_array($winner)
+        ? $winner
+        : [
+            'hasWinner' => false,
+            'month' => '',
+            'month_key' => '',
+            'company' => '',
+            'description' => '',
+            'website' => '',
+            'image' => '',
+        ];
 }
 
 function save_winner(array $winner): bool
 {
-    return write_json_file(
-        WINNER_FILE,
-        $winner
+    $json = json_encode(
+        $winner,
+        JSON_PRETTY_PRINT
+        | JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES
     );
+
+    if ($json === false) {
+        return false;
+    }
+
+    return file_put_contents(
+        WINNER_FILE,
+        $json,
+        LOCK_EX
+    ) !== false;
 }
+
 
 /*
 |--------------------------------------------------------------------------
@@ -297,31 +260,14 @@ function smtp_read_response($socket): string
         $response .= $line;
 
         if (
-            strlen($line) >= 4 &&
-            $line[3] === ' '
+            strlen($line) >= 4
+            && $line[3] === ' '
         ) {
             break;
         }
     }
 
     return $response;
-}
-
-function smtp_expect($socket, array $codes): bool
-{
-    $response = smtp_read_response($socket);
-
-    if ($response === '') {
-        return false;
-    }
-
-    $code = (int) substr($response, 0, 3);
-
-    return in_array(
-        $code,
-        $codes,
-        true
-    );
 }
 
 function smtp_command(
@@ -334,9 +280,22 @@ function smtp_command(
         $command . "\r\n"
     );
 
-    return smtp_expect(
-        $socket,
-        $codes
+    $response = smtp_read_response($socket);
+
+    if ($response === '') {
+        return false;
+    }
+
+    $code = (int) substr(
+        $response,
+        0,
+        3
+    );
+
+    return in_array(
+        $code,
+        $codes,
+        true
     );
 }
 
@@ -347,6 +306,7 @@ function smtp_send_html_email(
     string $html,
     ?string $replyTo = null
 ): bool {
+
     $host = trim(
         (string) ($config['smtp_host'] ?? '')
     );
@@ -356,7 +316,9 @@ function smtp_send_html_email(
     );
 
     $username = trim(
-        (string) ($config['smtp_username'] ?? '')
+        (string) (
+            $config['smtp_username'] ?? ''
+        )
     );
 
     $password = (string) (
@@ -364,22 +326,24 @@ function smtp_send_html_email(
     );
 
     $fromEmail = trim(
-        (string) ($config['from_email'] ?? '')
+        (string) (
+            $config['from_email'] ?? ''
+        )
     );
 
     $fromName = trim(
         (string) (
-            $config['from_name'] ??
-            DEFAULT_FROM_NAME
+            $config['from_name']
+            ?? DEFAULT_FROM_NAME
         )
     );
 
     if (
-        $host === '' ||
-        $username === '' ||
-        $password === '' ||
-        $fromEmail === '' ||
-        !filter_var(
+        $host === ''
+        || $username === ''
+        || $password === ''
+        || $fromEmail === ''
+        || !filter_var(
             $to,
             FILTER_VALIDATE_EMAIL
         )
@@ -405,7 +369,18 @@ function smtp_send_html_email(
     );
 
     try {
-        if (!smtp_expect($socket, [220])) {
+
+        $response = smtp_read_response(
+            $socket
+        );
+
+        if (
+            !in_array(
+                (int) substr($response, 0, 3),
+                [220],
+                true
+            )
+        ) {
             fclose($socket);
             return false;
         }
@@ -488,49 +463,43 @@ function smtp_send_html_email(
         }
 
         $encodedSubject =
-            '=?UTF-8?B?' .
-            base64_encode($subject) .
-            '?=';
+            '=?UTF-8?B?'
+            . base64_encode($subject)
+            . '?=';
 
         $headers =
-            'From: ' .
-            $fromName .
-            ' <' .
-            $fromEmail .
-            ">\r\n" .
-
-            'To: <' .
-            $to .
-            ">\r\n" .
-
-            'Subject: ' .
-            $encodedSubject .
-            "\r\n" .
-
-            'MIME-Version: 1.0' .
-            "\r\n" .
-
-            'Content-Type: text/html; charset=UTF-8' .
-            "\r\n";
+            'From: '
+            . $fromName
+            . ' <'
+            . $fromEmail
+            . ">\r\n"
+            . 'To: <'
+            . $to
+            . ">\r\n"
+            . 'Subject: '
+            . $encodedSubject
+            . "\r\n"
+            . "MIME-Version: 1.0\r\n"
+            . "Content-Type: text/html; charset=UTF-8\r\n";
 
         if (
-            $replyTo !== null &&
-            filter_var(
+            $replyTo !== null
+            && filter_var(
                 $replyTo,
                 FILTER_VALIDATE_EMAIL
             )
         ) {
             $headers .=
-                'Reply-To: ' .
-                $replyTo .
-                "\r\n";
+                'Reply-To: '
+                . $replyTo
+                . "\r\n";
         }
 
         $message =
-            $headers .
-            "\r\n" .
-            $html .
-            "\r\n.";
+            $headers
+            . "\r\n"
+            . $html
+            . "\r\n.";
 
         if (
             !smtp_command(
@@ -554,14 +523,17 @@ function smtp_send_html_email(
         return true;
 
     } catch (Throwable $e) {
+
         fclose($socket);
+
         return false;
     }
 }
 
+
 /*
 |--------------------------------------------------------------------------
-| EMAILS
+| EMAILS GRAND+
 |--------------------------------------------------------------------------
 */
 
@@ -569,86 +541,80 @@ function email_layout(
     string $title,
     string $content
 ): string {
-    return '
-<!DOCTYPE html>
+
+    return '<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>' . h($title) . '</title>
 </head>
+
 <body style="
-    margin:0;
-    padding:0;
-    background:#080808;
-    color:#f5f5f2;
-    font-family:Arial,Helvetica,sans-serif;
+margin:0;
+padding:40px 20px;
+background:#080808;
+color:#ffffff;
+font-family:Arial,sans-serif;
 ">
+
 <div style="
-    max-width:620px;
-    margin:0 auto;
-    padding:40px 20px;
+max-width:620px;
+margin:0 auto;
+background:#111111;
+border:1px solid #292929;
+border-radius:18px;
+padding:36px;
 ">
-    <div style="
-        border:1px solid #242424;
-        border-radius:20px;
-        background:#111111;
-        overflow:hidden;
-    ">
-        <div style="
-            padding:26px 30px;
-            border-bottom:1px solid #242424;
-        ">
-            <div style="
-                font-size:22px;
-                font-weight:800;
-                letter-spacing:-0.04em;
-            ">
-                Vitrine<span style="color:#C8A45D;">+</span>
-            </div>
-        </div>
 
-        <div style="
-            padding:34px 30px;
-        ">
-            ' . $content . '
-        </div>
+<div style="
+font-size:25px;
+font-weight:800;
+">
 
-        <div style="
-            padding:22px 30px;
-            border-top:1px solid #242424;
-            color:#777777;
-            font-size:12px;
-            line-height:1.6;
-        ">
-            Le Grand+ — Vitrine+<br>
-            Votre entreprise. En mieux.
-        </div>
-    </div>
+Vitrine<span style="color:#C8A45D">+</span>
+
 </div>
+
+<h1 style="
+font-size:28px;
+line-height:1.2;
+margin:30px 0 18px;
+">
+
+' . h($title) . '
+
+</h1>
+
+<div style="
+color:#bbbbbb;
+font-size:15px;
+line-height:1.7;
+">
+
+' . $content . '
+
+</div>
+
+</div>
+
 </body>
 </html>';
 }
 
 function send_winner_email(
     array $config,
-    array $participant,
-    string $monthLabel
+    array $participant
 ): bool {
-    $name = trim(
-        (string) ($participant['name'] ?? '')
+
+    $email = (string) (
+        $participant['email'] ?? ''
     );
 
-    $company = trim(
-        (string) ($participant['company'] ?? '')
-    );
-
-    $email = trim(
-        (string) ($participant['email'] ?? '')
+    $company = h(
+        $participant['company']
+        ?? 'votre entreprise'
     );
 
     if (
-        $email === '' ||
         !filter_var(
             $email,
             FILTER_VALIDATE_EMAIL
@@ -657,100 +623,34 @@ function send_winner_email(
         return false;
     }
 
-    $safeName = h(
-        $name !== '' ? $name : 'Bonjour'
-    );
-
-    $safeCompany = h(
-        $company !== '' ? $company : 'votre entreprise'
-    );
-
     $content = '
-        <div style="
-            color:#C8A45D;
-            font-size:11px;
-            font-weight:800;
-            letter-spacing:.18em;
-            text-transform:uppercase;
-            margin-bottom:14px;
-        ">
-            LE GRAND+ — ' . h($monthLabel) . '
-        </div>
+<p>
+Félicitations ' . $company . ' !
+</p>
 
-        <h1 style="
-            margin:0 0 18px;
-            font-size:36px;
-            line-height:1.05;
-            letter-spacing:-.05em;
-        ">
-            Félicitations ' . $safeName . ' !
-        </h1>
+<p>
+Votre entreprise a été tirée au sort
+et remporte <strong style="color:#C8A45D">
+Le Grand+
+</strong>.
+</p>
 
-        <p style="
-            color:#b5b5b5;
-            font-size:16px;
-            line-height:1.7;
-            margin:0 0 20px;
-        ">
-            Nous avons le plaisir de vous annoncer que
-            <strong style="color:#ffffff;">
-                ' . $safeCompany . '
-            </strong>
-            a été désignée gagnante du Grand+ pour
-            <strong style="color:#ffffff;">
-                ' . h($monthLabel) . '
-            </strong>.
-        </p>
+<p>
+Vitrine+ va réaliser gratuitement
+la refonte de votre site internet.
+</p>
 
-        <div style="
-            margin:26px 0;
-            padding:22px;
-            border:1px solid rgba(200,164,93,.35);
-            border-radius:14px;
-            background:rgba(200,164,93,.07);
-        ">
-            <div style="
-                color:#C8A45D;
-                font-size:13px;
-                font-weight:800;
-                margin-bottom:8px;
-            ">
-                VOTRE CADEAU
-            </div>
+<p>
+Nous allons revenir vers vous très
+prochainement afin d’organiser le projet
+et définir ensemble les prochaines étapes.
+</p>
 
-            <div style="
-                color:#ffffff;
-                font-size:21px;
-                font-weight:800;
-                line-height:1.3;
-            ">
-                La refonte complète de votre site internet,
-                100 % offerte.
-            </div>
-
-            <div style="
-                color:#999999;
-                font-size:13px;
-                line-height:1.6;
-                margin-top:10px;
-            ">
-                Nous allons reprendre contact avec vous afin
-                d’échanger sur votre entreprise, vos objectifs
-                et votre futur site.
-            </div>
-        </div>
-
-        <p style="
-            color:#999999;
-            font-size:14px;
-            line-height:1.7;
-            margin:0;
-        ">
-            Merci encore pour votre participation au Grand+.
-            Nous sommes ravis de pouvoir mettre notre expertise
-            au service de votre entreprise.
-        </p>
-    ';
+<p>
+À très bientôt,<br>
+<strong>L’équipe Vitrine+</strong>
+</p>
+';
 
     return smtp_send_html_email(
         $config,
@@ -764,29 +664,21 @@ function send_winner_email(
     );
 }
 
-function send_non_winner_email(
+function send_participant_email(
     array $config,
-    array $participant,
-    string $monthLabel
+    array $participant
 ): bool {
-    $name = trim(
-        (string) ($participant['name'] ?? '')
+
+    $email = (string) (
+        $participant['email'] ?? ''
     );
 
-    $company = trim(
-        (string) ($participant['company'] ?? '')
-    );
-
-    $email = trim(
-        (string) ($participant['email'] ?? '')
-    );
-
-    $marketing = !empty(
-        $participant['marketing_consent']
+    $company = h(
+        $participant['company']
+        ?? 'votre entreprise'
     );
 
     if (
-        $email === '' ||
         !filter_var(
             $email,
             FILTER_VALIDATE_EMAIL
@@ -795,160 +687,89 @@ function send_non_winner_email(
         return false;
     }
 
-    $safeName = h(
-        $name !== '' ? $name : 'Bonjour'
-    );
+    $bonus = '';
 
-    $safeCompany = h(
-        $company !== '' ? $company : 'votre entreprise'
-    );
+    if (
+        !empty(
+            $participant['marketing_consent']
+        )
+    ) {
 
-    if ($marketing) {
-        $content = '
-            <div style="
-                color:#C8A45D;
-                font-size:11px;
-                font-weight:800;
-                letter-spacing:.18em;
-                text-transform:uppercase;
-                margin-bottom:14px;
-            ">
-                LE GRAND+ — ' . h($monthLabel) . '
-            </div>
+        $bonus = '
+<div style="
+margin:25px 0;
+padding:20px;
+border:1px solid #3a3120;
+border-radius:12px;
+background:#15120d;
+">
 
-            <h1 style="
-                margin:0 0 18px;
-                font-size:32px;
-                line-height:1.05;
-                letter-spacing:-.05em;
-            ">
-                Merci pour votre participation,
-                ' . $safeName . '.
-            </h1>
+<div style="
+color:#C8A45D;
+font-size:17px;
+font-weight:800;
+margin-bottom:8px;
+">
 
-            <p style="
-                color:#b5b5b5;
-                font-size:16px;
-                line-height:1.7;
-                margin:0 0 20px;
-            ">
-                Cette fois, le Grand+ n’a malheureusement pas
-                retenu
-                <strong style="color:#ffffff;">
-                    ' . $safeCompany . '
-                </strong>.
-            </p>
+Votre bonus
 
-            <p style="
-                color:#999999;
-                font-size:14px;
-                line-height:1.7;
-                margin:0 0 24px;
-            ">
-                Mais nous ne voulions pas vous laisser repartir
-                les mains vides.
-            </p>
+</div>
 
-            <div style="
-                margin:26px 0;
-                padding:22px;
-                border:1px solid rgba(200,164,93,.35);
-                border-radius:14px;
-                background:rgba(200,164,93,.07);
-            ">
-                <div style="
-                    color:#C8A45D;
-                    font-size:13px;
-                    font-weight:800;
-                    margin-bottom:8px;
-                ">
-                    VOTRE AVANTAGE
-                </div>
+<p style="margin:0;color:#cccccc">
 
-                <div style="
-                    color:#ffffff;
-                    font-size:20px;
-                    font-weight:800;
-                    line-height:1.3;
-                ">
-                    Audit stratégique offert
-                    + 300 € sur votre site internet.
-                </div>
+Vous bénéficiez d’un
+<strong style="color:#ffffff">
+audit stratégique offert
+</strong>
+ainsi que de
+<strong style="color:#ffffff">
+' . OFFER_AMOUNT . ' € de réduction
+</strong>
+sur votre futur site internet Vitrine+.
 
-                <div style="
-                    color:#999999;
-                    font-size:13px;
-                    line-height:1.6;
-                    margin-top:10px;
-                ">
-                    Offre valable pendant ' .
-                    OFFER_VALIDITY_DAYS .
-                    ' jours à compter de cet e-mail.
-                </div>
-            </div>
+</p>
 
-            <p style="
-                color:#999999;
-                font-size:14px;
-                line-height:1.7;
-                margin:0;
-            ">
-                Si vous souhaitez en profiter, répondez simplement
-                à cet e-mail ou prenez rendez-vous avec Vitrine+.
-            </p>
-        ';
-    } else {
-        $content = '
-            <div style="
-                color:#C8A45D;
-                font-size:11px;
-                font-weight:800;
-                letter-spacing:.18em;
-                text-transform:uppercase;
-                margin-bottom:14px;
-            ">
-                LE GRAND+ — ' . h($monthLabel) . '
-            </div>
+<p style="
+margin:12px 0 0;
+font-size:12px;
+color:#777777;
+">
 
-            <h1 style="
-                margin:0 0 18px;
-                font-size:32px;
-                line-height:1.05;
-                letter-spacing:-.05em;
-            ">
-                Merci pour votre participation,
-                ' . $safeName . '.
-            </h1>
+Offre valable ' . OFFER_VALIDITY_DAYS . ' jours.
 
-            <p style="
-                color:#b5b5b5;
-                font-size:16px;
-                line-height:1.7;
-                margin:0 0 20px;
-            ">
-                Le Grand+ de
-                <strong style="color:#ffffff;">
-                    ' . h($monthLabel) . '
-                </strong>
-                a été attribué à une autre entreprise.
-            </p>
+</p>
 
-            <p style="
-                color:#999999;
-                font-size:14px;
-                line-height:1.7;
-                margin:0;
-            ">
-                Merci sincèrement d’avoir participé et d’avoir
-                accordé votre confiance à Vitrine+.
-            </p>
-        ';
+</div>';
     }
+
+    $content = '
+<p>
+Merci à ' . $company . '
+pour sa participation au Grand+.
+</p>
+
+<p>
+Cette fois, votre entreprise n’a malheureusement
+pas été tirée au sort.
+</p>
+
+' . $bonus . '
+
+<p>
+Nous vous remercions néanmoins pour votre
+confiance et votre intérêt pour Vitrine+.
+</p>
+
+<p>
+À bientôt,<br>
+<strong>L’équipe Vitrine+</strong>
+</p>
+';
 
     return smtp_send_html_email(
         $config,
         $email,
-        'Merci pour votre participation au Grand+',
+        'Merci pour votre participation au Grand+ — Vitrine+',
         email_layout(
             'Merci pour votre participation',
             $content
@@ -957,1494 +778,2166 @@ function send_non_winner_email(
     );
 }
 
+
 /*
 |--------------------------------------------------------------------------
-| ACTIONS
+| AUTHENTIFICATION
 |--------------------------------------------------------------------------
 */
 
-require_auth();
+$config = config();
 
-$config = require CONFIG_FILE;
-
-if (!is_array($config)) {
-    $config = [];
-}
-
-$participations = load_participations();
-
-$currentMonth = current_month_key();
-$currentMonthLabel = current_month_label();
-
-$currentMonthParticipants = array_values(
-    array_filter(
-        $participations,
-        static function ($item) use ($currentMonth): bool {
-            return is_array($item)
-                && (string) ($item['month_key'] ?? '') === $currentMonth;
-        }
+$adminUser = trim(
+    (string) (
+        $config['grand_plus_admin_user']
+        ?? ''
     )
 );
+
+$adminPassword = (string) (
+    $config['grand_plus_admin_password']
+    ?? ''
+);
+
+if (isset($_GET['logout'])) {
+
+    $_SESSION = [];
+
+    if (
+        ini_get('session.use_cookies')
+    ) {
+
+        $params =
+            session_get_cookie_params();
+
+        setcookie(
+            session_name(),
+            '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    session_destroy();
+
+    redirect(
+        '/grand-plus-admin.php'
+    );
+}
+
+$loginError = '';
+
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && (
+        $_POST['action'] ?? ''
+    ) === 'login'
+) {
+
+    $username = trim(
+        (string) (
+            $_POST['username'] ?? ''
+        )
+    );
+
+    $password = (string) (
+        $_POST['password'] ?? ''
+    );
+
+    if (
+        $adminUser !== ''
+        && $adminPassword !== ''
+        && hash_equals(
+            $adminUser,
+            $username
+        )
+        && hash_equals(
+            $adminPassword,
+            $password
+        )
+    ) {
+
+        session_regenerate_id(true);
+
+        $_SESSION[
+            'grand_plus_admin_authenticated'
+        ] = true;
+
+        $_SESSION[
+            'grand_plus_admin_user'
+        ] = $adminUser;
+
+        $_SESSION[
+            'grand_plus_admin_csrf'
+        ] = bin2hex(
+            random_bytes(32)
+        );
+
+        redirect(
+            '/grand-plus-admin.php'
+        );
+    }
+
+    $loginError =
+        'Identifiant ou mot de passe incorrect.';
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| PAGE LOGIN
+|--------------------------------------------------------------------------
+*/
+
+if (!is_logged_in()):
+
+?>
+
+<!doctype html>
+
+<html lang="fr">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1.0"
+>
+
+<title>
+Administration Grand+ — Vitrine+
+</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: #080808;
+    color: #ffffff;
+    font-family:
+        Inter,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+}
+
+.card {
+    width: 100%;
+    max-width: 440px;
+    padding: 40px;
+    background: #111111;
+    border: 1px solid #292929;
+    border-radius: 20px;
+}
+
+.logo {
+    font-size: 28px;
+    font-weight: 800;
+}
+
+.gold {
+    color: #C8A45D;
+}
+
+.eyebrow {
+    margin-top: 35px;
+    color: #C8A45D;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+}
+
+h1 {
+    margin: 12px 0;
+    font-size: 32px;
+}
+
+.intro {
+    color: #888888;
+    line-height: 1.6;
+}
+
+label {
+    display: block;
+    margin: 18px 0 7px;
+    color: #bbbbbb;
+    font-size: 13px;
+}
+
+input {
+    width: 100%;
+    padding: 14px;
+    background: #080808;
+    color: #ffffff;
+    border: 1px solid #333333;
+    border-radius: 10px;
+    outline: none;
+}
+
+input:focus {
+    border-color: #C8A45D;
+}
+
+button {
+    width: 100%;
+    margin-top: 22px;
+    padding: 14px;
+    border: 0;
+    border-radius: 10px;
+    background: #C8A45D;
+    color: #080808;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.error {
+    margin: 20px 0;
+    padding: 13px;
+    border: 1px solid #542626;
+    border-radius: 10px;
+    background: #211010;
+    color: #ffaaa8;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="card">
+
+<div class="logo">
+Vitrine<span class="gold">+</span>
+</div>
+
+<div class="eyebrow">
+Administration
+</div>
+
+<h1>
+Le Grand+
+</h1>
+
+<p class="intro">
+Connectez-vous pour accéder à
+l'administration du Grand+.
+</p>
+
+<?php if ($loginError !== ''): ?>
+
+<div class="error">
+<?= h($loginError) ?>
+</div>
+
+<?php endif; ?>
+
+<form method="post">
+
+<input
+type="hidden"
+name="action"
+value="login"
+>
+
+<label for="username">
+Identifiant
+</label>
+
+<input
+id="username"
+name="username"
+type="text"
+autocomplete="username"
+required
+autofocus
+>
+
+<label for="password">
+Mot de passe
+</label>
+
+<input
+id="password"
+name="password"
+type="password"
+autocomplete="current-password"
+required
+>
+
+<button type="submit">
+Se connecter
+</button>
+
+</form>
+
+</div>
+
+</body>
+
+</html>
+
+<?php
+
+exit;
+
+endif;
+
+
+/*
+|--------------------------------------------------------------------------
+| ACTIONS ADMIN
+|--------------------------------------------------------------------------
+*/
 
 $actionMessage = '';
 $actionError = '';
 
+$month = selected_month();
+
+$allParticipations =
+    load_participations();
+
+
 if (
     $_SERVER['REQUEST_METHOD'] === 'POST'
-) {
-    $action = (string) (
+    && (
         $_POST['action'] ?? ''
-    );
+    ) !== 'login'
+) {
 
-    /*
-    |--------------------------------------------------------------------------
-    | DÉSIGNER LE GAGNANT
-    |--------------------------------------------------------------------------
-    */
+    if (!verify_csrf()) {
 
-    if ($action === 'select_winner') {
-        $winnerId = trim(
+        $actionError =
+            'Session expirée. Rechargez la page.';
+
+    } else {
+
+        $action =
             (string) (
-                $_POST['winner_id'] ?? ''
-            )
-        );
+                $_POST['action'] ?? ''
+            );
 
-        if ($winnerId === '') {
-            $actionError =
-                'Veuillez sélectionner un participant.';
-        } else {
-            $winnerParticipant = null;
+        if (
+            $action === 'select_winner'
+        ) {
 
-            foreach (
-                $currentMonthParticipants
-                as $participant
-            ) {
-                if (
-                    isset($participant['id']) &&
-                    (string) $participant['id'] === $winnerId
-                ) {
-                    $winnerParticipant = $participant;
-                    break;
-                }
-            }
+            $winnerId = trim(
+                (string) (
+                    $_POST['winner_id']
+                    ?? ''
+                )
+            );
 
-            if ($winnerParticipant === null) {
+            if ($winnerId === '') {
+
                 $actionError =
-                    'Participant introuvable.';
+                    'Veuillez sélectionner un participant.';
+
             } else {
-                $existingWinner = load_winner();
 
-                /*
-                 * On évite de désigner deux gagnants
-                 * accidentellement sans passer par reset.
-                 */
-                if (
-                    !empty($existingWinner['hasWinner']) &&
-                    (string) (
-                        $existingWinner['month_key'] ?? ''
-                    ) === $currentMonth
+                $winnerParticipant = null;
+
+                foreach (
+                    $allParticipations
+                    as $participant
                 ) {
-                    $actionError =
-                        'Un gagnant est déjà enregistré pour ce mois. Réinitialisez-le avant de procéder à une nouvelle désignation.';
-                } else {
-                    $winner = [
-                        'hasWinner' => true,
-                        'month' => (
-                            string
-                        ) (
-                            $winnerParticipant['month_label']
-                            ?? $currentMonthLabel
-                        ),
-                        'month_key' => $currentMonth,
-                        'company' => (
-                            string
-                        ) (
-                            $winnerParticipant['company']
-                            ?? ''
-                        ),
-                        'description' => (
-                            string
-                        ) (
-                            $winnerParticipant['problem']
-                            ?? ''
-                        ),
-                        'website' => (
-                            string
-                        ) (
-                            $winnerParticipant['website']
-                            ?? ''
-                        ),
-                        'image' => '',
-                        'winner_id' => $winnerId,
-                        'winner_email_sent' => false,
-                        'winner_email_sent_at' => '',
-                        'loser_emails_sent' => 0,
-                        'notification_completed_at' => '',
-                    ];
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Mise à jour des statuts
-                    |--------------------------------------------------------------------------
-                    */
-
-                    foreach (
-                        $participations
-                        as $index => $participant
-                    ) {
-                        if (
-                            !is_array($participant) ||
-                            (string) (
-                                $participant['month_key']
-                                ?? ''
-                            ) !== $currentMonth
-                        ) {
-                            continue;
-                        }
-
-                        if (
-                            (string) (
-                                $participant['id'] ?? ''
-                            ) === $winnerId
-                        ) {
-                            $participations[$index]['status'] =
-                                'winner';
-                        } else {
-                            $participations[$index]['status'] =
-                                'not_winner';
-                        }
-                    }
 
                     if (
-                        !save_participations(
-                            $participations
+                        is_array($participant)
+                        && isset(
+                            $participant['id']
                         )
+                        && (
+                            (string)
+                            $participant['id']
+                        ) === $winnerId
                     ) {
-                        $actionError =
-                            'Impossible de mettre à jour les participations.';
-                    } elseif (
+
+                        $winnerParticipant =
+                            $participant;
+
+                        break;
+                    }
+                }
+
+                if (
+                    $winnerParticipant === null
+                ) {
+
+                    $actionError =
+                        'Participant introuvable.';
+
+                } else {
+
+                    $winnerMonthKey =
+                        (string) (
+                            $winnerParticipant[
+                                'month_key'
+                            ]
+                            ?? $month
+                        );
+
+                    $winner = [
+
+                        'hasWinner' => true,
+
+                        'month' =>
+                            (string) (
+                                $winnerParticipant[
+                                    'month_label'
+                                ]
+                                ?? month_label(
+                                    $winnerMonthKey
+                                )
+                            ),
+
+                        'month_key' =>
+                            $winnerMonthKey,
+
+                        'company' =>
+                            (string) (
+                                $winnerParticipant[
+                                    'company'
+                                ] ?? ''
+                            ),
+
+                        'description' =>
+                            (string) (
+                                $winnerParticipant[
+                                    'problem'
+                                ] ?? ''
+                            ),
+
+                        'website' =>
+                            (string) (
+                                $winnerParticipant[
+                                    'website'
+                                ] ?? ''
+                            ),
+
+                        'image' => '',
+
+                        'winner_id' =>
+                            $winnerId,
+
+                        'winner_email_sent' =>
+                            false,
+
+                        'winner_email_sent_at' =>
+                            '',
+
+                        'loser_emails_sent' =>
+                            0,
+
+                        'notification_completed_at' =>
+                            '',
+                    ];
+
+                    if (
                         !save_winner($winner)
                     ) {
+
                         $actionError =
-                            'Impossible d’enregistrer le gagnant.';
+                            "Impossible d'enregistrer le gagnant.";
+
                     } else {
+
                         /*
                         |--------------------------------------------------------------------------
-                        | EMAIL DU GAGNANT
+                        | MAIL DU GAGNANT
                         |--------------------------------------------------------------------------
                         */
 
                         $winnerEmailSent =
                             send_winner_email(
                                 $config,
-                                $winnerParticipant,
-                                $currentMonthLabel
+                                $winnerParticipant
                             );
-
-                        $winner['winner_email_sent'] =
-                            $winnerEmailSent;
-
-                        if ($winnerEmailSent) {
-                            $winner['winner_email_sent_at'] =
-                                date('c');
-                        }
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | EMAILS DES AUTRES PARTICIPANTS
-                        |--------------------------------------------------------------------------
-                        */
 
                         $loserEmailsSent = 0;
 
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | MAILS DES AUTRES PARTICIPANTS
+                        |--------------------------------------------------------------------------
+                        */
+
                         foreach (
-                            $participations
+                            $allParticipations
                             as $index => $participant
                         ) {
+
                             if (
-                                !is_array($participant)
+                                !is_array(
+                                    $participant
+                                )
                             ) {
                                 continue;
                             }
 
                             if (
                                 (string) (
-                                    $participant['month_key']
-                                    ?? ''
-                                ) !== $currentMonth
-                            ) {
-                                continue;
-                            }
-
-                            if (
-                                (string) (
-                                    $participant['id']
-                                    ?? ''
-                                ) === $winnerId
+                                    $participant[
+                                        'month_key'
+                                    ] ?? ''
+                                )
+                                !==
+                                $winnerMonthKey
                             ) {
                                 continue;
                             }
 
                             /*
-                             * Si le mail a déjà été envoyé,
-                             * on ne le renvoie pas.
-                             */
+                            | GAGNANT
+                            */
+
+                            if (
+                                (string) (
+                                    $participant['id']
+                                    ?? ''
+                                )
+                                === $winnerId
+                            ) {
+
+                                $allParticipations[
+                                    $index
+                                ]['status'] =
+                                    'winner';
+
+                                continue;
+                            }
+
+
+                            /*
+                            | AUTRES PARTICIPANTS
+                            */
+
+                            $allParticipations[
+                                $index
+                            ]['status'] =
+                                'not_winner';
+
+
+                            /*
+                            | Évite d'envoyer deux fois
+                            | le même mail.
+                            */
+
                             if (
                                 !empty(
-                                    $participant['result_email_sent']
+                                    $participant[
+                                        'result_email_sent'
+                                    ]
                                 )
                             ) {
                                 continue;
                             }
 
-                            $sent =
-                                send_non_winner_email(
+
+                            if (
+                                send_participant_email(
                                     $config,
-                                    $participant,
-                                    $currentMonthLabel
-                                );
+                                    $participant
+                                )
+                            ) {
 
-                            if ($sent) {
-                                $participations[$index][
-                                    'result_email_sent'
-                                ] = true;
+                                $allParticipations[
+                                    $index
+                                ]['result_email_sent']
+                                    = true;
 
-                                $participations[$index][
-                                    'result_email_sent_at'
-                                ] = date('c');
+                                $allParticipations[
+                                    $index
+                                ]['result_email_sent_at']
+                                    = date('c');
 
                                 $loserEmailsSent++;
                             }
                         }
 
+
                         /*
                         |--------------------------------------------------------------------------
-                        | ENREGISTREMENT DES EMAILS
+                        | SAUVEGARDE
                         |--------------------------------------------------------------------------
                         */
 
-                        if (
-                            $loserEmailsSent > 0
-                        ) {
-                            save_participations(
-                                $participations
-                            );
-                        }
+                        save_participations(
+                            $allParticipations
+                        );
 
-                        $winner['loser_emails_sent'] =
+                        $winner[
+                            'winner_email_sent'
+                        ] =
+                            $winnerEmailSent;
+
+                        $winner[
+                            'winner_email_sent_at'
+                        ] =
+                            $winnerEmailSent
+                            ? date('c')
+                            : '';
+
+                        $winner[
+                            'loser_emails_sent'
+                        ] =
                             $loserEmailsSent;
 
                         $winner[
                             'notification_completed_at'
-                        ] = date('c');
+                        ] =
+                            date('c');
 
-                        save_winner($winner);
+                        save_winner(
+                            $winner
+                        );
 
-                        if ($winnerEmailSent) {
+
+                        if (
+                            $winnerEmailSent
+                        ) {
+
                             $actionMessage =
-                                'Le gagnant a été enregistré. Le mail du gagnant a été envoyé et ' .
-                                $loserEmailsSent .
-                                ' mail(s) participant(s) ont été envoyé(s).';
+                                'Le gagnant a été enregistré. '
+                                . 'Le mail du gagnant a été envoyé et '
+                                . $loserEmailsSent
+                                . ' mail(s) participant(s) ont été envoyé(s).';
+
                         } else {
+
                             $actionMessage =
-                                'Le gagnant a été enregistré, mais le mail du gagnant n’a pas pu être envoyé. ' .
-                                $loserEmailsSent .
-                                ' mail(s) participant(s) ont été envoyé(s).';
+                                'Le gagnant a été enregistré, '
+                                . 'mais le mail du gagnant n’a pas pu être envoyé. '
+                                . $loserEmailsSent
+                                . ' mail(s) participant(s) ont été envoyé(s).';
                         }
                     }
                 }
             }
-        }
-    }
 
-    /*
-    |--------------------------------------------------------------------------
-    | RÉINITIALISER LE GAGNANT
-    |--------------------------------------------------------------------------
-    */
-
-    if ($action === 'reset_winner') {
-        $winner = [
-            'hasWinner' => false,
-            'month' => '',
-            'month_key' => '',
-            'company' => '',
-            'description' => '',
-            'website' => '',
-            'image' => '',
-            'winner_id' => '',
-            'winner_email_sent' => false,
-            'winner_email_sent_at' => '',
-            'loser_emails_sent' => 0,
-            'notification_completed_at' => '',
-        ];
-
-        if (
-            save_winner($winner)
+        } elseif (
+            $action === 'reset_winner'
         ) {
-            /*
-             * On remet les statuts à pending,
-             * mais on conserve les traces d'envoi des mails.
-             * Cela évite les doublons si le gagnant est
-             * désigné à nouveau.
-             */
-            foreach (
-                $participations
-                as $index => $participant
+
+            $winner = [
+
+                'hasWinner' => false,
+
+                'month' => '',
+
+                'month_key' => '',
+
+                'company' => '',
+
+                'description' => '',
+
+                'website' => '',
+
+                'image' => '',
+            ];
+
+            if (
+                save_winner($winner)
             ) {
-                if (
-                    is_array($participant) &&
-                    (string) (
-                        $participant['month_key']
-                        ?? ''
-                    ) === $currentMonth
-                ) {
-                    $participations[$index]['status'] =
-                        'pending';
-                }
+
+                $actionMessage =
+                    'Le gagnant a été réinitialisé.';
+
+            } else {
+
+                $actionError =
+                    "Impossible de réinitialiser le gagnant.";
             }
-
-            save_participations(
-                $participations
-            );
-
-            $actionMessage =
-                'Le gagnant a été réinitialisé.';
-        } else {
-            $actionError =
-                'Impossible de réinitialiser le gagnant.';
         }
     }
+}
 
-    /*
-    |--------------------------------------------------------------------------
-    | RECHARGEMENT
-    |--------------------------------------------------------------------------
-    */
 
-    $participations = load_participations();
+/*
+|--------------------------------------------------------------------------
+| DONNÉES
+|--------------------------------------------------------------------------
+*/
 
-    $currentMonthParticipants = array_values(
+$monthParticipations =
+    array_values(
         array_filter(
-            $participations,
-            static function ($item) use ($currentMonth): bool {
-                return is_array($item)
-                    && (string) (
-                        $item['month_key'] ?? ''
-                    ) === $currentMonth;
+            $allParticipations,
+            static function (
+                array $participant
+            ) use ($month): bool {
+
+                return (
+                    string
+                ) (
+                    $participant['month_key']
+                    ?? ''
+                )
+                === $month;
             }
         )
     );
+
+usort(
+    $monthParticipations,
+    static function (
+        array $a,
+        array $b
+    ): int {
+
+        return strcmp(
+            (string) (
+                $b['created_at']
+                ?? ''
+            ),
+            (string) (
+                $a['created_at']
+                ?? ''
+            )
+        );
+    }
+);
+
+$winner =
+    load_winner();
+
+$winnerCompany =
+    (string) (
+        $winner['company']
+        ?? ''
+    );
+
+$marketingCount =
+    count(
+        array_filter(
+            $monthParticipations,
+            static function (
+                array $participant
+            ): bool {
+
+                return !empty(
+                    $participant[
+                        'marketing_consent'
+                    ]
+                );
+            }
+        )
+    );
+
+$todayCount =
+    count(
+        array_filter(
+            $monthParticipations,
+            static function (
+                array $participant
+            ): bool {
+
+                $createdAt =
+                    (string) (
+                        $participant[
+                            'created_at'
+                        ] ?? ''
+                    );
+
+                if ($createdAt === '') {
+                    return false;
+                }
+
+                $timestamp =
+                    strtotime($createdAt);
+
+                if ($timestamp === false) {
+                    return false;
+                }
+
+                return date(
+                    'Y-m-d',
+                    $timestamp
+                ) === date('Y-m-d');
+            }
+        )
+    );
+
+
+/*
+|--------------------------------------------------------------------------
+| MOIS DISPONIBLES
+|--------------------------------------------------------------------------
+*/
+
+$availableMonths = [];
+
+foreach (
+    $allParticipations
+    as $participant
+) {
+
+    if (!is_array($participant)) {
+        continue;
+    }
+
+    $key =
+        (string) (
+            $participant['month_key']
+            ?? ''
+        );
+
+    if (
+        preg_match(
+            '/^\d{4}-\d{2}$/',
+            $key
+        )
+        && !in_array(
+            $key,
+            $availableMonths,
+            true
+        )
+    ) {
+
+        $availableMonths[] = $key;
+    }
 }
 
-/*
-|--------------------------------------------------------------------------
-| STATISTIQUES
-|--------------------------------------------------------------------------
-*/
+$currentMonth =
+    current_month_key();
 
-$total = count(
-    $currentMonthParticipants
-);
-
-$pending = count(
-    array_filter(
-        $currentMonthParticipants,
-        static fn ($item): bool =>
-            ($item['status'] ?? 'pending') === 'pending'
+if (
+    !in_array(
+        $currentMonth,
+        $availableMonths,
+        true
     )
+) {
+
+    $availableMonths[] =
+        $currentMonth;
+}
+
+rsort(
+    $availableMonths
 );
-
-$winnerCount = count(
-    array_filter(
-        $currentMonthParticipants,
-        static fn ($item): bool =>
-            ($item['status'] ?? '') === 'winner'
-    )
-);
-
-$notWinner = count(
-    array_filter(
-        $currentMonthParticipants,
-        static fn ($item): bool =>
-            ($item['status'] ?? '') === 'not_winner'
-    )
-);
-
-$marketing = count(
-    array_filter(
-        $currentMonthParticipants,
-        static fn ($item): bool =>
-            !empty(
-                $item['marketing_consent']
-            )
-    )
-);
-
-$winner = load_winner();
-
-$winnerCompany = (string) (
-    $winner['company'] ?? ''
-);
-
-$winnerEmailSent = !empty(
-    $winner['winner_email_sent']
-);
-
-$loserEmailsSent = (int) (
-    $winner['loser_emails_sent'] ?? 0
-);
-
-/*
-|--------------------------------------------------------------------------
-| HTML
-|--------------------------------------------------------------------------
-*/
 
 ?>
-<!DOCTYPE html>
+
+<!doctype html>
+
 <html lang="fr">
 
 <head>
 
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>
-        Le Grand + — Administration
-    </title>
-
-    <style>
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            background: #080808;
-            color: #f5f5f2;
-            font-family:
-                -apple-system,
-                BlinkMacSystemFont,
-                "Helvetica Neue",
-                Helvetica,
-                Arial,
-                sans-serif;
-        }
-
-        .container {
-            width: min(
-                1400px,
-                calc(100% - 40px)
-            );
-
-            margin: 0 auto;
-            padding: 60px 0 90px;
-        }
-
-        .topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 20px;
-        }
-
-        .brand {
-            color: #ffffff;
-            font-size: 18px;
-            font-weight: 800;
-            letter-spacing: -.04em;
-        }
-
-        .brand span {
-            color: #c8a45d;
-        }
-
-        .topbar a {
-            color: rgba(255,255,255,.45);
-            text-decoration: none;
-            font-size: 12px;
-        }
-
-        .topbar a:hover {
-            color: #ffffff;
-        }
-
-        .eyebrow {
-            color: #c8a45d;
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: .24em;
-            text-transform: uppercase;
-        }
-
-        h1 {
-            margin: 14px 0 0;
-            font-size: clamp(
-                42px,
-                7vw,
-                88px
-            );
-            line-height: .9;
-            letter-spacing: -.06em;
-        }
-
-        .month {
-            margin-top: 18px;
-            color: rgba(255,255,255,.45);
-            font-size: 16px;
-        }
-
-        .alert {
-            margin-top: 30px;
-            padding: 16px 18px;
-            border-radius: 14px;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .alert.success {
-            background: rgba(70,180,110,.08);
-            border: 1px solid rgba(70,180,110,.2);
-            color: #9be1b3;
-        }
-
-        .alert.error {
-            background: rgba(220,70,70,.08);
-            border: 1px solid rgba(220,70,70,.2);
-            color: #ff9c9c;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 12px;
-            margin-top: 50px;
-        }
-
-        .stat {
-            padding: 24px;
-            border: 1px solid rgba(255,255,255,.09);
-            border-radius: 22px;
-            background: #111;
-        }
-
-        .stat-label {
-            color: rgba(255,255,255,.35);
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: .16em;
-            text-transform: uppercase;
-        }
-
-        .stat-value {
-            margin-top: 12px;
-            font-size: 36px;
-            font-weight: 800;
-            letter-spacing: -.04em;
-        }
-
-        .dashboard {
-            display: grid;
-            grid-template-columns:
-                minmax(0, 1fr)
-                360px;
-
-            gap: 18px;
-            margin-top: 50px;
-            align-items: start;
-        }
-
-        .panel {
-            border: 1px solid rgba(255,255,255,.09);
-            border-radius: 24px;
-            background: #111;
-            overflow: hidden;
-        }
-
-        .panel-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 15px;
-            padding: 20px 22px;
-            border-bottom: 1px solid rgba(255,255,255,.07);
-        }
-
-        .panel-title {
-            font-size: 14px;
-            font-weight: 800;
-        }
-
-        .panel-meta {
-            color: rgba(255,255,255,.35);
-            font-size: 11px;
-        }
-
-        .table-wrap {
-            overflow-x: auto;
-        }
-
-        table {
-            width: 100%;
-            min-width: 1000px;
-            border-collapse: collapse;
-        }
-
-        th,
-        td {
-            padding: 18px 20px;
-            border-bottom: 1px solid rgba(255,255,255,.07);
-            text-align: left;
-            vertical-align: top;
-        }
-
-        th {
-            color: rgba(255,255,255,.35);
-            font-size: 10px;
-            letter-spacing: .16em;
-            text-transform: uppercase;
-        }
-
-        td {
-            font-size: 14px;
-        }
-
-        tr:last-child td {
-            border-bottom: 0;
-        }
-
-        .company {
-            font-weight: 800;
-        }
-
-        .muted {
-            margin-top: 4px;
-            color: rgba(255,255,255,.4);
-            font-size: 12px;
-        }
-
-        .problem {
-            max-width: 280px;
-            color: rgba(255,255,255,.55);
-            line-height: 1.5;
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            border-radius: 999px;
-            padding: 7px 11px;
-            font-size: 10px;
-            font-weight: 800;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-        }
-
-        .pending {
-            background: rgba(255,255,255,.08);
-            color: rgba(255,255,255,.6);
-        }
-
-        .winner {
-            background: rgba(200,164,93,.16);
-            color: #c8a45d;
-        }
-
-        .not-winner {
-            background: rgba(255,255,255,.05);
-            color: rgba(255,255,255,.35);
-        }
-
-        .yes {
-            color: #c8a45d;
-            font-weight: 800;
-        }
-
-        .no {
-            color: rgba(255,255,255,.3);
-        }
-
-        .empty {
-            padding: 60px;
-            text-align: center;
-            color: rgba(255,255,255,.4);
-        }
-
-        .winner-panel {
-            padding: 24px;
-        }
-
-        .winner-company {
-            font-size: 28px;
-            font-weight: 800;
-            letter-spacing: -.04em;
-        }
-
-        .winner-month {
-            margin-bottom: 12px;
-            color: #c8a45d;
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: .12em;
-            text-transform: uppercase;
-        }
-
-        .winner-description {
-            margin-top: 15px;
-            color: rgba(255,255,255,.5);
-            font-size: 13px;
-            line-height: 1.6;
-        }
-
-        .winner-website {
-            display: inline-block;
-            margin-top: 16px;
-            color: #ffffff;
-            font-size: 13px;
-        }
-
-        .winner-status {
-            margin-top: 22px;
-            padding: 14px;
-            border-radius: 12px;
-            background: rgba(255,255,255,.04);
-            color: rgba(255,255,255,.5);
-            font-size: 12px;
-            line-height: 1.6;
-        }
-
-        .winner-status strong {
-            color: #ffffff;
-        }
-
-        .winner-empty {
-            color: rgba(255,255,255,.4);
-            font-size: 13px;
-            line-height: 1.6;
-        }
-
-        .actions {
-            margin-top: 25px;
-            padding-top: 25px;
-            border-top: 1px solid rgba(255,255,255,.07);
-        }
-
-        .field-label {
-            display: block;
-            margin-bottom: 8px;
-            color: rgba(255,255,255,.45);
-            font-size: 10px;
-            font-weight: 800;
-            letter-spacing: .14em;
-            text-transform: uppercase;
-        }
-
-        select {
-            width: 100%;
-            border: 1px solid rgba(255,255,255,.1);
-            border-radius: 12px;
-            padding: 13px 14px;
-            background: #080808;
-            color: #ffffff;
-            outline: none;
-        }
-
-        button {
-            width: 100%;
-            margin-top: 10px;
-            border: 0;
-            border-radius: 12px;
-            padding: 14px 16px;
-            background: #c8a45d;
-            color: #080808;
-            font-size: 13px;
-            font-weight: 800;
-            cursor: pointer;
-        }
-
-        button:hover {
-            filter: brightness(1.06);
-        }
-
-        button.danger {
-            margin-top: 10px;
-            background: #191010;
-            color: #ff9c9c;
-            border: 1px solid #351d1d;
-        }
-
-        .mail-summary {
-            margin-top: 14px;
-            color: rgba(255,255,255,.35);
-            font-size: 11px;
-            line-height: 1.6;
-        }
-
-        @media (max-width: 1100px) {
-
-            .stats {
-                grid-template-columns:
-                    repeat(3, 1fr);
-            }
-
-            .dashboard {
-                grid-template-columns: 1fr;
-            }
-
-        }
-
-        @media (max-width: 700px) {
-
-            .container {
-                width: min(
-                    100% - 24px,
-                    1400px
-                );
-
-                padding: 35px 0 60px;
-            }
-
-            .stats {
-                grid-template-columns:
-                    repeat(2, 1fr);
-
-                margin-top: 35px;
-            }
-
-            .stat {
-                padding: 18px;
-            }
-
-            .stat-value {
-                font-size: 28px;
-            }
-
-        }
-
-    </style>
+<meta charset="UTF-8">
+
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1.0"
+>
+
+<title>
+Grand+ — Administration | Vitrine+
+</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    background: #080808;
+}
+
+body {
+    margin: 0;
+    background: #080808;
+    color: #ffffff;
+    font-family:
+        Inter,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+}
+
+a {
+    color: inherit;
+}
+
+.topbar {
+    height: 72px;
+    padding: 0 32px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    border-bottom: 1px solid #202020;
+
+    background: rgba(
+        8,
+        8,
+        8,
+        .96
+    );
+
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.brand {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -.04em;
+}
+
+.brand span {
+    color: #C8A45D;
+}
+
+.top-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.site-link,
+.logout {
+    color: #888888;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.logout {
+    padding: 9px 14px;
+    border: 1px solid #292929;
+    border-radius: 9px;
+    background: #111111;
+}
+
+.site-link:hover,
+.logout:hover {
+    color: #ffffff;
+}
+
+.container {
+    width: min(
+        1400px,
+        calc(100% - 48px)
+    );
+
+    margin: 0 auto;
+
+    padding: 48px 0 80px;
+}
+
+.eyebrow {
+    margin-bottom: 10px;
+
+    color: #C8A45D;
+
+    font-size: 11px;
+    font-weight: 800;
+
+    letter-spacing: .16em;
+    text-transform: uppercase;
+}
+
+h1 {
+    margin: 0 0 14px;
+
+    font-size: clamp(
+        34px,
+        5vw,
+        58px
+    );
+
+    line-height: .98;
+
+    letter-spacing: -.055em;
+}
+
+.subtitle {
+    margin: 0;
+
+    color: #888888;
+
+    font-size: 15px;
+}
+
+.alert {
+    margin: 22px 0;
+
+    padding: 14px 16px;
+
+    border-radius: 12px;
+
+    font-size: 13px;
+}
+
+.alert.success {
+    background: rgba(
+        70,
+        180,
+        110,
+        .08
+    );
+
+    border: 1px solid rgba(
+        70,
+        180,
+        110,
+        .2
+    );
+
+    color: #9be1b3;
+}
+
+.alert.error {
+    background: rgba(
+        220,
+        70,
+        70,
+        .08
+    );
+
+    border: 1px solid rgba(
+        220,
+        70,
+        70,
+        .2
+    );
+
+    color: #ff9c9c;
+}
+
+.toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    margin: 30px 0;
+
+    gap: 20px;
+}
+
+.month-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.month-form label {
+    color: #777777;
+    font-size: 13px;
+}
+
+select {
+    min-width: 180px;
+
+    padding: 11px 13px;
+
+    border: 1px solid #292929;
+    border-radius: 10px;
+
+    background: #111111;
+    color: #ffffff;
+
+    outline: none;
+}
+
+.stats {
+    display: grid;
+
+    grid-template-columns:
+        repeat(4, 1fr);
+
+    gap: 14px;
+
+    margin-bottom: 30px;
+}
+
+.stat {
+    padding: 22px;
+
+    border: 1px solid #202020;
+    border-radius: 16px;
+
+    background: #101010;
+}
+
+.stat-label {
+    margin-bottom: 12px;
+
+    color: #777777;
+
+    font-size: 12px;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 800;
+
+    letter-spacing: -.04em;
+}
+
+.layout {
+    display: grid;
+
+    grid-template-columns:
+        minmax(0, 1fr)
+        340px;
+
+    gap: 20px;
+
+    align-items: start;
+}
+
+.panel {
+    overflow: hidden;
+
+    border: 1px solid #202020;
+    border-radius: 18px;
+
+    background: #101010;
+}
+
+.panel-header {
+    padding: 20px 22px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    border-bottom: 1px solid #202020;
+}
+
+.panel-title {
+    font-size: 15px;
+    font-weight: 750;
+}
+
+.panel-meta {
+    color: #666666;
+    font-size: 12px;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+
+    min-width: 900px;
+
+    border-collapse: collapse;
+}
+
+th {
+    padding: 14px 18px;
+
+    text-align: left;
+
+    border-bottom: 1px solid #202020;
+
+    color: #666666;
+
+    font-size: 11px;
+    font-weight: 700;
+
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+td {
+    padding: 16px 18px;
+
+    border-bottom: 1px solid #1b1b1b;
+
+    vertical-align: top;
+
+    font-size: 13px;
+}
+
+tr:last-child td {
+    border-bottom: 0;
+}
+
+.name {
+    margin-bottom: 4px;
+
+    font-weight: 700;
+}
+
+.muted {
+    margin-top: 4px;
+    color: #777777;
+}
+
+.email {
+    color: #aaaaaa;
+}
+
+.badge {
+    display: inline-flex;
+
+    padding: 5px 8px;
+
+    border-radius: 999px;
+
+    background: #181818;
+
+    color: #aaaaaa;
+
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.badge.gold {
+    background: rgba(
+        200,
+        164,
+        93,
+        .09
+    );
+
+    color: #C8A45D;
+}
+
+.winner-badge {
+    margin-top: 6px;
+
+    color: #C8A45D;
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.winner-panel {
+    padding: 24px;
+}
+
+.winner-empty {
+    margin-bottom: 20px;
+
+    color: #777777;
+
+    line-height: 1.6;
+
+    font-size: 13px;
+}
+
+.winner-company {
+    margin-bottom: 10px;
+
+    font-size: 24px;
+    font-weight: 800;
+
+    line-height: 1.1;
+
+    letter-spacing: -.04em;
+}
+
+.winner-month {
+    margin-bottom: 18px;
+
+    color: #C8A45D;
+
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.winner-description {
+    margin-bottom: 18px;
+
+    color: #999999;
+
+    font-size: 13px;
+
+    line-height: 1.6;
+}
+
+.winner-link {
+    color: #ffffff;
+
+    font-size: 13px;
+
+    text-decoration: none;
+}
+
+.winner-link:hover {
+    text-decoration: underline;
+}
+
+.button {
+    width: 100%;
+
+    padding: 12px 14px;
+
+    border: 0;
+    border-radius: 10px;
+
+    background: #C8A45D;
+
+    color: #080808;
+
+    font-size: 13px;
+    font-weight: 800;
+
+    cursor: pointer;
+}
+
+.button:hover {
+    filter: brightness(1.06);
+}
+
+.button.secondary {
+    background: #181818;
+    color: #ffffff;
+
+    border: 1px solid #292929;
+}
+
+.button.danger {
+    background: #191010;
+
+    color: #ff9c9c;
+
+    border: 1px solid #351d1d;
+}
+
+.winner-actions {
+    display: flex;
+    flex-direction: column;
+
+    gap: 10px;
+
+    margin-top: 20px;
+}
+
+.empty {
+    padding: 50px 20px;
+
+    text-align: center;
+
+    color: #666666;
+
+    font-size: 13px;
+}
+
+.select-winner {
+    width: 100%;
+
+    margin-top: 8px;
+}
+
+@media (max-width: 1000px) {
+
+    .stats {
+        grid-template-columns:
+            repeat(2, 1fr);
+    }
+
+    .layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+
+    .topbar {
+        padding: 0 18px;
+    }
+
+    .site-link {
+        display: none;
+    }
+
+    .container {
+        width:
+            calc(100% - 28px);
+
+        padding-top: 32px;
+    }
+
+    .stats {
+        grid-template-columns:
+            1fr 1fr;
+    }
+
+    .stat {
+        padding: 17px;
+    }
+
+    .stat-value {
+        font-size: 26px;
+    }
+
+    .month-form {
+        width: 100%;
+    }
+
+    select {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+</style>
 
 </head>
 
 <body>
 
-<div class="container">
+<div class="shell">
 
-    <div class="topbar">
+<header class="topbar">
 
-        <div class="brand">
-            Vitrine<span>+</span>
-        </div>
+<div class="brand">
 
-        <div>
-            <a
-                href="/le-grand-plus"
-                target="_blank"
-                rel="noreferrer"
-            >
-                Voir le Grand+ →
-            </a>
-        </div>
+Vitrine<span>+</span>
 
-    </div>
+</div>
 
-    <div style="margin-top:55px;">
+<div class="top-right">
 
-        <div class="eyebrow">
-            Administration
-        </div>
+<a
+class="site-link"
+href="/le-grand-plus"
+>
+Voir le Grand+
+</a>
 
-        <h1>
-            Le Grand +
-        </h1>
+<a
+class="logout"
+href="/grand-plus-admin.php?logout=1"
+>
+Déconnexion
+</a>
 
-        <div class="month">
-            <?= h($currentMonthLabel) ?>
-        </div>
+</div>
 
-    </div>
+</header>
 
-    <?php if ($actionMessage !== ''): ?>
 
-        <div class="alert success">
-            <?= h($actionMessage) ?>
-        </div>
+<main class="container">
 
-    <?php endif; ?>
+<section class="hero">
 
-    <?php if ($actionError !== ''): ?>
+<div class="eyebrow">
+Administration
+</div>
 
-        <div class="alert error">
-            <?= h($actionError) ?>
-        </div>
+<h1>
+Le Grand+
+</h1>
 
-    <?php endif; ?>
+<p class="subtitle">
+Gérez les participations et le gagnant du mois.
+</p>
 
-    <div class="stats">
+</section>
 
-        <div class="stat">
 
-            <div class="stat-label">
-                Participants
-            </div>
+<?php if ($actionMessage !== ''): ?>
 
-            <div class="stat-value">
-                <?= $total ?>
-            </div>
+<div class="alert success">
+<?= h($actionMessage) ?>
+</div>
 
-        </div>
+<?php endif; ?>
 
-        <div class="stat">
 
-            <div class="stat-label">
-                En attente
-            </div>
+<?php if ($actionError !== ''): ?>
 
-            <div class="stat-value">
-                <?= $pending ?>
-            </div>
+<div class="alert error">
+<?= h($actionError) ?>
+</div>
 
-        </div>
+<?php endif; ?>
 
-        <div class="stat">
 
-            <div class="stat-label">
-                Gagnant
-            </div>
+<div class="toolbar">
 
-            <div class="stat-value">
-                <?= $winnerCount ?>
-            </div>
+<form
+method="get"
+class="month-form"
+>
 
-        </div>
+<label for="month">
+Mois
+</label>
 
-        <div class="stat">
+<select
+id="month"
+name="month"
+onchange="this.form.submit()"
+>
 
-            <div class="stat-label">
-                Non gagnants
-            </div>
+<?php foreach (
+    $availableMonths
+    as $availableMonth
+): ?>
 
-            <div class="stat-value">
-                <?= $notWinner ?>
-            </div>
+<option
+value="<?= h($availableMonth) ?>"
+<?= (
+    $availableMonth === $month
+)
+    ? 'selected'
+    : ''
+?>
+>
 
-        </div>
+<?= h(
+    month_label(
+        $availableMonth
+    )
+) ?>
 
-        <div class="stat">
+</option>
 
-            <div class="stat-label">
-                Marketing
-            </div>
+<?php endforeach; ?>
 
-            <div class="stat-value">
-                <?= $marketing ?>
-            </div>
+</select>
 
-        </div>
+</form>
 
-    </div>
+</div>
 
-    <div class="dashboard">
 
-        <section class="panel">
+<section class="stats">
 
-            <div class="panel-header">
+<div class="stat">
 
-                <div class="panel-title">
-                    Participants
-                </div>
+<div class="stat-label">
+Participants
+</div>
 
-                <div class="panel-meta">
-                    <?= $total ?>
-                    participation(s)
-                </div>
+<div class="stat-value">
+<?= count(
+    $monthParticipations
+) ?>
+</div>
 
-            </div>
+</div>
 
-            <?php if ($total === 0): ?>
 
-                <div class="empty">
-                    Aucun participant pour
-                    <?= h($currentMonthLabel) ?>.
-                </div>
+<div class="stat">
 
-            <?php else: ?>
+<div class="stat-label">
+Aujourd'hui
+</div>
 
-                <div class="table-wrap">
+<div class="stat-value">
+<?= $todayCount ?>
+</div>
 
-                    <table>
+</div>
 
-                        <thead>
 
-                            <tr>
+<div class="stat">
 
-                                <th>
-                                    Entreprise
-                                </th>
+<div class="stat-label">
+Marketing accepté
+</div>
 
-                                <th>
-                                    Contact
-                                </th>
+<div class="stat-value">
+<?= $marketingCount ?>
+</div>
 
-                                <th>
-                                    Activité
-                                </th>
+</div>
 
-                                <th>
-                                    Problématique
-                                </th>
 
-                                <th>
-                                    Marketing
-                                </th>
+<div class="stat">
 
-                                <th>
-                                    Statut
-                                </th>
+<div class="stat-label">
+Gagnant
+</div>
 
-                            </tr>
+<div class="stat-value">
 
-                        </thead>
+<?= $winnerCompany !== ''
+    ? '✓'
+    : '—'
+?>
 
-                        <tbody>
+</div>
 
-                        <?php
-                        foreach (
-                            $currentMonthParticipants
-                            as $participant
-                        ):
-                        ?>
+</div>
 
-                            <?php
+</section>
 
-                            $status = (string) (
-                                $participant['status']
-                                ?? 'pending'
-                            );
 
-                            ?>
+<div class="layout">
 
-                            <tr>
 
-                                <td>
+<section class="panel">
 
-                                    <div class="company">
-                                        <?= h(
-                                            (string) (
-                                                $participant['company']
-                                                ?? ''
-                                            )
-                                        ) ?>
-                                    </div>
+<div class="panel-header">
 
-                                    <div class="muted">
-                                        <?= h(
-                                            (string) (
-                                                $participant['sector']
-                                                ?? ''
-                                            )
-                                        ) ?>
-                                    </div>
+<div class="panel-title">
+Participants
+</div>
 
-                                </td>
+<div class="panel-meta">
 
-                                <td>
+<?= count(
+    $monthParticipations
+) ?>
 
-                                    <div>
-                                        <?= h(
-                                            (string) (
-                                                $participant['name']
-                                                ?? ''
-                                            )
-                                        ) ?>
-                                    </div>
+participation(s)
 
-                                    <div class="muted">
-                                        <?= h(
-                                            (string) (
-                                                $participant['email']
-                                                ?? ''
-                                            )
-                                        ) ?>
-                                    </div>
+</div>
 
-                                    <?php if (
-                                        !empty(
-                                            $participant['phone']
-                                        )
-                                    ): ?>
+</div>
 
-                                        <div class="muted">
-                                            <?= h(
-                                                (string) (
-                                                    $participant['phone']
-                                                )
-                                            ) ?>
-                                        </div>
 
-                                    <?php endif; ?>
+<?php if (
+    count($monthParticipations)
+    === 0
+): ?>
 
-                                </td>
+<div class="empty">
 
-                                <td>
+Aucun participant pour
 
-                                    <?php if (
-                                        !empty(
-                                            $participant['website']
-                                        )
-                                    ): ?>
+<?= h(
+    month_label($month)
+) ?>.
 
-                                        <a
-                                            href="<?= h(
-                                                (string) (
-                                                    $participant['website']
-                                                )
-                                            ) ?>"
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            style="
-                                                color:#c8a45d;
-                                            "
-                                        >
-                                            Voir le site
-                                        </a>
+</div>
 
-                                    <?php else: ?>
+<?php else: ?>
 
-                                        <span class="no">
-                                            Aucun site
-                                        </span>
 
-                                    <?php endif; ?>
+<div class="table-wrap">
 
-                                </td>
+<table>
 
-                                <td>
+<thead>
 
-                                    <div class="problem">
-                                        <?= h(
-                                            (string) (
-                                                $participant['problem']
-                                                ?? ''
-                                            )
-                                        ) ?>
-                                    </div>
+<tr>
 
-                                </td>
+<th>
+Participant
+</th>
 
-                                <td>
+<th>
+Entreprise
+</th>
 
-                                    <?php if (
-                                        !empty(
-                                            $participant[
-                                                'marketing_consent'
-                                            ]
-                                        )
-                                    ): ?>
+<th>
+Secteur
+</th>
 
-                                        <span class="yes">
-                                            Oui
-                                        </span>
+<th>
+Contact
+</th>
 
-                                    <?php else: ?>
+<th>
+Participation
+</th>
 
-                                        <span class="no">
-                                            Non
-                                        </span>
+<th>
+Marketing
+</th>
 
-                                    <?php endif; ?>
+</tr>
 
-                                </td>
+</thead>
 
-                                <td>
 
-                                    <?php if (
-                                        $status === 'winner'
-                                    ): ?>
+<tbody>
 
-                                        <span class="badge winner">
-                                            Gagnant
-                                        </span>
 
-                                    <?php elseif (
-                                        $status === 'not_winner'
-                                    ): ?>
+<?php foreach (
+    $monthParticipations
+    as $participant
+): ?>
 
-                                        <span class="badge not-winner">
-                                            Non gagnant
-                                        </span>
+<tr>
 
-                                    <?php else: ?>
 
-                                        <span class="badge pending">
-                                            En attente
-                                        </span>
+<td>
 
-                                    <?php endif; ?>
+<div class="name">
 
-                                    <?php if (
-                                        !empty(
-                                            $participant[
-                                                'result_email_sent'
-                                            ]
-                                        )
-                                    ): ?>
+<?= h(
+    $participant['name']
+    ?? ''
+) ?>
 
-                                        <div class="muted">
-                                            Mail envoyé
-                                        </div>
+</div>
 
-                                    <?php endif; ?>
 
-                                </td>
+<?php if (
+    !empty(
+        $participant['id']
+    )
+): ?>
 
-                            </tr>
+<div class="muted">
 
-                        <?php endforeach; ?>
+<?= h(
+    $participant['id']
+) ?>
 
-                        </tbody>
+</div>
 
-                    </table>
+<?php endif; ?>
 
-                </div>
 
-            <?php endif; ?>
+<?php
 
-        </section>
+$isWinner =
+    $winnerCompany !== ''
+    && $winnerCompany ===
+        (string) (
+            $participant[
+                'company'
+            ] ?? ''
+        );
 
-        <aside class="panel">
+?>
 
-            <div class="panel-header">
 
-                <div class="panel-title">
-                    Gagnant du mois
-                </div>
+<?php if ($isWinner): ?>
 
-            </div>
+<div class="winner-badge">
 
-            <div class="winner-panel">
+★ GAGNANT
 
-                <?php if (
-                    !empty(
-                        $winner['hasWinner']
-                    )
-                ): ?>
+</div>
 
-                    <div class="winner-month">
-                        <?= h(
-                            (string) (
-                                $winner['month']
-                                ?? $currentMonthLabel
-                            )
-                        ) ?>
-                    </div>
+<?php endif; ?>
 
-                    <div class="winner-company">
-                        <?= h($winnerCompany) ?>
-                    </div>
+</td>
 
-                    <?php if (
-                        !empty(
-                            $winner['description']
-                        )
-                    ): ?>
 
-                        <div class="winner-description">
-                            <?= h(
-                                (string) (
-                                    $winner['description']
-                                )
-                            ) ?>
-                        </div>
+<td>
 
-                    <?php endif; ?>
+<div class="name">
 
-                    <?php if (
-                        !empty(
-                            $winner['website']
-                        )
-                    ): ?>
+<?= h(
+    $participant['company']
+    ?? ''
+) ?>
 
-                        <a
-                            class="winner-website"
-                            href="<?= h(
-                                (string) (
-                                    $winner['website']
-                                )
-                            ) ?>"
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            Voir le site →
-                        </a>
+</div>
 
-                    <?php endif; ?>
 
-                    <div class="winner-status">
+<?php if (
+    !empty(
+        $participant['website']
+    )
+): ?>
 
-                        <div>
-                            Mail gagnant :
-                            <strong>
-                                <?= $winnerEmailSent
-                                    ? 'envoyé'
-                                    : 'non envoyé'
-                                ?>
-                            </strong>
-                        </div>
-
-                        <div>
-                            Mails participants :
-                            <strong>
-                                <?= $loserEmailsSent ?>
-                            </strong>
-                        </div>
-
-                    </div>
-
-                    <div class="actions">
-
-                        <form
-                            method="post"
-                            onsubmit="
-                                return confirm(
-                                    'Réinitialiser le gagnant du mois ?'
-                                );
-                            "
-                        >
-
-                            <input
-                                type="hidden"
-                                name="action"
-                                value="reset_winner"
-                            >
-
-                            <button
-                                type="submit"
-                                class="danger"
-                            >
-                                Réinitialiser le gagnant
-                            </button>
-
-                        </form>
-
-                    </div>
-
-                <?php else: ?>
-
-                    <div class="winner-empty">
-                        Aucun gagnant n'est actuellement
-                        enregistré pour <?= h(
-                            $currentMonthLabel
-                        ) ?>.
-                    </div>
-
-                <?php endif; ?>
-
-                <?php if (
-                    $total > 0 &&
-                    empty(
-                        $winner['hasWinner']
-                    )
-                ): ?>
-
-                    <div class="actions">
-
-                        <form
-                            method="post"
-                            onsubmit="
-                                return confirm(
-                                    'Désigner cette entreprise comme gagnante ? Les mails seront envoyés immédiatement.'
-                                );
-                            "
-                        >
-
-                            <input
-                                type="hidden"
-                                name="action"
-                                value="select_winner"
-                            >
-
-                            <label
-                                class="field-label"
-                                for="winner_id"
-                            >
-                                Choisir le gagnant
-                            </label>
-
-                            <select
-                                id="winner_id"
-                                name="winner_id"
-                                required
-                            >
-
-                                <option value="">
-                                    Choisir une entreprise…
-                                </option>
-
-                                <?php
-                                foreach (
-                                    $currentMonthParticipants
-                                    as $participant
-                                ):
-                                ?>
-
-                                    <option
-                                        value="<?= h(
-                                            (string) (
-                                                $participant['id']
-                                                ?? ''
-                                            )
-                                        ) ?>"
-                                    >
-                                        <?= h(
-                                            (string) (
-                                                $participant['company']
-                                                ?? ''
-                                            )
-                                        ) ?>
-                                        —
-                                        <?= h(
-                                            (string) (
-                                                $participant['name']
-                                                ?? ''
-                                            )
-                                        ) ?>
-                                    </option>
-
-                                <?php endforeach; ?>
-
-                            </select>
-
-                            <button type="submit">
-                                Désigner le gagnant
-                            </button>
-
-                        </form>
-
-                        <div class="mail-summary">
-                            Le gagnant recevra son e-mail
-                            automatiquement. Les autres participants
-                            recevront également leur e-mail de résultat.
-                            L'offre commerciale n'est envoyée qu'aux
-                            participants ayant accepté le marketing.
-                        </div>
-
-                    </div>
-
-                <?php endif; ?>
-
-            </div>
-
-        </aside>
-
-    </div>
+<a
+class="email"
+href="<?= h(
+    $participant['website']
+) ?>"
+target="_blank"
+rel="noopener noreferrer"
+>
+
+Site web
+
+</a>
+
+<?php endif; ?>
+
+</td>
+
+
+<td>
+
+<?= h(
+    $participant['sector']
+    ?? ''
+) ?>
+
+</td>
+
+
+<td>
+
+<div class="email">
+
+<?= h(
+    $participant['email']
+    ?? ''
+) ?>
+
+</div>
+
+
+<?php if (
+    !empty(
+        $participant['phone']
+    )
+): ?>
+
+<div class="muted">
+
+<?= h(
+    $participant['phone']
+) ?>
+
+</div>
+
+<?php endif; ?>
+
+</td>
+
+
+<td>
+
+<div>
+
+<?= h(
+    $participant['created_at']
+    ?? ''
+) ?>
+
+</div>
+
+
+<?php if (
+    !empty(
+        $participant['problem']
+    )
+): ?>
+
+<div
+class="muted"
+style="margin-top:7px;"
+>
+
+<?= h(
+    $participant['problem']
+) ?>
+
+</div>
+
+<?php endif; ?>
+
+</td>
+
+
+<td>
+
+<?php if (
+    !empty(
+        $participant[
+            'marketing_consent'
+        ]
+    )
+): ?>
+
+<span class="badge gold">
+Oui
+</span>
+
+<?php else: ?>
+
+<span class="badge">
+Non
+</span>
+
+<?php endif; ?>
+
+</td>
+
+
+</tr>
+
+<?php endforeach; ?>
+
+
+</tbody>
+
+</table>
+
+</div>
+
+<?php endif; ?>
+
+</section>
+
+
+<aside class="panel">
+
+
+<div class="panel-header">
+
+<div class="panel-title">
+Gagnant du mois
+</div>
+
+</div>
+
+
+<div class="winner-panel">
+
+
+<?php if (
+    !empty(
+        $winner['hasWinner']
+    )
+): ?>
+
+
+<div class="winner-month">
+
+<?= h(
+    $winner['month']
+    ?? ''
+) ?>
+
+</div>
+
+
+<div class="winner-company">
+
+<?= h(
+    $winner['company']
+    ?? ''
+) ?>
+
+</div>
+
+
+<?php if (
+    !empty(
+        $winner['description']
+    )
+): ?>
+
+<div class="winner-description">
+
+<?= h(
+    $winner['description']
+) ?>
+
+</div>
+
+<?php endif; ?>
+
+
+<?php if (
+    !empty(
+        $winner['website']
+    )
+): ?>
+
+<a
+class="winner-link"
+href="<?= h(
+    $winner['website']
+) ?>"
+target="_blank"
+rel="noopener noreferrer"
+>
+
+Voir le site →
+
+</a>
+
+<?php endif; ?>
+
+
+<div class="winner-actions">
+
+
+<form method="post">
+
+<input
+type="hidden"
+name="csrf"
+value="<?= h(
+    csrf_token()
+) ?>"
+>
+
+<input
+type="hidden"
+name="action"
+value="reset_winner"
+>
+
+<input
+type="hidden"
+name="month"
+value="<?= h(
+    $month
+) ?>"
+>
+
+<button
+class="button danger"
+type="submit"
+onclick="
+return confirm(
+'Réinitialiser le gagnant du mois ?'
+)
+"
+>
+
+Réinitialiser le gagnant
+
+</button>
+
+</form>
+
+
+</div>
+
+
+<?php else: ?>
+
+
+<div class="winner-empty">
+
+Aucun gagnant n'est actuellement
+enregistré pour le Grand+.
+
+</div>
+
+
+<?php endif; ?>
+
+
+<?php if (
+    count($monthParticipations)
+    > 0
+): ?>
+
+
+<form
+method="post"
+style="margin-top:24px;"
+>
+
+<input
+type="hidden"
+name="csrf"
+value="<?= h(
+    csrf_token()
+) ?>"
+>
+
+<input
+type="hidden"
+name="action"
+value="select_winner"
+>
+
+<input
+type="hidden"
+name="month"
+value="<?= h(
+    $month
+) ?>"
+>
+
+
+<select
+class="select-winner"
+name="winner_id"
+required
+>
+
+<option value="">
+Choisir un gagnant…
+</option>
+
+
+<?php foreach (
+    $monthParticipations
+    as $participant
+): ?>
+
+<option
+value="<?= h(
+    $participant['id']
+    ?? ''
+) ?>"
+>
+
+<?= h(
+    $participant['company']
+    ?? ''
+) ?>
+
+—
+
+<?= h(
+    $participant['name']
+    ?? ''
+) ?>
+
+</option>
+
+<?php endforeach; ?>
+
+</select>
+
+
+<div style="height:10px;">
+</div>
+
+
+<button
+class="button"
+type="submit"
+onclick="
+return confirm(
+'Définir cette entreprise comme gagnante ?'
+)
+"
+>
+
+Désigner le gagnant
+
+</button>
+
+</form>
+
+
+<?php endif; ?>
+
+
+</div>
+
+</aside>
+
+
+</div>
+
+</main>
 
 </div>
 
 </body>
+
 </html>
