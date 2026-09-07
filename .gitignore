@@ -8,4 +8,5 @@ dist/
 vitrine-mail-config.php
 vitrine-data/
 out/
-public/vitrine-mail-config.phpparticipations.json
+public/vitrine-mail-config.php
+participations.json
