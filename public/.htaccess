@@ -3,18 +3,26 @@ Options -MultiViews
 RewriteEngine On
 RewriteBase /
 
-# Protection des données privées
+# =========================================================
+# PROTECTION DES DONNÉES PRIVÉES
+# =========================================================
+
 RewriteRule ^\.data(?:/|$) - [F,L]
 
-# Protection de la configuration SMTP
+RewriteRule ^vitrine-data(?:/|$) - [F,L]
+
 RewriteRule ^vitrine-mail-config\.php$ - [F,L]
 
-# Ne pas réécrire les vrais fichiers
+# =========================================================
+# NE PAS RÉÉCRIRE LES VRAIS FICHIERS / DOSSIERS
+# =========================================================
+
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# SPA React
-RewriteRule ^ index.html [L]
+# =========================================================
+# SPA REACT
+# =========================================================
 
-RewriteRule ^vitrine-data(?:/|$) - [F,L]
+RewriteRule ^ index.html [L]
