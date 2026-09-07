@@ -25,7 +25,7 @@ const UNSUBSCRIBE_FILE =
     DATA_DIR . '/unsubscribed.json';
 
 const CONFIG_FILE =
-    __DIR__ . '/vitrine-mail-config.php';
+    dirname(__DIR__) . '/vitrine-mail-config.php';
 
 const DEFAULT_SITE_URL =
     'https://vitrineplus.fr';
