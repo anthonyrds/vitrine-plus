@@ -84,20 +84,44 @@ export default function GrandPlus() {
   });
 
   useEffect(() => {
-    fetch("/grand-plus-winner.json")
-      .then((response) => {
+    let cancelled = false;
+
+    async function loadWinner() {
+      try {
+        /*
+         * Cache-busting volontaire :
+         * le gagnant peut être modifié depuis l'administration
+         * sans qu'une ancienne version du JSON soit conservée
+         * par le navigateur ou un éventuel cache intermédiaire.
+         */
+        const response = await fetch(
+          `/grand-plus-winner.json?ts=${Date.now()}`,
+          {
+            cache: "no-store",
+          },
+        );
+
         if (!response.ok) {
           throw new Error("Impossible de récupérer le gagnant.");
         }
 
-        return response.json();
-      })
-      .then((data: Winner) => {
-        setWinner(data);
-      })
-      .catch(() => {
-        setWinner(null);
-      });
+        const data: Winner = await response.json();
+
+        if (!cancelled) {
+          setWinner(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setWinner(null);
+        }
+      }
+    }
+
+    loadWinner();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -226,11 +250,11 @@ export default function GrandPlus() {
         {/* HERO */}
         <section className="relative min-h-[760px] px-6 pb-24 pt-36 lg:min-h-[820px] lg:px-8 lg:pb-32 lg:pt-48">
           <div
-  className="pointer-events-none absolute inset-0"
-  aria-hidden="true"
->
-  <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(200,164,93,0.10),transparent_32%),radial-gradient(circle_at_8%_92%,rgba(255,255,255,0.035),transparent_28%)]" />
-</div>
+            className="pointer-events-none absolute inset-0"
+            aria-hidden="true"
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(200,164,93,0.10),transparent_32%),radial-gradient(circle_at_8%_92%,rgba(255,255,255,0.035),transparent_28%)]" />
+          </div>
 
           <div className="relative mx-auto max-w-7xl">
             <div className="grid items-end gap-16 lg:grid-cols-[1.15fr_.85fr]">
@@ -782,32 +806,32 @@ export default function GrandPlus() {
 
                     <div className="mt-6 space-y-5">
                       <label className="flex items-start gap-3 text-sm leading-6 text-black/55">
-  <input
-    required
-    type="checkbox"
-    checked={form.consent}
-    onChange={(event) =>
-      setForm({
-        ...form,
-        consent: event.target.checked,
-      })
-    }
-    className="mt-1 h-4 w-4 shrink-0 accent-[#080808]"
-  />
+                        <input
+                          required
+                          type="checkbox"
+                          checked={form.consent}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              consent: event.target.checked,
+                            })
+                          }
+                          className="mt-1 h-4 w-4 shrink-0 accent-[#080808]"
+                        />
 
-  <span>
-    J'ai lu et j'accepte{" "}
-    <Link
-      to="/reglement-grand-plus"
-      target="_blank"
-      rel="noreferrer"
-      className="font-bold !text-[#080808] underline underline-offset-2 transition hover:!text-[#9a773d]"
-    >
-      le règlement du Grand +
-    </Link>
-    . *
-  </span>
-</label>
+                        <span>
+                          J'ai lu et j'accepte{" "}
+                          <Link
+                            to="/reglement-grand-plus"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-bold !text-[#080808] underline underline-offset-2 transition hover:!text-[#9a773d]"
+                          >
+                            le règlement du Grand +
+                          </Link>
+                          . *
+                        </span>
+                      </label>
 
                       <label className="flex items-start gap-3 text-sm leading-6 text-black/55">
                         <input
