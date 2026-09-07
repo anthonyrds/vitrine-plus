@@ -1,10 +1,13 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
+
 import Layout from "./components/Layout";
+import AdminDashboard from "./pages/AdminDashboard";
+
+import Home from "./pages/Home";
 import GrandPlus from "./pages/GrandPlus";
 import ReglementGrandPlus from "./pages/ReglementGrandPlus";
 
-import Home from "./pages/Home";
 const Services = lazy(() => import("./pages/Services"));
 const Web = lazy(() => import("./pages/Web"));
 const CreationSiteInternet = lazy(() => import("./pages/CreationSiteInternet"));
@@ -32,26 +35,44 @@ export default function App() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
+        {/* =========================================================
+            ADMINISTRATION PRIVÉE
+        ========================================================= */}
+        <Route path="/admin" element={<AdminDashboard />} />
+
+        {/* =========================================================
+            SITE PUBLIC
+        ========================================================= */}
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
 
           <Route path="/services" element={<Services />} />
           <Route path="/services/web" element={<Web />} />
-          <Route path="/creation-site-internet" element={<CreationSiteInternet />} />
-          <Route path="/services/maintenance" element={<Maintenance />} />
+          <Route
+            path="/creation-site-internet"
+            element={<CreationSiteInternet />}
+          />
+
+          <Route
+            path="/services/maintenance"
+            element={<Maintenance />}
+          />
+
           <Route path="/services/seo" element={<SEO />} />
           <Route path="/services/ia" element={<AI />} />
-<Route
-  path="/reglement-grand-plus"
-  element={<ReglementGrandPlus />}
-/>
+
           <Route path="/realisations" element={<Realisations />} />
           <Route path="/solutions" element={<Solutions />} />
           <Route path="/a-propos" element={<About />} />
+
           <Route path="/le-grand-plus" element={<GrandPlus />} />
+          <Route
+            path="/reglement-grand-plus"
+            element={<ReglementGrandPlus />}
+          />
+
           <Route path="/audit" element={<Audit />} />
           <Route path="/rendez-vous" element={<Booking />} />
-
           <Route path="/contact" element={<Contact />} />
           <Route path="/mentions-legales" element={<Legal />} />
 
