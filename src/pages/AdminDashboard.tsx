@@ -1,34 +1,153 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import {
-  Activity,
   ArrowLeft,
   BarChart3,
   CalendarDays,
   Check,
   ChevronRight,
   CircleDollarSign,
-  FileSearch,
+  Clock,
+  ExternalLink,
+  FileText,
   Gift,
   LayoutDashboard,
   LogOut,
   Mail,
   Menu,
+  MessageCircle,
   Phone,
   Plus,
+  RefreshCw,
   Search,
   Target,
   TrendingUp,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
 
 /* ================================================================
+   TYPES
+================================================================ */
+
+type ProspectStatus =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "meeting"
+  | "proposal"
+  | "negotiation"
+  | "won"
+  | "lost";
+
+type ProspectSource =
+  | "grand-plus"
+  | "audit"
+  | "booking"
+  | "contact"
+  | "manual"
+  | string;
+
+type Prospect = {
+  id: string;
+  name: string;
+  company: string;
+  email: string;
+  phone: string;
+  website: string;
+  sector: string;
+  source: ProspectSource;
+  status: ProspectStatus | string;
+  offer: string;
+  estimated_value: number;
+  recurring_value: number;
+  created_at: string;
+  updated_at?: string;
+  last_contact_at?: string;
+  next_action?: string;
+  next_action_at?: string;
+  notes?: string;
+};
+
+type Interaction = {
+  id?: string;
+  prospect_id?: string;
+  text: string;
+  type: string;
+  created_at?: string;
+};
+
+type Appointment = {
+  id?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  date?: string;
+  time?: string;
+  message?: string;
+  status?: string;
+};
+
+type GrandPlusParticipant = {
+  id?: string;
+  name?: string;
+  email?: string;
+  company?: string;
+  phone?: string;
+  created_at?: string;
+  marketing_consent?: boolean;
+};
+
+type GrandPlusData = {
+  participants?: GrandPlusParticipant[];
+  winner?: GrandPlusParticipant | null;
+  winner_email_sent?: boolean;
+};
+
+type StatsData = {
+  prospects: number;
+  won: number;
+  lost: number;
+  signed_revenue: number;
+  potential_revenue: number;
+};
+
+type Data = {
+  prospects: Prospect[];
+  interactions: Interaction[];
+  appointments: Appointment[];
+  grand_plus: GrandPlusData;
+  stats: StatsData;
+};
+
+type AvailabilityBlock = {
+  id: string;
+  date: string;
+  all_day: boolean;
+  start_time?: string;
+  end_time?: string;
+  reason?: string;
+  created_at?: string;
+};
+
+type IconType = ComponentType<{
+  size?: number | string;
+  className?: string;
+}>;
+
+/* ================================================================
    CONSTANTES
 ================================================================ */
 
-const statuses = [
+const statuses: [string, string][] = [
   ["new", "Nouveau"],
   ["contacted", "Contacté"],
   ["qualified", "Qualifié"],
@@ -37,169 +156,50 @@ const statuses = [
   ["negotiation", "Négociation"],
   ["won", "Gagné"],
   ["lost", "Perdu"],
-] as const;
-
-const offers = [
-  "START",
-  "GROW",
-  "SCALE",
-  "V+ Care",
-  "V+ Growth",
-  "V+ Performance",
 ];
 
-/* ================================================================
-   TYPES
-================================================================ */
-
-type Interaction = {
-  id: string;
-  created_at: string;
-  type: string;
-  text: string;
-};
-
-type Prospect = {
-  id: string;
-  source: string;
-  created_at: string;
-
-  name: string;
-  company: string;
-  email: string;
-  phone: string;
-  website: string;
-
-  audit_score?: number | null;
-  recommendations?: string[];
-
-  marketing_consent?: boolean;
-  grand_plus_status?: string;
-  month_key?: string;
-
-  booking_reference?: string;
-  booking_date?: string;
-  booking_time?: string;
-  booking_status?: string;
-
-  reason?: string;
-  sector?: string;
-  problem?: string;
-
-  status: string;
-  offer: string;
-
-  estimated_value: number;
-  recurring_value: number;
-
-  last_contact_at: string;
-  next_action: string;
-  next_action_at: string;
-
-  notes: string;
-
-  interactions: Interaction[];
-};
-
-type Booking = {
-  reference?: string;
-  created_at?: string;
-  name?: string;
-  company?: string;
-  phone?: string;
-  email?: string;
-  date?: string;
-  time?: string;
-  reason?: string;
-  status?: string;
-};
-
-type GrandPlusParticipant = {
-  id?: string;
-  month_key?: string;
-  month_label?: string;
-
-  name?: string;
-  company?: string;
-  email?: string;
-  phone?: string;
-  website?: string;
-
-  marketing_consent?: boolean;
-  status?: string;
-};
-
-type Data = {
-  success?: boolean;
-
-  stats: {
-    prospects: number;
-    new: number;
-    qualified: number;
-    meetings: number;
-    won: number;
-    lost: number;
-    signed_revenue: number;
-    potential_revenue: number;
-    today_actions: number;
-    overdue_actions: number;
-  };
-
-  sources: Record<string, number>;
-  pipeline: Record<string, number>;
-
-  prospects: Prospect[];
-  grand_plus: GrandPlusParticipant[];
-  bookings: Booking[];
-};
-
 const emptyData: Data = {
+  prospects: [],
+  interactions: [],
+  appointments: [],
+  grand_plus: {
+    participants: [],
+    winner: null,
+    winner_email_sent: false,
+  },
   stats: {
     prospects: 0,
-    new: 0,
-    qualified: 0,
-    meetings: 0,
     won: 0,
     lost: 0,
     signed_revenue: 0,
     potential_revenue: 0,
-    today_actions: 0,
-    overdue_actions: 0,
   },
-
-  sources: {},
-  pipeline: {},
-  prospects: [],
-  grand_plus: [],
-  bookings: [],
 };
 
-/* ================================================================
-   STYLES BOUTONS
-================================================================ */
+const buttonLight =
+  "inline-flex items-center justify-center rounded-xl border border-black/10 bg-white text-[#080808] font-bold transition hover:bg-black/[0.03]";
 
 const buttonDark =
-  "inline-flex items-center justify-center gap-2 rounded-full !bg-[#080808] !text-white font-bold transition-all duration-200 hover:!bg-[#1a1a1a] disabled:cursor-not-allowed disabled:opacity-40";
-
-const buttonLight =
-  "inline-flex items-center justify-center gap-2 rounded-full !border !border-black/10 !bg-white !text-[#080808] font-bold transition-all duration-200 hover:!border-black/20 hover:!bg-[#f5f5f3] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center rounded-xl bg-[#080808] text-white font-bold transition hover:bg-black/90";
 
 const buttonGold =
-  "inline-flex items-center justify-center gap-2 rounded-full !bg-[#c8a45d] !text-[#080808] font-bold transition-all duration-200 hover:!bg-[#d5b873] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center rounded-xl bg-[#c8a45d] text-[#080808] font-bold transition hover:bg-[#b8944c]";
 
 /* ================================================================
    HELPERS
 ================================================================ */
 
-function euro(value: number) {
+function euro(value: number | string | undefined | null) {
+  const amount = Number(value || 0);
+
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: 0,
-  }).format(value || 0);
+  }).format(amount);
 }
 
-function dateFr(value: string) {
+function dateFr(value: string | undefined | null) {
   if (!value) return "—";
 
   const date = new Date(value);
@@ -215,7 +215,7 @@ function dateFr(value: string) {
   });
 }
 
-function dateTimeFr(value: string) {
+function dateTimeFr(value: string | undefined | null) {
   if (!value) return "—";
 
   const date = new Date(value);
@@ -287,6 +287,10 @@ function statusClass(status: string) {
   }
 }
 
+/* ================================================================
+   STATUS BADGE
+================================================================ */
+
 function StatusBadge({
   status,
 }: {
@@ -339,6 +343,31 @@ export default function AdminDashboard() {
     useState(false);
 
   /* ==============================================================
+     DISPONIBILITÉS
+  ============================================================== */
+
+  const [availabilityBlocks, setAvailabilityBlocks] =
+    useState<AvailabilityBlock[]>([]);
+
+  const [availabilityLoading, setAvailabilityLoading] =
+    useState(false);
+
+  const [availabilityDate, setAvailabilityDate] =
+    useState("");
+
+  const [availabilityAllDay, setAvailabilityAllDay] =
+    useState(true);
+
+  const [availabilityStart, setAvailabilityStart] =
+    useState("09:00");
+
+  const [availabilityEnd, setAvailabilityEnd] =
+    useState("18:00");
+
+  const [availabilityReason, setAvailabilityReason] =
+    useState("Indisponible");
+
+  /* ==============================================================
      CHARGEMENT
   ============================================================== */
 
@@ -347,10 +376,10 @@ export default function AdminDashboard() {
 
     try {
       const response = await fetch(
-        `/crm-api.php?ts=${Date.now()}`,
+        "/admin-api.php?action=dashboard",
         {
-          cache: "no-store",
           credentials: "same-origin",
+          cache: "no-store",
         },
       );
 
@@ -366,21 +395,37 @@ export default function AdminDashboard() {
       if (!response.ok || !json.success) {
         throw new Error(
           json.message ||
-            "Impossible de charger le CRM.",
+            "Impossible de charger les données.",
         );
       }
 
-      setData(json);
+      setData({
+        prospects: Array.isArray(
+          json.data?.prospects,
+        )
+          ? json.data.prospects
+          : [],
 
-      if (selected) {
-        const refreshed =
-          json.prospects.find(
-            (prospect: Prospect) =>
-              prospect.id === selected.id,
-          ) ?? null;
+        interactions: Array.isArray(
+          json.data?.interactions,
+        )
+          ? json.data.interactions
+          : [],
 
-        setSelected(refreshed);
-      }
+        appointments: Array.isArray(
+          json.data?.appointments,
+        )
+          ? json.data.appointments
+          : [],
+
+        grand_plus:
+          json.data?.grand_plus ??
+          emptyData.grand_plus,
+
+        stats:
+          json.data?.stats ??
+          emptyData.stats,
+      });
     } catch (error) {
       setToast(
         error instanceof Error
@@ -392,24 +437,15 @@ export default function AdminDashboard() {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  /* ==============================================================
-     ACTION API
-  ============================================================== */
-
   async function action(
     payload: Record<string, unknown>,
   ) {
     const response = await fetch(
-      "/crm-api.php",
+      "/admin-api.php",
       {
         method: "POST",
         headers: {
-          "Content-Type":
-            "application/json",
+          "Content-Type": "application/json",
         },
         credentials: "same-origin",
         body: JSON.stringify(payload),
@@ -428,14 +464,244 @@ export default function AdminDashboard() {
     if (!response.ok || !json.success) {
       throw new Error(
         json.message ||
-          "Action impossible.",
+          "Une erreur est survenue.",
       );
     }
 
-    await load();
-
     return json;
   }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  /* ==============================================================
+     DISPONIBILITÉS
+  ============================================================== */
+
+  async function loadAvailability() {
+    setAvailabilityLoading(true);
+
+    try {
+      const response = await fetch(
+        "/availability.php",
+        {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store",
+        },
+      );
+
+      if (response.status === 401) {
+        window.location.href =
+          "/grand-plus-admin.php";
+
+        return;
+      }
+
+      const json = await response.json();
+
+      if (!response.ok || !json.success) {
+        throw new Error(
+          json.message ||
+            "Impossible de charger les disponibilités.",
+        );
+      }
+
+      setAvailabilityBlocks(
+        Array.isArray(json.blocks)
+          ? json.blocks
+          : [],
+      );
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Erreur.",
+      );
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }
+
+  async function addAvailabilityBlock() {
+    if (!availabilityDate) {
+      setToast(
+        "Choisissez une date.",
+      );
+
+      return;
+    }
+
+    if (
+      !availabilityAllDay &&
+      (!availabilityStart ||
+        !availabilityEnd)
+    ) {
+      setToast(
+        "Indiquez une heure de début et une heure de fin.",
+      );
+
+      return;
+    }
+
+    if (
+      !availabilityAllDay &&
+      availabilityStart >= availabilityEnd
+    ) {
+      setToast(
+        "L'heure de fin doit être après l'heure de début.",
+      );
+
+      return;
+    }
+
+    setAvailabilityLoading(true);
+
+    try {
+      const response = await fetch(
+        "/availability.php",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            action: "add_block",
+            date: availabilityDate,
+            all_day: availabilityAllDay,
+            start_time:
+              availabilityAllDay
+                ? null
+                : availabilityStart,
+            end_time:
+              availabilityAllDay
+                ? null
+                : availabilityEnd,
+            reason:
+              availabilityReason.trim() ||
+              "Indisponible",
+          }),
+        },
+      );
+
+      if (response.status === 401) {
+        window.location.href =
+          "/grand-plus-admin.php";
+
+        return;
+      }
+
+      const json = await response.json();
+
+      if (!response.ok || !json.success) {
+        throw new Error(
+          json.message ||
+            "Impossible d'ajouter l'indisponibilité.",
+        );
+      }
+
+      setAvailabilityBlocks(
+        Array.isArray(json.blocks)
+          ? json.blocks
+          : [],
+      );
+
+      setToast(
+        "Indisponibilité ajoutée.",
+      );
+
+      setAvailabilityDate("");
+      setAvailabilityAllDay(true);
+      setAvailabilityStart("09:00");
+      setAvailabilityEnd("18:00");
+      setAvailabilityReason(
+        "Indisponible",
+      );
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Erreur.",
+      );
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }
+
+  async function deleteAvailabilityBlock(
+    id: string,
+  ) {
+    if (
+      !window.confirm(
+        "Supprimer cette indisponibilité ?",
+      )
+    ) {
+      return;
+    }
+
+    setAvailabilityLoading(true);
+
+    try {
+      const response = await fetch(
+        "/availability.php",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            action: "delete_block",
+            id,
+          }),
+        },
+      );
+
+      if (response.status === 401) {
+        window.location.href =
+          "/grand-plus-admin.php";
+
+        return;
+      }
+
+      const json = await response.json();
+
+      if (!response.ok || !json.success) {
+        throw new Error(
+          json.message ||
+            "Impossible de supprimer l'indisponibilité.",
+        );
+      }
+
+      setAvailabilityBlocks(
+        Array.isArray(json.blocks)
+          ? json.blocks
+          : [],
+      );
+
+      setToast(
+        "Indisponibilité supprimée.",
+      );
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Erreur.",
+      );
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (section === "availability") {
+      loadAvailability();
+    }
+  }, [section]);
 
   /* ==============================================================
      FILTRES
@@ -516,8 +782,10 @@ export default function AdminDashboard() {
         );
       })
       .sort((a, b) =>
-        a.next_action_at.localeCompare(
-          b.next_action_at,
+        (
+          a.next_action_at || ""
+        ).localeCompare(
+          b.next_action_at || "",
         ),
       )
       .slice(0, 8);
@@ -546,6 +814,11 @@ export default function AdminDashboard() {
       "calendar",
       "Rendez-vous",
       CalendarDays,
+    ],
+    [
+      "availability",
+      "Disponibilités",
+      Clock,
     ],
     [
       "grand-plus",
@@ -606,23 +879,27 @@ export default function AdminDashboard() {
             Cockpit commercial
           </div>
 
-          <nav className="mt-3 grid gap-1">
+          <nav className="mt-4 grid gap-1.5">
             {menu.map(
-              ([key, label, Icon]) => (
+              ([
+                key,
+                label,
+                Icon,
+              ]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() =>
                     navigate(key)
                   }
-                  className={`flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left text-sm font-semibold transition ${
+                  className={`flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left text-sm font-bold transition ${
                     section === key
                       ? "!bg-white !text-[#080808]"
                       : "!text-white/55 hover:!bg-white/5 hover:!text-white"
                   }`}
                 >
                   <Icon size={18} />
-                  {label}
+                  <span>{label}</span>
                 </button>
               ),
             )}
@@ -679,7 +956,7 @@ export default function AdminDashboard() {
                   Administration privée
                 </div>
 
-                <div className="mt-1 text-lg font-extrabold tracking-[-0.03em] !text-[#080808]">
+                <div className="text-lg font-black !text-[#080808]">
                   {section ===
                   "dashboard"
                     ? "Vue d'ensemble"
@@ -693,9 +970,12 @@ export default function AdminDashboard() {
                             "calendar"
                           ? "Rendez-vous"
                           : section ===
-                              "pipeline"
-                            ? "Pipeline commercial"
-                            : "Prospects"}
+                              "availability"
+                            ? "Disponibilités"
+                            : section ===
+                                "pipeline"
+                              ? "Pipeline commercial"
+                              : "Prospects"}
                 </div>
               </div>
             </div>
@@ -706,6 +986,10 @@ export default function AdminDashboard() {
                 onClick={load}
                 className={`${buttonLight} hidden px-4 py-2 text-xs sm:inline-flex`}
               >
+                <RefreshCw
+                  size={14}
+                  className="mr-2"
+                />
                 Actualiser
               </button>
 
@@ -732,6 +1016,10 @@ export default function AdminDashboard() {
               </button>
             </div>
           )}
+
+          {/* =====================================================
+              ROUTAGE DES SECTIONS
+          ===================================================== */}
 
           {loading ? (
             <div className="flex min-h-[50vh] items-center justify-center">
@@ -782,13 +1070,14 @@ export default function AdminDashboard() {
                     status,
                   });
 
+                  await load();
+
                   setToast(
                     "Statut mis à jour.",
                   );
                 } catch (error) {
                   setToast(
-                    error instanceof
-                      Error
+                    error instanceof Error
                       ? error.message
                       : "Erreur",
                   );
@@ -800,6 +1089,52 @@ export default function AdminDashboard() {
             <Calendar
               data={data}
               onOpen={setSelected}
+            />
+          ) : section ===
+            "availability" ? (
+            <AvailabilityPanel
+              blocks={
+                availabilityBlocks
+              }
+              loading={
+                availabilityLoading
+              }
+              date={
+                availabilityDate
+              }
+              setDate={
+                setAvailabilityDate
+              }
+              allDay={
+                availabilityAllDay
+              }
+              setAllDay={
+                setAvailabilityAllDay
+              }
+              startTime={
+                availabilityStart
+              }
+              setStartTime={
+                setAvailabilityStart
+              }
+              endTime={
+                availabilityEnd
+              }
+              setEndTime={
+                setAvailabilityEnd
+              }
+              reason={
+                availabilityReason
+              }
+              setReason={
+                setAvailabilityReason
+              }
+              onAdd={
+                addAvailabilityBlock
+              }
+              onDelete={
+                deleteAvailabilityBlock
+              }
             />
           ) : section ===
             "grand-plus" ? (
@@ -817,58 +1152,72 @@ export default function AdminDashboard() {
           PROSPECT MODAL
       ========================================================= */}
 
-      {selected && (
-        <ProspectModal
-          prospect={selected}
-          onClose={() =>
-            setSelected(null)
-          }
-          onSave={async (payload) => {
-            try {
-              await action({
-                action:
-                  "update_prospect",
-                id: selected.id,
-                ...payload,
-              });
+      {selected &&
+        (() => {
+          const selectedProspect =
+            selected;
 
-              setToast(
-                "Prospect mis à jour.",
-              );
-            } catch (error) {
-              setToast(
-                error instanceof Error
-                  ? error.message
-                  : "Erreur",
-              );
-            }
-          }}
-          onInteraction={async (
-            text,
-            type,
-          ) => {
-            try {
-              await action({
-                action:
-                  "add_interaction",
-                id: selected.id,
+          return (
+            <ProspectModal
+              prospect={
+                selectedProspect
+              }
+              onClose={() =>
+                setSelected(null)
+              }
+              onSave={async (
+                payload,
+              ) => {
+                try {
+                  await action({
+                    action:
+                      "update_prospect",
+                    id: selectedProspect.id,
+                    ...payload,
+                  });
+
+                  await load();
+
+                  setToast(
+                    "Prospect mis à jour.",
+                  );
+                } catch (error) {
+                  setToast(
+                    error instanceof Error
+                      ? error.message
+                      : "Erreur",
+                  );
+                }
+              }}
+              onInteraction={async (
                 text,
                 type,
-              });
+              ) => {
+                try {
+                  await action({
+                    action:
+                      "add_interaction",
+                    id: selectedProspect.id,
+                    text,
+                    type,
+                  });
 
-              setToast(
-                "Interaction ajoutée.",
-              );
-            } catch (error) {
-              setToast(
-                error instanceof Error
-                  ? error.message
-                  : "Erreur",
-              );
-            }
-          }}
-        />
-      )}
+                  await load();
+
+                  setToast(
+                    "Interaction ajoutée.",
+                  );
+                } catch (error) {
+                  setToast(
+                    error instanceof Error
+                      ? error.message
+                      : "Erreur",
+                  );
+                }
+              }}
+            />
+          );
+        })()}
 
       {/* =========================================================
           NEW PROSPECT
@@ -888,6 +1237,8 @@ export default function AdminDashboard() {
                   "create_prospect",
                 ...prospect,
               });
+
+              await load();
 
               setNewProspect(false);
               setSection("prospects");
@@ -1008,7 +1359,9 @@ function Dashboard({
             <button
               type="button"
               onClick={() =>
-                onNavigate("pipeline")
+                onNavigate(
+                  "pipeline",
+                )
               }
               className={`${buttonLight} px-4 py-2 text-xs`}
             >
@@ -1018,68 +1371,76 @@ function Dashboard({
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {statuses
-              .slice(0, 6)
-              .map(([key, label]) => (
-                <div
-                  key={key}
-                  className="rounded-2xl !bg-[#f5f5f3] p-4"
-                >
-                  <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
-                    {label}
-                  </div>
+              .map(
+                ([key, label]) => {
+                  const count =
+                    data.prospects.filter(
+                      (prospect) =>
+                        prospect.status ===
+                        key,
+                    ).length;
 
-                  <div className="mt-3 text-2xl font-black !text-[#080808]">
-                    {data.pipeline[
-                      key
-                    ] || 0}
-                  </div>
-                </div>
-              ))}
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-2xl !bg-[#f5f5f3] p-4"
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+                        {label}
+                      </div>
+
+                      <div className="mt-2 text-2xl font-black !text-[#080808]">
+                        {count}
+                      </div>
+                    </div>
+                  );
+                },
+              )}
           </div>
         </div>
 
-        <div className="rounded-[30px] !bg-[#080808] p-6 !text-white sm:p-8">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-[#c8a45d]">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
             À traiter
           </div>
 
-          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-white">
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
             Relances
           </h2>
 
-          <div className="mt-6 grid gap-3">
+          <div className="mt-6 grid gap-2">
             {urgent.length === 0 ? (
-              <div className="rounded-2xl border border-white/10 p-4 text-sm !text-white/45">
+              <div className="rounded-2xl !bg-[#f5f5f3] p-5 text-sm !text-black/45">
                 Aucune relance urgente.
               </div>
             ) : (
               urgent.map(
                 (prospect) => (
                   <button
-                    type="button"
                     key={prospect.id}
+                    type="button"
                     onClick={() =>
                       onOpen(
                         prospect,
                       )
                     }
-                    className="!flex !w-full !items-start !justify-between !rounded-2xl !border !border-white/10 !bg-white/[0.04] !p-4 !text-left !text-white transition hover:!bg-white/[0.08]"
+                    className="flex items-center justify-between gap-4 rounded-2xl !bg-[#f5f5f3] p-4 text-left transition hover:!bg-black/5"
                   >
-                    <div>
-                      <div className="font-bold !text-white">
+                    <div className="min-w-0">
+                      <div className="truncate font-bold !text-[#080808]">
                         {prospect.company ||
                           prospect.name}
                       </div>
 
-                      <div className="mt-1 text-xs !text-white/40">
+                      <div className="mt-1 text-xs !text-black/40">
                         {prospect.next_action ||
-                          "Relancer le prospect"}
+                          "Relancer"}
                       </div>
                     </div>
 
                     <ChevronRight
                       size={17}
-                      className="!text-white/30"
+                      className="shrink-0 !text-black/30"
                     />
                   </button>
                 ),
@@ -1088,183 +1449,35 @@ function Dashboard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
-            Acquisition
-          </div>
+/* ================================================================
+   METRIC CARD
+================================================================ */
 
-          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
-            D'où viennent vos
-            prospects ?
-          </h2>
-
-          <div className="mt-8 grid gap-5">
-            {Object.entries(
-              data.sources,
-            )
-              .sort(
-                (a, b) =>
-                  b[1] - a[1],
-              )
-              .map(
-                ([
-                  source,
-                  count,
-                ]) => {
-                  const total =
-                    data.stats
-                      .prospects ||
-                    1;
-
-                  return (
-                    <div
-                      key={source}
-                    >
-                      <div className="flex justify-between text-sm">
-                        <span className="font-bold !text-[#080808]">
-                          {sourceLabel(
-                            source,
-                          )}
-                        </span>
-
-                        <span className="!text-black/40">
-                          {count} lead
-                          {count >
-                          1
-                            ? "s"
-                            : ""}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 h-2 overflow-hidden rounded-full !bg-black/5">
-                        <div
-                          className="h-full rounded-full !bg-[#080808]"
-                          style={{
-                            width: `${Math.max(
-                              4,
-                              (count /
-                                total) *
-                                100,
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                },
-              )}
-
-            {Object.keys(
-              data.sources,
-            ).length === 0 && (
-              <div className="text-sm !text-black/35">
-                Aucune donnée pour
-                le moment.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-[30px] border border-[#c8a45d]/30 !bg-[#080808] p-6 !text-white sm:p-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl !bg-[#c8a45d] !text-[#080808]">
-              <Gift size={21} />
-            </div>
-
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-[#c8a45d]">
-                Acquisition
-              </div>
-
-              <h2 className="mt-1 text-2xl font-black !text-white">
-                Le Grand+
-              </h2>
-            </div>
-          </div>
-
-          <div className="mt-8 grid grid-cols-2 gap-3">
-            <DarkStat
-              label="Participants"
-              value={String(
-                data.grand_plus
-                  .length,
-              )}
-            />
-
-            <DarkStat
-              label="Ce mois"
-              value={String(
-                data.grand_plus.filter(
-                  (item) =>
-                    item.month_key ===
-                    new Date()
-                      .toISOString()
-                      .slice(
-                        0,
-                        7,
-                      ),
-                ).length,
-              )}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              onNavigate(
-                "grand-plus",
-              )
-            }
-            className={`${buttonLight} mt-5 !w-full px-5 py-3 text-sm`}
-          >
-            Voir les participants
-            <ChevronRight
-              size={16}
-            />
-          </button>
-        </div>
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: IconType;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[26px] border border-black/10 !bg-white p-6">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl !bg-[#080808] !text-[#c8a45d]">
+        <Icon size={18} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <QuickAction
-          icon={Plus}
-          title="Nouveau prospect"
-          text="Ajouter une opportunité manuellement"
-          onClick={() =>
-            onNavigate(
-              "prospects",
-            )
-          }
-        />
+      <div className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+        {label}
+      </div>
 
-        <QuickAction
-          icon={CalendarDays}
-          title="Rendez-vous"
-          text={`${data.stats.meetings} prospect${
-            data.stats.meetings >
-            1
-              ? "s"
-              : ""
-          } actuellement au stade rendez-vous`}
-          onClick={() =>
-            onNavigate(
-              "calendar",
-            )
-          }
-        />
-
-        <QuickAction
-          icon={Activity}
-          title="Relances"
-          text={`${data.stats.today_actions} à traiter aujourd'hui`}
-          onClick={() =>
-            onNavigate(
-              "prospects",
-            )
-          }
-        />
+      <div className="mt-2 text-3xl font-black tracking-[-0.05em] !text-[#080808]">
+        {value}
       </div>
     </div>
   );
@@ -1289,74 +1502,74 @@ function Prospects({
   data: Data;
   filtered: Prospect[];
   query: string;
-  setQuery: (
-    value: string,
-  ) => void;
+  setQuery: Dispatch<
+    SetStateAction<string>
+  >;
   source: string;
-  setSource: (
-    value: string,
-  ) => void;
+  setSource: Dispatch<
+    SetStateAction<string>
+  >;
   status: string;
-  setStatus: (
-    value: string,
-  ) => void;
+  setStatus: Dispatch<
+    SetStateAction<string>
+  >;
   onOpen: (
     prospect: Prospect,
   ) => void;
   onNew: () => void;
 }) {
+  const sources = Array.from(
+    new Set(
+      data.prospects.map(
+        (prospect) =>
+          prospect.source,
+      ),
+    ),
+  );
+
   return (
-    <div className="grid gap-7">
-      <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+    <div className="grid gap-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
             CRM
           </div>
 
-          <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+          <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] !text-[#080808]">
             Prospects
           </h1>
-
-          <p className="mt-3 text-sm !text-black/45">
-            {data.prospects.length}{" "}
-            prospect
-            {data.prospects
-              .length > 1
-              ? "s"
-              : ""}{" "}
-            dans votre base
-            commerciale.
-          </p>
         </div>
 
         <button
           type="button"
           onClick={onNew}
-          className={`${buttonDark} px-5 py-3 text-sm`}
+          className={`${buttonGold} px-5 py-3 text-sm`}
         >
-          <Plus size={17} />
+          <Plus
+            size={17}
+            className="mr-2"
+          />
           Nouveau prospect
         </button>
       </div>
 
-      <div className="rounded-[28px] border border-black/10 !bg-white p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
-          <div className="flex items-center gap-3 rounded-2xl !bg-[#f5f5f3] px-4">
+      <div className="rounded-[26px] border border-black/10 !bg-white p-5">
+        <div className="grid gap-3 lg:grid-cols-[1fr_200px_200px]">
+          <div className="relative">
             <Search
               size={17}
-              className="!text-black/30"
+              className="absolute left-4 top-1/2 -translate-y-1/2 !text-black/30"
             />
 
             <input
               value={query}
               onChange={(event) =>
                 setQuery(
-                  event.target
-                    .value,
+                  event.target.value,
                 )
               }
-              placeholder="Rechercher un nom, une entreprise, un e-mail..."
-              className="w-full !bg-transparent py-3 text-sm font-medium !text-[#080808] outline-none placeholder:!text-black/30"
+              placeholder="Rechercher un prospect..."
+              className="h-12 w-full rounded-xl border border-black/10 !bg-[#f5f5f3] pl-11 pr-4 text-sm outline-none focus:border-[#c8a45d]"
             />
           </div>
 
@@ -1364,46 +1577,35 @@ function Prospects({
             value={source}
             onChange={(event) =>
               setSource(
-                event.target
-                  .value,
+                event.target.value,
               )
             }
-            className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
+            className="h-12 rounded-xl border border-black/10 !bg-[#f5f5f3] px-4 text-sm outline-none"
           >
             <option value="all">
               Toutes les sources
             </option>
 
-            <option value="grand-plus">
-              Grand+
-            </option>
-
-            <option value="audit">
-              Audit
-            </option>
-
-            <option value="booking">
-              Rendez-vous
-            </option>
-
-            <option value="contact">
-              Contact
-            </option>
-
-            <option value="manual">
-              Manuel
-            </option>
+            {sources.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {sourceLabel(item)}
+                </option>
+              ),
+            )}
           </select>
 
           <select
             value={status}
             onChange={(event) =>
               setStatus(
-                event.target
-                  .value,
+                event.target.value,
               )
             }
-            className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
+            className="h-12 rounded-xl border border-black/10 !bg-[#f5f5f3] px-4 text-sm outline-none"
           >
             <option value="all">
               Tous les statuts
@@ -1424,133 +1626,80 @@ function Prospects({
       </div>
 
       <div className="overflow-hidden rounded-[30px] border border-black/10 !bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr className="border-b border-black/10 text-left">
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Prospect
-                </th>
-
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Source
-                </th>
-
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Statut
-                </th>
-
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Valeur
-                </th>
-
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Créé
-                </th>
-
-                <th className="px-6 py-4" />
-              </tr>
-            </thead>
-
-            <tbody>
-              {filtered.map(
-                (prospect) => (
-                  <tr
-                    key={prospect.id}
-                    className="border-b border-black/5 transition hover:!bg-[#f8f8f6]"
-                  >
-                    <td className="px-6 py-5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onOpen(
-                            prospect,
-                          )
-                        }
-                        className="!border-0 !bg-transparent !p-0 !text-left"
-                      >
-                        <div className="font-extrabold !text-[#080808]">
-                          {prospect.company ||
-                            prospect.name}
-                        </div>
-
-                        <div className="mt-1 text-xs !text-black/40">
-                          {
-                            prospect.name
-                          }
-
-                          {prospect.email
-                            ? ` · ${prospect.email}`
-                            : ""}
-                        </div>
-                      </button>
-                    </td>
-
-                    <td className="px-6 py-5">
-                      <span className="rounded-full !bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-[#080808]">
-                        {sourceLabel(
-                          prospect.source,
-                        )}
-                      </span>
-                    </td>
-
-                    <td className="px-6 py-5">
-                      <StatusBadge
-                        status={
-                          prospect.status
-                        }
-                      />
-                    </td>
-
-                    <td className="px-6 py-5 text-sm font-bold !text-[#080808]">
-                      {prospect.estimated_value
-                        ? euro(
-                            prospect.estimated_value,
-                          )
-                        : "—"}
-                    </td>
-
-                    <td className="px-6 py-5 text-sm !text-black/45">
-                      {dateFr(
-                        prospect.created_at,
-                      )}
-                    </td>
-
-                    <td className="px-6 py-5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onOpen(
-                            prospect,
-                          )
-                        }
-                        className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808] hover:!bg-[#f5f5f3]"
-                      >
-                        <ChevronRight
-                          size={16}
-                        />
-                      </button>
-                    </td>
-                  </tr>
-                ),
-              )}
-
-              {filtered.length ===
-                0 && (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-6 py-20 text-center text-sm !text-black/35"
-                  >
-                    Aucun prospect ne
-                    correspond à votre
-                    recherche.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="hidden grid-cols-[1.2fr_1fr_170px_150px_80px] gap-4 border-b border-black/10 px-6 py-4 text-[10px] font-bold uppercase tracking-[0.15em] !text-black/35 md:grid">
+          <div>Prospect</div>
+          <div>Contact</div>
+          <div>Source</div>
+          <div>Statut</div>
+          <div />
         </div>
+
+        {filtered.length === 0 ? (
+          <div className="p-10 text-center text-sm !text-black/40">
+            Aucun prospect trouvé.
+          </div>
+        ) : (
+          <div>
+            {filtered.map(
+              (prospect) => (
+                <button
+                  key={prospect.id}
+                  type="button"
+                  onClick={() =>
+                    onOpen(
+                      prospect,
+                    )
+                  }
+                  className="grid w-full gap-4 border-b border-black/5 px-6 py-5 text-left transition last:border-0 hover:!bg-[#f5f5f3] md:grid-cols-[1.2fr_1fr_170px_150px_80px] md:items-center"
+                >
+                  <div>
+                    <div className="font-bold !text-[#080808]">
+                      {prospect.company ||
+                        prospect.name}
+                    </div>
+
+                    <div className="mt-1 text-xs !text-black/40">
+                      {prospect.name}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm !text-black/70">
+                      {prospect.email ||
+                        "—"}
+                    </div>
+
+                    <div className="mt-1 text-xs !text-black/35">
+                      {prospect.phone ||
+                        "—"}
+                    </div>
+                  </div>
+
+                  <div className="text-sm !text-black/55">
+                    {sourceLabel(
+                      prospect.source,
+                    )}
+                  </div>
+
+                  <div>
+                    <StatusBadge
+                      status={
+                        prospect.status
+                      }
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <ChevronRight
+                      size={17}
+                      className="!text-black/30"
+                    />
+                  </div>
+                </button>
+              ),
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1575,155 +1724,141 @@ function Pipeline({
   ) => Promise<void>;
 }) {
   return (
-    <div className="grid gap-7">
+    <div className="grid gap-6">
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
-          CRM
+          Commercial
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
-          Pipeline commercial
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] !text-[#080808]">
+          Pipeline
         </h1>
-
-        <p className="mt-3 max-w-2xl text-sm leading-6 !text-black/45">
-          Visualisez chaque
-          opportunité de la première
-          prise de contact jusqu'à la
-          signature.
-        </p>
       </div>
 
-      <div className="overflow-x-auto pb-4">
-        <div className="flex min-w-[1500px] gap-4">
-          {statuses.map(
-            ([status, label]) => {
+      <div className="grid gap-4 overflow-x-auto pb-2 xl:grid-cols-4">
+        {statuses
+          .filter(
+            ([key]) =>
+              ![
+                "new",
+                "lost",
+              ].includes(key),
+          )
+          .map(
+            ([key, label]) => {
               const prospects =
                 data.prospects.filter(
                   (prospect) =>
                     prospect.status ===
-                    status,
-                );
-
-              const value =
-                prospects.reduce(
-                  (
-                    sum,
-                    prospect,
-                  ) =>
-                    sum +
-                    Number(
-                      prospect.estimated_value ||
-                        0,
-                    ),
-                  0,
+                    key,
                 );
 
               return (
                 <div
-                  key={status}
-                  className="flex w-[180px] shrink-0 flex-col rounded-[26px] border border-black/10 !bg-white p-3"
-                  onDragOver={(
-                    event,
-                  ) =>
-                    event.preventDefault()
-                  }
-                  onDrop={async (
-                    event,
-                  ) => {
-                    const id =
-                      event.dataTransfer.getData(
-                        "prospect-id",
-                      );
-
-                    if (id) {
-                      await onMove(
-                        id,
-                        status,
-                      );
-                    }
-                  }}
+                  key={key}
+                  className="min-w-[280px] rounded-[26px] border border-black/10 !bg-white p-4"
                 >
-                  <div className="flex items-center justify-between px-2 py-2">
-                    <div className="text-xs font-extrabold !text-[#080808]">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-black !text-[#080808]">
                       {label}
                     </div>
 
-                    <span className="rounded-full !bg-black/5 px-2 py-1 text-[10px] font-bold !text-[#080808]">
-                      {
-                        prospects.length
-                      }
-                    </span>
+                    <div className="rounded-full !bg-[#f5f5f3] px-2.5 py-1 text-[10px] font-black !text-black/45">
+                      {prospects.length}
+                    </div>
                   </div>
 
-                  <div className="px-2 pb-2 text-[10px] font-semibold !text-black/35">
-                    {euro(value)}
-                  </div>
-
-                  <div className="grid min-h-[180px] gap-2">
-                    {prospects.map(
-                      (prospect) => (
-                        <button
-                          type="button"
-                          key={prospect.id}
-                          draggable
-                          onDragStart={(
-                            event,
-                          ) =>
-                            event.dataTransfer.setData(
-                              "prospect-id",
-                              prospect.id,
-                            )
-                          }
-                          onClick={() =>
-                            onOpen(
-                              prospect,
-                            )
-                          }
-                          className="!block !rounded-2xl !border !border-black/10 !bg-[#f7f7f5] !p-3 !text-left !text-[#080808] transition hover:!border-[#c8a45d]/50 hover:!bg-white"
-                        >
-                          <div className="truncate text-sm font-extrabold !text-[#080808]">
-                            {prospect.company ||
-                              prospect.name}
-                          </div>
-
-                          <div className="mt-1 truncate text-[11px] !text-black/40">
-                            {
-                              prospect.name
-                            }
-                          </div>
-
-                          {prospect.estimated_value >
-                            0 && (
-                            <div className="mt-3 text-xs font-bold !text-[#080808]">
-                              {euro(
-                                prospect.estimated_value,
-                              )}
-                            </div>
-                          )}
-
-                          {prospect.next_action && (
-                            <div className="mt-3 border-t border-black/5 pt-2 text-[10px] leading-4 !text-black/40">
-                              {
-                                prospect.next_action
-                              }
-                            </div>
-                          )}
-                        </button>
-                      ),
-                    )}
-
+                  <div className="mt-4 grid gap-3">
                     {prospects.length ===
-                      0 && (
-                      <div className="flex items-center justify-center rounded-2xl border border-dashed border-black/10 p-5 text-center text-[10px] font-semibold !text-black/25">
-                        Déposer ici
+                    0 ? (
+                      <div className="rounded-2xl !bg-[#f5f5f3] p-5 text-xs !text-black/35">
+                        Aucun prospect.
                       </div>
+                    ) : (
+                      prospects.map(
+                        (
+                          prospect,
+                        ) => (
+                          <div
+                            key={
+                              prospect.id
+                            }
+                            className="rounded-2xl border border-black/10 !bg-[#f5f5f3] p-4"
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpen(
+                                  prospect,
+                                )
+                              }
+                              className="w-full text-left"
+                            >
+                              <div className="font-bold !text-[#080808]">
+                                {prospect.company ||
+                                  prospect.name}
+                              </div>
+
+                              <div className="mt-1 text-xs !text-black/40">
+                                {
+                                  prospect.name
+                                }
+                              </div>
+
+                              <div className="mt-3 font-black !text-[#080808]">
+                                {euro(
+                                  prospect.estimated_value,
+                                )}
+                              </div>
+                            </button>
+
+                            <div className="mt-4">
+                              <select
+                                value={
+                                  prospect.status
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  onMove(
+                                    prospect.id,
+                                    event
+                                      .target
+                                      .value,
+                                  )
+                                }
+                                className="h-9 w-full rounded-lg border border-black/10 !bg-white px-2 text-xs font-semibold outline-none"
+                              >
+                                {statuses.map(
+                                  ([
+                                    statusKey,
+                                    statusLabelValue,
+                                  ]) => (
+                                    <option
+                                      key={
+                                        statusKey
+                                      }
+                                      value={
+                                        statusKey
+                                      }
+                                    >
+                                      {
+                                        statusLabelValue
+                                      }
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </div>
+                          </div>
+                        ),
+                      )
                     )}
                   </div>
                 </div>
               );
             },
           )}
-        </div>
       </div>
     </div>
   );
@@ -1742,118 +1877,435 @@ function Calendar({
     prospect: Prospect,
   ) => void;
 }) {
-  const bookings = [
-    ...data.bookings,
-  ].sort((a, b) =>
-    `${a.date || ""} ${a.time || ""}`.localeCompare(
-      `${b.date || ""} ${b.time || ""}`,
-    ),
-  );
-
   return (
-    <div className="grid gap-7">
+    <div className="grid gap-6">
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
           Agenda
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] !text-[#080808]">
           Rendez-vous
         </h1>
       </div>
 
       <div className="grid gap-3">
-        {bookings.length === 0 ? (
-          <div className="rounded-[30px] border border-black/10 !bg-white p-16 text-center text-sm !text-black/35">
-            Aucun rendez-vous
-            enregistré.
+        {data.appointments.length ===
+        0 ? (
+          <div className="rounded-[26px] border border-black/10 !bg-white p-8 text-center text-sm !text-black/40">
+            Aucun rendez-vous.
           </div>
         ) : (
-          bookings.map(
-            (booking, index) => {
+          data.appointments.map(
+            (appointment) => {
               const matchingProspect =
                 data.prospects.find(
                   (prospect) =>
-                    prospect.booking_reference ===
-                      booking.reference ||
-                    (prospect.name ===
-                      booking.name &&
-                      prospect.phone ===
-                        booking.phone),
+                    prospect.email &&
+                    appointment.email &&
+                    prospect.email ===
+                      appointment.email,
                 );
 
               return (
-                <button
-                  type="button"
+                <div
                   key={
-                    booking.reference ||
-                    `${booking.name}-${index}`
+                    appointment.id ||
+                    `${appointment.date}-${appointment.time}-${appointment.email}`
                   }
-                  onClick={() => {
-                    if (
-                      matchingProspect
-                    ) {
-                      onOpen(
-                        matchingProspect,
-                      );
-                    }
-                  }}
-                  className="grid gap-5 !rounded-[28px] !border !border-black/10 !bg-white !p-5 !text-left !text-[#080808] transition hover:!border-[#c8a45d]/50 sm:grid-cols-[150px_1fr_auto] sm:items-center sm:!p-6"
+                  className="rounded-[26px] border border-black/10 !bg-white p-6"
                 >
-                  <div>
-                    <div className="text-2xl font-black tracking-[-0.04em] !text-[#080808]">
-                      {booking.time ||
-                        "—"}
-                    </div>
-
-                    <div className="mt-1 text-xs font-bold !text-black/35">
-                      {booking.date ||
-                        "—"}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="font-extrabold !text-[#080808]">
-                      {booking.company ||
-                        booking.name ||
-                        "Sans nom"}
-                    </div>
-
-                    <div className="mt-1 text-sm !text-black/45">
-                      {
-                        booking.name
-                      }
-
-                      {booking.phone
-                        ? ` · ${booking.phone}`
-                        : ""}
-                    </div>
-
-                    {booking.reason && (
-                      <div className="mt-3 text-xs leading-5 !text-black/40">
-                        {
-                          booking.reason
-                        }
+                  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                    <div>
+                      <div className="font-black !text-[#080808]">
+                        {appointment.name ||
+                          "Rendez-vous"}
                       </div>
+
+                      <div className="mt-1 text-sm !text-black/45">
+                        {appointment.date ||
+                          "—"}{" "}
+                        ·{" "}
+                        {appointment.time ||
+                          "—"}
+                      </div>
+                    </div>
+
+                    {matchingProspect && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpen(
+                            matchingProspect,
+                          )
+                        }
+                        className={`${buttonLight} px-4 py-2 text-xs`}
+                      >
+                        Voir le prospect
+                      </button>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full !bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-emerald-700">
-                      {booking.status ||
-                        "confirmé"}
-                    </span>
+                  <div className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] !text-black/30">
+                        Email
+                      </div>
 
-                    <ChevronRight
-                      size={17}
-                      className="!text-black/25"
-                    />
+                      <div className="mt-1 !text-black/70">
+                        {appointment.email ||
+                          "—"}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] !text-black/30">
+                        Téléphone
+                      </div>
+
+                      <div className="mt-1 !text-black/70">
+                        {appointment.phone ||
+                          "—"}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] !text-black/30">
+                        Statut
+                      </div>
+
+                      <div className="mt-1 !text-black/70">
+                        {appointment.status ||
+                          "—"}
+                      </div>
+                    </div>
                   </div>
-                </button>
+
+                  {appointment.message && (
+                    <div className="mt-5 rounded-2xl !bg-[#f5f5f3] p-4 text-sm leading-6 !text-black/55">
+                      {
+                        appointment.message
+                      }
+                    </div>
+                  )}
+                </div>
               );
             },
           )
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   DISPONIBILITÉS
+================================================================ */
+
+function AvailabilityPanel({
+  blocks,
+  loading,
+  date,
+  setDate,
+  allDay,
+  setAllDay,
+  startTime,
+  setStartTime,
+  endTime,
+  setEndTime,
+  reason,
+  setReason,
+  onAdd,
+  onDelete,
+}: {
+  blocks: AvailabilityBlock[];
+  loading: boolean;
+  date: string;
+  setDate: Dispatch<
+    SetStateAction<string>
+  >;
+  allDay: boolean;
+  setAllDay: Dispatch<
+    SetStateAction<boolean>
+  >;
+  startTime: string;
+  setStartTime: Dispatch<
+    SetStateAction<string>
+  >;
+  endTime: string;
+  setEndTime: Dispatch<
+    SetStateAction<string>
+  >;
+  reason: string;
+  setReason: Dispatch<
+    SetStateAction<string>
+  >;
+  onAdd: () => Promise<void>;
+  onDelete: (
+    id: string,
+  ) => Promise<void>;
+}) {
+  const sortedBlocks = [
+    ...blocks,
+  ].sort((a, b) => {
+    const first = `${a.date} ${
+      a.start_time || "00:00"
+    }`;
+
+    const second = `${b.date} ${
+      b.start_time || "00:00"
+    }`;
+
+    return first.localeCompare(
+      second,
+    );
+  });
+
+  return (
+    <div className="grid gap-6">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
+          Agenda
+        </div>
+
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] !text-[#080808]">
+          Disponibilités
+        </h1>
+
+        <p className="mt-4 max-w-2xl text-sm leading-6 !text-black/45">
+          Bloquez une journée complète
+          ou une plage horaire. Les
+          créneaux concernés disparaîtront
+          automatiquement du système de
+          prise de rendez-vous.
+        </p>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[.85fr_1.15fr]">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+            Nouvelle indisponibilité
+          </div>
+
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+            Bloquer un créneau
+          </h2>
+
+          <div className="mt-7 grid gap-5">
+            <label className="grid gap-2">
+              <span className="text-xs font-bold !text-black/55">
+                Date
+              </span>
+
+              <input
+                type="date"
+                value={date}
+                onChange={(event) =>
+                  setDate(
+                    event.target.value,
+                  )
+                }
+                className="h-12 rounded-xl border border-black/10 !bg-[#f5f5f3] px-4 text-sm outline-none focus:border-[#c8a45d]"
+              />
+            </label>
+
+            <label className="flex items-center gap-3 rounded-2xl !bg-[#f5f5f3] p-4">
+              <input
+                type="checkbox"
+                checked={allDay}
+                onChange={(event) =>
+                  setAllDay(
+                    event.target.checked,
+                  )
+                }
+                className="h-4 w-4 accent-[#c8a45d]"
+              />
+
+              <span className="text-sm font-bold !text-[#080808]">
+                Journée complète
+              </span>
+            </label>
+
+            {!allDay && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Début
+                  </span>
+
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(
+                      event,
+                    ) =>
+                      setStartTime(
+                        event.target
+                          .value,
+                      )
+                    }
+                    className="h-12 rounded-xl border border-black/10 !bg-[#f5f5f3] px-4 text-sm outline-none focus:border-[#c8a45d]"
+                  />
+                </label>
+
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Fin
+                  </span>
+
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(
+                      event,
+                    ) =>
+                      setEndTime(
+                        event.target
+                          .value,
+                      )
+                    }
+                    className="h-12 rounded-xl border border-black/10 !bg-[#f5f5f3] px-4 text-sm outline-none focus:border-[#c8a45d]"
+                  />
+                </label>
+              </div>
+            )}
+
+            <label className="grid gap-2">
+              <span className="text-xs font-bold !text-black/55">
+                Motif
+              </span>
+
+              <input
+                type="text"
+                value={reason}
+                onChange={(event) =>
+                  setReason(
+                    event.target.value,
+                  )
+                }
+                placeholder="Ex. Congés, déplacement..."
+                className="h-12 rounded-xl border border-black/10 !bg-[#f5f5f3] px-4 text-sm outline-none focus:border-[#c8a45d]"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={onAdd}
+              disabled={loading}
+              className={`${buttonGold} min-h-12 px-5 text-sm disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              {loading ? (
+                <RefreshCw
+                  size={16}
+                  className="mr-2 animate-spin"
+                />
+              ) : (
+                <Plus
+                  size={16}
+                  className="mr-2"
+                />
+              )}
+
+              Bloquer ce créneau
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+                Planning
+              </div>
+
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+                Indisponibilités
+              </h2>
+            </div>
+
+            <div className="rounded-full !bg-[#f5f5f3] px-3 py-1.5 text-xs font-black !text-black/45">
+              {blocks.length}
+            </div>
+          </div>
+
+          <div className="mt-7 grid gap-3">
+            {loading &&
+            blocks.length ===
+              0 ? (
+              <div className="flex min-h-[180px] items-center justify-center">
+                <RefreshCw
+                  size={22}
+                  className="animate-spin !text-[#c8a45d]"
+                />
+              </div>
+            ) : sortedBlocks.length ===
+              0 ? (
+              <div className="rounded-2xl !bg-[#f5f5f3] p-6 text-center text-sm !text-black/40">
+                Aucune indisponibilité
+                enregistrée.
+              </div>
+            ) : (
+              sortedBlocks.map(
+                (block) => (
+                  <div
+                    key={block.id}
+                    className="flex flex-col justify-between gap-4 rounded-2xl !bg-[#f5f5f3] p-5 sm:flex-row sm:items-center"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl !bg-[#080808] !text-[#c8a45d]">
+                        <Clock
+                          size={17}
+                        />
+                      </div>
+
+                      <div>
+                        <div className="font-black !text-[#080808]">
+                          {dateFr(
+                            block.date,
+                          )}
+                        </div>
+
+                        <div className="mt-1 text-sm !text-black/45">
+                          {block.all_day
+                            ? "Journée complète"
+                            : `${block.start_time || "—"} → ${
+                                block.end_time ||
+                                "—"
+                              }`}
+                        </div>
+
+                        {block.reason && (
+                          <div className="mt-2 text-xs font-semibold !text-black/35">
+                            {
+                              block.reason
+                            }
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onDelete(
+                          block.id,
+                        )
+                      }
+                      disabled={loading}
+                      className="inline-flex items-center justify-center rounded-xl border border-red-200 !bg-white px-4 py-2 text-xs font-bold !text-red-600 transition hover:!bg-red-50 disabled:opacity-50"
+                    >
+                      <X
+                        size={14}
+                        className="mr-2"
+                      />
+                      Supprimer
+                    </button>
+                  </div>
+                ),
+              )
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1872,195 +2324,139 @@ function GrandPlusPanel({
     prospect: Prospect,
   ) => void;
 }) {
-  const currentMonth =
-    new Date()
-      .toISOString()
-      .slice(0, 7);
+  const participants =
+    data.grand_plus
+      .participants || [];
 
-  const current =
-    data.grand_plus.filter(
-      (participant) =>
-        participant.month_key ===
-        currentMonth,
-    );
+  const winner =
+    data.grand_plus.winner;
 
   return (
-    <div className="grid gap-7">
+    <div className="grid gap-6">
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
-          Acquisition
+          Vitrine+
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] !text-[#080808]">
           Le Grand+
         </h1>
 
-        <p className="mt-3 text-sm !text-black/45">
-          Participants et historique
-          de l'opération.
+        <p className="mt-4 max-w-2xl text-sm leading-6 !text-black/45">
+          Suivez les participations
+          et le gagnant du tirage.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <MetricCard
-          icon={Gift}
-          label="Participants ce mois"
-          value={String(
-            current.length,
-          )}
-        />
-
+      <div className="grid gap-5 lg:grid-cols-3">
         <MetricCard
           icon={Users}
-          label="Participants historiques"
+          label="Participants"
           value={String(
-            data.grand_plus
-              .length,
+            participants.length,
           )}
         />
 
         <MetricCard
-          icon={TrendingUp}
-          label="Avec consentement marketing"
-          value={String(
-            data.grand_plus.filter(
-              (item) =>
-                item.marketing_consent,
-            ).length,
-          )}
+          icon={Gift}
+          label="Gagnant"
+          value={
+            winner?.name ||
+            "À tirer"
+          }
+        />
+
+        <MetricCard
+          icon={Mail}
+          label="Email gagnant"
+          value={
+            data.grand_plus
+              .winner_email_sent
+              ? "Envoyé"
+              : "Non envoyé"
+          }
         />
       </div>
 
-      <div className="overflow-hidden rounded-[30px] border border-black/10 !bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr className="border-b border-black/10 text-left">
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Participant
-                </th>
+      <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+              Participations
+            </div>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Mois
-                </th>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+              Participants au Grand+
+            </h2>
+          </div>
+        </div>
 
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Marketing
-                </th>
-
-                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
-                  Statut
-                </th>
-
-                <th className="px-6 py-4" />
-              </tr>
-            </thead>
-
-            <tbody>
-              {data.grand_plus.map(
-                (
-                  participant,
-                  index,
-                ) => {
-                  const prospect =
-                    data.prospects.find(
-                      (item) =>
-                        item.source ===
-                          "grand-plus" &&
-                        item.email ===
-                          participant.email,
-                    );
-
-                  return (
-                    <tr
-                      key={
-                        participant.id ||
-                        `${participant.email}-${index}`
-                      }
-                      className="border-b border-black/5"
-                    >
-                      <td className="px-6 py-5">
-                        <div className="font-extrabold !text-[#080808]">
-                          {participant.company ||
-                            participant.name}
-                        </div>
-
-                        <div className="mt-1 text-xs !text-black/40">
-                          {
-                            participant.name
-                          }{" "}
-                          ·{" "}
-                          {
-                            participant.email
-                          }
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-5 text-sm !text-[#080808]">
-                        {participant.month_label ||
-                          participant.month_key ||
-                          "—"}
-                      </td>
-
-                      <td className="px-6 py-5">
-                        {participant.marketing_consent ? (
-                          <span className="rounded-full !bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-emerald-700">
-                            Oui
-                          </span>
-                        ) : (
-                          <span className="rounded-full !bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-black/40">
-                            Non
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-5">
-                        <StatusBadge
-                          status={
-                            participant.status ||
-                            "new"
-                          }
-                        />
-                      </td>
-
-                      <td className="px-6 py-5">
-                        {prospect && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onOpen(
-                                prospect,
-                              )
-                            }
-                            className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808] hover:!bg-[#f5f5f3]"
-                          >
-                            <ChevronRight
-                              size={
-                                16
-                              }
-                            />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+        <div className="mt-7 grid gap-3">
+          {participants.length ===
+          0 ? (
+            <div className="rounded-2xl !bg-[#f5f5f3] p-6 text-center text-sm !text-black/40">
+              Aucun participant.
+            </div>
+          ) : (
+            participants.map(
+              (
+                participant,
+                index,
+              ) => {
+                const prospect =
+                  data.prospects.find(
+                    (item) =>
+                      participant.email &&
+                      item.email ===
+                        participant.email,
                   );
-                },
-              )}
 
-              {data.grand_plus
-                .length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-20 text-center text-sm !text-black/35"
+                return (
+                  <div
+                    key={
+                      participant.id ||
+                      participant.email ||
+                      index
+                    }
+                    className="flex flex-col justify-between gap-4 rounded-2xl !bg-[#f5f5f3] p-5 sm:flex-row sm:items-center"
                   >
-                    Aucun participant
-                    enregistré.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    <div>
+                      <div className="font-bold !text-[#080808]">
+                        {participant.name ||
+                          "Participant"}
+                      </div>
+
+                      <div className="mt-1 text-sm !text-black/45">
+                        {
+                          participant.email
+                        }
+                      </div>
+
+                      <div className="mt-1 text-xs !text-black/30">
+                        {dateTimeFr(
+                          participant.created_at,
+                        )}
+                      </div>
+                    </div>
+
+                    {prospect && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpen(
+                            prospect,
+                          )
+                        }
+                        className={`${buttonLight} px-4 py-2 text-xs`}
+                      >
+                        Voir le prospect
+                      </button>
+                    )}
+                  </div>
+                );
+              },
+            )
+          )}
         </div>
       </div>
     </div>
@@ -2076,61 +2472,62 @@ function Stats({
 }: {
   data: Data;
 }) {
-  const conversion =
-    data.stats.prospects > 0
-      ? (data.stats.won /
-          data.stats.prospects) *
-        100
-      : 0;
-
-  const averageWon =
-    data.stats.won > 0
-      ? data.stats.signed_revenue /
-        data.stats.won
-      : 0;
-
   const total =
-    data.stats.prospects || 1;
+    data.prospects.length;
+
+  const averageValue =
+    total > 0
+      ? data.prospects.reduce(
+          (
+            sum,
+            prospect,
+          ) =>
+            sum +
+            Number(
+              prospect.estimated_value ||
+                0,
+            ),
+          0,
+        ) / total
+      : 0;
 
   return (
-    <div className="grid gap-7">
+    <div className="grid gap-6">
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
-          Pilotage
+          Analyse
         </div>
 
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
-          Statistiques commerciales
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] !text-[#080808]">
+          Statistiques
         </h1>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          icon={Target}
-          label="Conversion"
-          value={`${conversion.toFixed(
-            1,
-          )} %`}
+          icon={Users}
+          label="Prospects"
+          value={String(total)}
+        />
+
+        <MetricCard
+          icon={Check}
+          label="Affaires gagnées"
+          value={String(
+            data.stats.won,
+          )}
         />
 
         <MetricCard
           icon={CircleDollarSign}
-          label="Panier moyen gagné"
+          label="Valeur moyenne"
           value={euro(
-            averageWon,
+            averageValue,
           )}
         />
 
         <MetricCard
           icon={TrendingUp}
-          label="CA signé"
-          value={euro(
-            data.stats.signed_revenue,
-          )}
-        />
-
-        <MetricCard
-          icon={Activity}
           label="CA potentiel"
           value={euro(
             data.stats.potential_revenue,
@@ -2138,194 +2535,58 @@ function Stats({
         />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
-          <h2 className="text-xl font-black !text-[#080808]">
-            Sources d'acquisition
-          </h2>
-
-          <div className="mt-7 grid gap-5">
-            {Object.entries(
-              data.sources,
-            )
-              .sort(
-                (a, b) =>
-                  b[1] - a[1],
-              )
-              .map(
-                ([
-                  source,
-                  count,
-                ]) => (
-                  <div
-                    key={source}
-                  >
-                    <div className="flex justify-between text-sm">
-                      <b className="!text-[#080808]">
-                        {sourceLabel(
-                          source,
-                        )}
-                      </b>
-
-                      <span className="!text-black/45">
-                        {count} lead
-                        {count >
-                        1
-                          ? "s"
-                          : ""}
-                      </span>
-                    </div>
-
-                    <div className="mt-2 h-3 rounded-full !bg-[#f0f0ed]">
-                      <div
-                        className="h-full rounded-full !bg-[#080808]"
-                        style={{
-                          width: `${Math.max(
-                            3,
-                            (count /
-                              total) *
-                              100,
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ),
-              )}
-
-            {Object.keys(
-              data.sources,
-            ).length ===
-              0 && (
-              <div className="text-sm !text-black/35">
-                Aucune donnée.
-              </div>
-            )}
-          </div>
+      <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+          Répartition
         </div>
 
-        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
-          <h2 className="text-xl font-black !text-[#080808]">
-            Répartition du
-            pipeline
-          </h2>
+        <div className="mt-7 grid gap-3">
+          {statuses.map(
+            ([key, label]) => {
+              const count =
+                data.prospects.filter(
+                  (prospect) =>
+                    prospect.status ===
+                    key,
+                ).length;
 
-          <div className="mt-7 grid gap-3">
-            {statuses.map(
-              ([status, label]) => (
+              const percentage =
+                total > 0
+                  ? (count /
+                      total) *
+                    100
+                  : 0;
+
+              return (
                 <div
-                  key={status}
-                  className="flex items-center justify-between rounded-2xl !bg-[#f5f5f3] px-4 py-3"
+                  key={key}
+                  className="grid gap-2"
                 >
-                  <span className="text-sm font-semibold !text-[#080808]">
-                    {label}
-                  </span>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-bold !text-[#080808]">
+                      {label}
+                    </span>
 
-                  <b className="!text-[#080808]">
-                    {data.pipeline[
-                      status
-                    ] || 0}
-                  </b>
+                    <span className="!text-black/40">
+                      {count}
+                    </span>
+                  </div>
+
+                  <div className="h-2 overflow-hidden rounded-full !bg-[#f5f5f3]">
+                    <div
+                      className="h-full rounded-full !bg-[#c8a45d]"
+                      style={{
+                        width: `${percentage}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-              ),
-            )}
-          </div>
+              );
+            },
+          )}
         </div>
       </div>
     </div>
-  );
-}
-
-/* ================================================================
-   METRIC CARD
-================================================================ */
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Users;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-[26px] border border-black/10 !bg-white p-6">
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-bold uppercase tracking-[0.13em] !text-black/35">
-          {label}
-        </div>
-
-        <Icon
-          size={18}
-          className="!text-[#c8a45d]"
-        />
-      </div>
-
-      <div className="mt-7 text-3xl font-black tracking-[-0.04em] !text-[#080808]">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* ================================================================
-   DARK STAT
-================================================================ */
-
-function DarkStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 !bg-white/[0.04] p-4">
-      <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-white/35">
-        {label}
-      </div>
-
-      <div className="mt-2 text-2xl font-black !text-white">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* ================================================================
-   QUICK ACTION
-================================================================ */
-
-function QuickAction({
-  icon: Icon,
-  title,
-  text,
-  onClick,
-}: {
-  icon: typeof Plus;
-  title: string;
-  text: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group rounded-[26px] !border !border-black/10 !bg-white !p-5 !text-left !text-[#080808] transition hover:-translate-y-0.5 hover:!border-[#c8a45d]/40"
-    >
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl !bg-[#080808] !text-[#c8a45d]">
-        <Icon size={18} />
-      </div>
-
-      <div className="mt-5 font-black !text-[#080808]">
-        {title}
-      </div>
-
-      <div className="mt-1 text-sm leading-6 !text-black/40">
-        {text}
-      </div>
-    </button>
   );
 }
 
@@ -2388,6 +2649,61 @@ function ProspectModal({
   const [type, setType] =
     useState("Note");
 
+  const [saving, setSaving] =
+    useState(false);
+
+  const [sendingInteraction, setSendingInteraction] =
+    useState(false);
+
+  async function save() {
+    setSaving(true);
+
+    try {
+      await onSave({
+        status: form.status,
+        offer: form.offer,
+        estimated_value:
+          Number(
+            form.estimated_value ||
+              0,
+          ),
+        recurring_value:
+          Number(
+            form.recurring_value ||
+              0,
+          ),
+        last_contact_at:
+          form.last_contact_at,
+        next_action:
+          form.next_action,
+        next_action_at:
+          form.next_action_at,
+        notes: form.notes,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addInteraction() {
+    if (!interaction.trim()) {
+      return;
+    }
+
+    setSendingInteraction(true);
+
+    try {
+      await onInteraction(
+        interaction.trim(),
+        type,
+      );
+
+      setInteraction("");
+    } finally {
+      setSendingInteraction(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[100] overflow-y-auto !bg-black/50 p-4 backdrop-blur-sm">
       <div className="mx-auto my-6 max-w-5xl rounded-[30px] !bg-[#f5f5f3] shadow-2xl">
@@ -2439,148 +2755,56 @@ function ProspectModal({
                 />
               </div>
 
-              <div className="mt-6 grid gap-3 text-sm">
-                {prospect.email && (
-                  <a
-                    href={`mailto:${prospect.email}`}
-                    className="flex items-center gap-3 font-semibold !text-[#080808]"
-                  >
-                    <Mail size={16} />
-                    {prospect.email}
-                  </a>
-                )}
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <InfoItem
+                  icon={Mail}
+                  label="Email"
+                  value={
+                    prospect.email ||
+                    "—"
+                  }
+                />
 
-                {prospect.phone && (
-                  <a
-                    href={`tel:${prospect.phone}`}
-                    className="flex items-center gap-3 font-semibold !text-[#080808]"
-                  >
-                    <Phone size={16} />
-                    {prospect.phone}
-                  </a>
-                )}
+                <InfoItem
+                  icon={Phone}
+                  label="Téléphone"
+                  value={
+                    prospect.phone ||
+                    "—"
+                  }
+                />
 
-                {prospect.website && (
-                  <a
-                    href={
-                      prospect.website.startsWith(
-                        "http",
-                      )
-                        ? prospect.website
-                        : `https://${prospect.website}`
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-3 font-semibold !text-[#080808]"
-                  >
-                    <FileSearch
-                      size={16}
-                    />
-                    {prospect.website}
-                  </a>
-                )}
+                <InfoItem
+                  icon={ExternalLink}
+                  label="Site"
+                  value={
+                    prospect.website ||
+                    "—"
+                  }
+                />
+
+                <InfoItem
+                  icon={Target}
+                  label="Secteur"
+                  value={
+                    prospect.sector ||
+                    "—"
+                  }
+                />
               </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                {prospect.sector && (
-                  <InfoBox
-                    label="Secteur"
-                    value={
-                      prospect.sector
-                    }
-                  />
-                )}
-
-                {prospect.reason && (
-                  <InfoBox
-                    label="Motif"
-                    value={
-                      prospect.reason
-                    }
-                  />
-                )}
-              </div>
-
-              {prospect.problem && (
-                <div className="mt-4 rounded-2xl !bg-[#f5f5f3] p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
-                    Problématique
-                    déclarée
-                  </div>
-
-                  <div className="mt-2 text-sm leading-6 !text-black/60">
-                    {
-                      prospect.problem
-                    }
-                  </div>
-                </div>
-              )}
-
-              {prospect.audit_score !=
-                null && (
-                <div className="mt-6 rounded-2xl !bg-[#080808] p-4 !text-white">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] !text-[#c8a45d]">
-                    Score Audit
-                  </div>
-
-                  <div className="mt-2 text-3xl font-black !text-white">
-                    {
-                      prospect.audit_score
-                    }
-
-                    <span className="text-base !text-white/35">
-                      /100
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {prospect.recommendations &&
-                prospect
-                  .recommendations
-                  .length >
-                  0 && (
-                  <div className="mt-6">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
-                      Recommandations
-                      Audit
-                    </div>
-
-                    <div className="mt-3 grid gap-2">
-                      {prospect.recommendations
-                        .slice(
-                          0,
-                          3,
-                        )
-                        .map(
-                          (
-                            recommendation,
-                            index,
-                          ) => (
-                            <div
-                              key={
-                                index
-                              }
-                              className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm !text-black/60"
-                            >
-                              {
-                                recommendation
-                              }
-                            </div>
-                          ),
-                        )}
-                    </div>
-                  </div>
-                )}
             </div>
 
             <div className="rounded-[24px] !bg-white p-6">
-              <h3 className="font-black !text-[#080808]">
-                Suivi commercial
-              </h3>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+                Commercial
+              </div>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <Field label="Statut">
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Statut
+                  </span>
+
                   <select
                     value={
                       form.status
@@ -2588,14 +2812,19 @@ function ProspectModal({
                     onChange={(
                       event,
                     ) =>
-                      setForm({
-                        ...form,
-                        status:
-                          event
-                            .target
-                            .value,
-                      })
+                      setForm(
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          status:
+                            event
+                              .target
+                              .value,
+                        }),
+                      )
                     }
+                    className="h-11 rounded-xl border border-black/10 !bg-[#f5f5f3] px-3 text-sm outline-none"
                   >
                     {statuses.map(
                       ([
@@ -2603,107 +2832,107 @@ function ProspectModal({
                         label,
                       ]) => (
                         <option
-                          key={
-                            key
-                          }
-                          value={
-                            key
-                          }
+                          key={key}
+                          value={key}
                         >
-                          {
-                            label
-                          }
+                          {label}
                         </option>
                       ),
                     )}
                   </select>
-                </Field>
+                </label>
 
-                <Field label="Offre">
-                  <select
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Offre
+                  </span>
+
+                  <input
                     value={
                       form.offer
                     }
                     onChange={(
                       event,
                     ) =>
-                      setForm({
-                        ...form,
-                        offer:
-                          event
-                            .target
-                            .value,
-                      })
+                      setForm(
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          offer:
+                            event
+                              .target
+                              .value,
+                        }),
+                      )
                     }
-                  >
-                    <option value="">
-                      À définir
-                    </option>
+                    className="h-11 rounded-xl border border-black/10 !bg-[#f5f5f3] px-3 text-sm outline-none"
+                  />
+                </label>
 
-                    {offers.map(
-                      (offer) => (
-                        <option
-                          key={
-                            offer
-                          }
-                          value={
-                            offer
-                          }
-                        >
-                          {
-                            offer
-                          }
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </Field>
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Valeur estimée
+                  </span>
 
-                <Field label="Valeur du projet">
                   <input
                     type="number"
-                    min="0"
                     value={
                       form.estimated_value
                     }
                     onChange={(
                       event,
                     ) =>
-                      setForm({
-                        ...form,
-                        estimated_value:
-                          event
-                            .target
-                            .value,
-                      })
+                      setForm(
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          estimated_value:
+                            event
+                              .target
+                              .value,
+                        }),
+                      )
                     }
-                    placeholder="1990"
+                    className="h-11 rounded-xl border border-black/10 !bg-[#f5f5f3] px-3 text-sm outline-none"
                   />
-                </Field>
+                </label>
 
-                <Field label="Récurrent / mois">
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Récurrent
+                  </span>
+
                   <input
                     type="number"
-                    min="0"
                     value={
                       form.recurring_value
                     }
                     onChange={(
                       event,
                     ) =>
-                      setForm({
-                        ...form,
-                        recurring_value:
-                          event
-                            .target
-                            .value,
-                      })
+                      setForm(
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          recurring_value:
+                            event
+                              .target
+                              .value,
+                        }),
+                      )
                     }
-                    placeholder="49"
+                    className="h-11 rounded-xl border border-black/10 !bg-[#f5f5f3] px-3 text-sm outline-none"
                   />
-                </Field>
+                </label>
 
-                <Field label="Prochaine action">
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Prochaine action
+                  </span>
+
                   <input
                     value={
                       form.next_action
@@ -2711,19 +2940,27 @@ function ProspectModal({
                     onChange={(
                       event,
                     ) =>
-                      setForm({
-                        ...form,
-                        next_action:
-                          event
-                            .target
-                            .value,
-                      })
+                      setForm(
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          next_action:
+                            event
+                              .target
+                              .value,
+                        }),
+                      )
                     }
-                    placeholder="Relancer le prospect"
+                    className="h-11 rounded-xl border border-black/10 !bg-[#f5f5f3] px-3 text-sm outline-none"
                   />
-                </Field>
+                </label>
 
-                <Field label="Date de relance">
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold !text-black/55">
+                    Date de relance
+                  </span>
+
                   <input
                     type="date"
                     value={
@@ -2732,184 +2969,255 @@ function ProspectModal({
                     onChange={(
                       event,
                     ) =>
-                      setForm({
-                        ...form,
-                        next_action_at:
-                          event
-                            .target
-                            .value,
-                      })
+                      setForm(
+                        (
+                          current,
+                        ) => ({
+                          ...current,
+                          next_action_at:
+                            event
+                              .target
+                              .value,
+                        }),
+                      )
                     }
+                    className="h-11 rounded-xl border border-black/10 !bg-[#f5f5f3] px-3 text-sm outline-none"
                   />
-                </Field>
+                </label>
               </div>
 
-              <div className="mt-4">
-                <Field label="Notes">
-                  <textarea
-                    rows={5}
-                    value={
-                      form.notes
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setForm({
-                        ...form,
+              <label className="mt-4 grid gap-2">
+                <span className="text-xs font-bold !text-black/55">
+                  Notes
+                </span>
+
+                <textarea
+                  value={
+                    form.notes
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setForm(
+                      (
+                        current,
+                      ) => ({
+                        ...current,
                         notes:
                           event
                             .target
                             .value,
-                      })
-                    }
-                  />
-                </Field>
-              </div>
+                      }),
+                    )
+                  }
+                  rows={5}
+                  className="resize-none rounded-xl border border-black/10 !bg-[#f5f5f3] p-3 text-sm outline-none"
+                />
+              </label>
 
-              <button
-                type="button"
-                onClick={() =>
-                  onSave({
-                    ...form,
-                    estimated_value:
-                      Number(
-                        form.estimated_value,
-                      ) || 0,
-                    recurring_value:
-                      Number(
-                        form.recurring_value,
-                      ) || 0,
-                  })
-                }
-                className={`${buttonDark} mt-5 px-5 py-3 text-sm`}
-              >
-                <Check size={16} />
-                Enregistrer
-              </button>
+              <div className="mt-5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={save}
+                  disabled={saving}
+                  className={`${buttonGold} px-5 py-3 text-sm disabled:opacity-50`}
+                >
+                  {saving ? (
+                    <RefreshCw
+                      size={15}
+                      className="mr-2 animate-spin"
+                    />
+                  ) : (
+                    <Check
+                      size={15}
+                      className="mr-2"
+                    />
+                  )}
+                  Enregistrer
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="rounded-[24px] !bg-white p-6">
-            <h3 className="font-black !text-[#080808]">
-              Ajouter une
-              interaction
-            </h3>
+          <div className="grid gap-5">
+            <div className="rounded-[24px] !bg-white p-6">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+                Nouvelle interaction
+              </div>
 
-            <div className="mt-4 grid gap-3">
-              <select
-                value={type}
-                onChange={(
-                  event,
-                ) =>
-                  setType(
-                    event.target
-                      .value,
-                  )
-                }
-                className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
-              >
-                <option>
-                  Note
-                </option>
-                <option>
-                  Appel
-                </option>
-                <option>
-                  E-mail
-                </option>
-                <option>
-                  Rendez-vous
-                </option>
-                <option>
-                  Proposition
-                </option>
-                <option>
-                  Relance
-                </option>
-              </select>
-
-              <textarea
-                rows={4}
-                value={interaction}
-                onChange={(
-                  event,
-                ) =>
-                  setInteraction(
-                    event.target
-                      .value,
-                  )
-                }
-                placeholder="Ex. Prospect intéressé par une refonte GROW…"
-                className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm !text-[#080808] outline-none placeholder:!text-black/30"
-              />
-
-              <button
-                type="button"
-                disabled={
-                  !interaction.trim()
-                }
-                onClick={async () => {
-                  await onInteraction(
-                    interaction,
-                    type,
-                  );
-
-                  setInteraction("");
-                }}
-                className={`${buttonLight} px-5 py-3 text-sm`}
-              >
-                Ajouter à
-                l'historique
-              </button>
-            </div>
-
-            <div className="mt-7 border-t border-black/10 pt-5">
-              <h3 className="font-black !text-[#080808]">
-                Historique
+              <h3 className="mt-2 text-xl font-black !text-[#080808]">
+                Ajouter une note
               </h3>
 
-              <div className="mt-5 grid gap-5">
-                {prospect.interactions
-                  ?.length ? (
-                  prospect.interactions.map(
-                    (
-                      interaction,
-                    ) => (
-                      <div
-                        key={
-                          interaction.id
-                        }
-                        className="border-l-2 border-[#c8a45d] pl-4"
-                      >
-                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] !text-black/35">
-                          {
-                            interaction.type
-                          }{" "}
-                          ·{" "}
-                          {dateTimeFr(
-                            interaction.created_at,
-                          )}
-                        </div>
+              <div className="mt-5 grid gap-4">
+                <select
+                  value={type}
+                  onChange={(
+                    event,
+                  ) =>
+                    setType(
+                      event.target
+                        .value,
+                    )
+                  }
+                  className="h-11 rounded-xl border border-black/10 !bg-[#f5f5f3] px-3 text-sm outline-none"
+                >
+                  <option>
+                    Note
+                  </option>
+                  <option>
+                    Appel
+                  </option>
+                  <option>
+                    Email
+                  </option>
+                  <option>
+                    WhatsApp
+                  </option>
+                  <option>
+                    Rendez-vous
+                  </option>
+                </select>
 
-                        <div className="mt-1 text-sm leading-6 !text-black/65">
-                          {
-                            interaction.text
-                          }
-                        </div>
-                      </div>
-                    ),
-                  )
-                ) : (
-                  <div className="text-sm !text-black/35">
-                    Aucune interaction
-                    enregistrée.
-                  </div>
-                )}
+                <textarea
+                  value={
+                    interaction
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setInteraction(
+                      event.target
+                        .value,
+                    )
+                  }
+                  rows={6}
+                  placeholder="Écrivez votre note..."
+                  className="resize-none rounded-xl border border-black/10 !bg-[#f5f5f3] p-3 text-sm outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={
+                    addInteraction
+                  }
+                  disabled={
+                    sendingInteraction ||
+                    !interaction.trim()
+                  }
+                  className={`${buttonDark} min-h-11 px-4 text-sm disabled:opacity-50`}
+                >
+                  {sendingInteraction ? (
+                    <RefreshCw
+                      size={15}
+                      className="mr-2 animate-spin"
+                    />
+                  ) : (
+                    <MessageCircle
+                      size={15}
+                      className="mr-2"
+                    />
+                  )}
+                  Ajouter
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] !bg-white p-6">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+                Informations
+              </div>
+
+              <div className="mt-5 grid gap-4">
+                <InfoRow
+                  label="Créé le"
+                  value={dateTimeFr(
+                    prospect.created_at,
+                  )}
+                />
+
+                <InfoRow
+                  label="Dernier contact"
+                  value={dateTimeFr(
+                    prospect.last_contact_at,
+                  )}
+                />
+
+                <InfoRow
+                  label="Valeur estimée"
+                  value={euro(
+                    prospect.estimated_value,
+                  )}
+                />
+
+                <InfoRow
+                  label="Récurrent"
+                  value={euro(
+                    prospect.recurring_value,
+                  )}
+                />
               </div>
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   INFO ITEM
+================================================================ */
+
+function InfoItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: IconType;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl !bg-[#f5f5f3] p-4">
+      <div className="flex items-center gap-2">
+        <Icon
+          size={14}
+          className="!text-[#c8a45d]"
+        />
+
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] !text-black/35">
+          {label}
+        </span>
+      </div>
+
+      <div className="mt-2 break-words text-sm font-semibold !text-[#080808]">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   INFO ROW
+================================================================ */
+
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-black/5 pb-3 last:border-0 last:pb-0">
+      <span className="text-xs font-semibold !text-black/40">
+        {label}
+      </span>
+
+      <span className="text-right text-sm font-bold !text-[#080808]">
+        {value}
+      </span>
     </div>
   );
 }
@@ -2926,7 +3234,7 @@ function NewProspectModal({
   onCreate: (
     prospect: Record<
       string,
-      string
+      unknown
     >,
   ) => Promise<void>;
 }) {
@@ -2937,21 +3245,55 @@ function NewProspectModal({
       email: "",
       phone: "",
       website: "",
+      sector: "",
+      source: "manual",
+      status: "new",
+      offer: "",
+      estimated_value: "",
+      recurring_value: "",
       notes: "",
     });
 
+  const [saving, setSaving] =
+    useState(false);
+
+  async function create() {
+    if (!form.name.trim()) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      await onCreate({
+        ...form,
+        estimated_value:
+          Number(
+            form.estimated_value ||
+              0,
+          ),
+        recurring_value:
+          Number(
+            form.recurring_value ||
+              0,
+          ),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center !bg-black/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-[30px] !bg-[#f5f5f3] p-6 shadow-2xl sm:p-8">
-        <div className="flex justify-between">
+    <div className="fixed inset-0 z-[100] overflow-y-auto !bg-black/50 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-8 max-w-3xl rounded-[30px] !bg-[#f5f5f3] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-black/10 px-6 py-5 sm:px-8">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.2em] !text-[#c8a45d]">
-              Nouveau
+              CRM
             </div>
 
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.05em] !text-[#080808]">
-              Ajouter un
-              prospect
+            <h2 className="mt-1 text-2xl font-black !text-[#080808]">
+              Nouveau prospect
             </h2>
           </div>
 
@@ -2964,144 +3306,294 @@ function NewProspectModal({
           </button>
         </div>
 
-        <div className="mt-7 grid gap-4 sm:grid-cols-2">
-          <Field label="Nom">
-            <input
-              value={
-                form.name
-              }
-              onChange={(
-                event,
-              ) =>
-                setForm({
-                  ...form,
-                  name: event
-                    .target
-                    .value,
-                })
-              }
-            />
-          </Field>
-
-          <Field label="Entreprise">
-            <input
-              value={
-                form.company
-              }
-              onChange={(
-                event,
-              ) =>
-                setForm({
-                  ...form,
-                  company:
-                    event
-                      .target
-                      .value,
-                })
+        <div className="p-6 sm:p-8">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Nom"
+              value={form.name}
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    name: value,
+                  }),
+                )
               }
             />
-          </Field>
 
-          <Field label="E-mail">
-            <input
-              type="email"
-              value={
-                form.email
-              }
-              onChange={(
-                event,
-              ) =>
-                setForm({
-                  ...form,
-                  email:
-                    event
-                      .target
-                      .value,
-                })
+            <Field
+              label="Entreprise"
+              value={form.company}
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    company: value,
+                  }),
+                )
               }
             />
-          </Field>
 
-          <Field label="Téléphone">
-            <input
-              value={
-                form.phone
-              }
-              onChange={(
-                event,
-              ) =>
-                setForm({
-                  ...form,
-                  phone:
-                    event
-                      .target
-                      .value,
-                })
+            <Field
+              label="Email"
+              value={form.email}
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    email: value,
+                  }),
+                )
               }
             />
-          </Field>
 
-          <Field label="Site internet">
-            <input
-              value={
-                form.website
-              }
-              onChange={(
-                event,
-              ) =>
-                setForm({
-                  ...form,
-                  website:
-                    event
-                      .target
-                      .value,
-                })
+            <Field
+              label="Téléphone"
+              value={form.phone}
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    phone: value,
+                  }),
+                )
               }
             />
-          </Field>
 
-          <Field label="Notes">
-            <input
-              value={
-                form.notes
-              }
-              onChange={(
-                event,
-              ) =>
-                setForm({
-                  ...form,
-                  notes:
-                    event
-                      .target
-                      .value,
-                })
+            <Field
+              label="Site internet"
+              value={form.website}
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    website: value,
+                  }),
+                )
               }
             />
-          </Field>
-        </div>
 
-        <div className="mt-7 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className={`${buttonLight} px-5 py-3 text-sm`}
-          >
-            Annuler
-          </button>
+            <Field
+              label="Secteur"
+              value={form.sector}
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    sector: value,
+                  }),
+                )
+              }
+            />
 
-          <button
-            type="button"
-            disabled={
-              !form.name &&
-              !form.company
-            }
-            onClick={() =>
-              onCreate(form)
-            }
-            className={`${buttonDark} px-5 py-3 text-sm`}
-          >
-            Créer le prospect
-          </button>
+            <Field
+              label="Offre"
+              value={form.offer}
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    offer: value,
+                  }),
+                )
+              }
+            />
+
+            <Field
+              label="Valeur estimée"
+              type="number"
+              value={
+                form.estimated_value
+              }
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    estimated_value:
+                      value,
+                  }),
+                )
+              }
+            />
+
+            <Field
+              label="Récurrent"
+              type="number"
+              value={
+                form.recurring_value
+              }
+              onChange={(value) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    recurring_value:
+                      value,
+                  }),
+                )
+              }
+            />
+
+            <label className="grid gap-2">
+              <span className="text-xs font-bold !text-black/55">
+                Source
+              </span>
+
+              <select
+                value={form.source}
+                onChange={(
+                  event,
+                ) =>
+                  setForm(
+                    (
+                      current,
+                    ) => ({
+                      ...current,
+                      source:
+                        event
+                          .target
+                          .value,
+                    }),
+                  )
+                }
+                className="h-11 rounded-xl border border-black/10 !bg-white px-3 text-sm outline-none"
+              >
+                <option value="manual">
+                  Manuel
+                </option>
+
+                <option value="grand-plus">
+                  Grand+
+                </option>
+
+                <option value="audit">
+                  Audit
+                </option>
+
+                <option value="booking">
+                  Rendez-vous
+                </option>
+
+                <option value="contact">
+                  Contact
+                </option>
+              </select>
+            </label>
+
+            <label className="grid gap-2">
+              <span className="text-xs font-bold !text-black/55">
+                Statut
+              </span>
+
+              <select
+                value={form.status}
+                onChange={(
+                  event,
+                ) =>
+                  setForm(
+                    (
+                      current,
+                    ) => ({
+                      ...current,
+                      status:
+                        event
+                          .target
+                          .value,
+                    }),
+                  )
+                }
+                className="h-11 rounded-xl border border-black/10 !bg-white px-3 text-sm outline-none"
+              >
+                {statuses.map(
+                  ([
+                    key,
+                    label,
+                  ]) => (
+                    <option
+                      key={key}
+                      value={key}
+                    >
+                      {label}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+          </div>
+
+          <label className="mt-4 grid gap-2">
+            <span className="text-xs font-bold !text-black/55">
+              Notes
+            </span>
+
+            <textarea
+              value={form.notes}
+              onChange={(event) =>
+                setForm(
+                  (
+                    current,
+                  ) => ({
+                    ...current,
+                    notes:
+                      event.target
+                        .value,
+                  }),
+                )
+              }
+              rows={5}
+              className="resize-none rounded-xl border border-black/10 !bg-white p-3 text-sm outline-none"
+            />
+          </label>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className={`${buttonLight} px-5 py-3 text-sm`}
+            >
+              Annuler
+            </button>
+
+            <button
+              type="button"
+              onClick={create}
+              disabled={
+                saving ||
+                !form.name.trim()
+              }
+              className={`${buttonGold} px-5 py-3 text-sm disabled:opacity-50`}
+            >
+              {saving ? (
+                <RefreshCw
+                  size={15}
+                  className="mr-2 animate-spin"
+                />
+              ) : (
+                <UserPlus
+                  size={15}
+                  className="mr-2"
+                />
+              )}
+              Créer le prospect
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -3114,42 +3606,33 @@ function NewProspectModal({
 
 function Field({
   label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="grid gap-2 text-xs font-bold !text-black/45">
-      {label}
-
-      <div className="[&_input]:w-full [&_input]:rounded-2xl [&_input]:!bg-[#f5f5f3] [&_input]:px-4 [&_input]:py-3 [&_input]:text-sm [&_input]:font-medium [&_input]:!text-[#080808] [&_input]:outline-none [&_input]:placeholder:!text-black/30 [&_select]:w-full [&_select]:rounded-2xl [&_select]:!bg-[#f5f5f3] [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:font-medium [&_select]:!text-[#080808] [&_select]:outline-none [&_textarea]:w-full [&_textarea]:rounded-2xl [&_textarea]:!bg-[#f5f5f3] [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:font-medium [&_textarea]:!text-[#080808] [&_textarea]:outline-none">
-        {children}
-      </div>
-    </label>
-  );
-}
-
-/* ================================================================
-   INFO BOX
-================================================================ */
-
-function InfoBox({
-  label,
   value,
+  onChange,
+  type = "text",
 }: {
   label: string;
   value: string;
+  onChange: (
+    value: string,
+  ) => void;
+  type?: string;
 }) {
   return (
-    <div className="rounded-2xl !bg-[#f5f5f3] p-4">
-      <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+    <label className="grid gap-2">
+      <span className="text-xs font-bold !text-black/55">
         {label}
-      </div>
+      </span>
 
-      <div className="mt-2 text-sm font-semibold !text-black/65">
-        {value}
-      </div>
-    </div>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) =>
+          onChange(
+            event.target.value,
+          )
+        }
+        className="h-11 rounded-xl border border-black/10 !bg-white px-3 text-sm outline-none focus:border-[#c8a45d]"
+      />
+    </label>
   );
 }

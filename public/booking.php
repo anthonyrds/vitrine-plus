@@ -32,10 +32,6 @@ function respond(array $data, int $status = 200): void
 |--------------------------------------------------------------------------
 | CONFIGURATION EMAIL
 |--------------------------------------------------------------------------
-|
-| Le fichier vitrine-mail-config.php est placé dans la même racine
-| que booking.php sur le serveur IONOS.
-|
 */
 
 function mailConfig(): array
@@ -69,7 +65,10 @@ function mailConfig(): array
     ];
 
     foreach ($required as $key) {
-        if (!isset($config[$key]) || trim((string)$config[$key]) === '') {
+        if (
+            !isset($config[$key]) ||
+            trim((string)$config[$key]) === ''
+        ) {
             respond([
                 'success' => false,
                 'message' => 'Configuration email incomplète.'
@@ -96,6 +95,11 @@ function bookingsFile(): string
     return dataDirectory() . '/bookings.json';
 }
 
+function availabilityFile(): string
+{
+    return dataDirectory() . '/availability.json';
+}
+
 function ensureStorage(): void
 {
     if (
@@ -104,17 +108,23 @@ function ensureStorage(): void
     ) {
         respond([
             'success' => false,
-            'message' => 'Le stockage des rendez-vous est indisponible.'
+            'message' =>
+                'Le stockage des rendez-vous est indisponible.'
         ], 500);
     }
 
     if (
         !file_exists(bookingsFile()) &&
-        @file_put_contents(bookingsFile(), '[]', LOCK_EX) === false
+        @file_put_contents(
+            bookingsFile(),
+            '[]',
+            LOCK_EX
+        ) === false
     ) {
         respond([
             'success' => false,
-            'message' => 'Le stockage des rendez-vous est indisponible.'
+            'message' =>
+                'Le stockage des rendez-vous est indisponible.'
         ], 500);
     }
 }
@@ -125,13 +135,55 @@ function readBookings($handle): array
 
     $contents = stream_get_contents($handle);
 
-    if (!is_string($contents) || trim($contents) === '') {
+    if (
+        !is_string($contents) ||
+        trim($contents) === ''
+    ) {
         return [];
     }
 
-    $data = json_decode($contents, true);
+    $data = json_decode(
+        $contents,
+        true
+    );
 
-    return is_array($data) ? $data : [];
+    return is_array($data)
+        ? $data
+        : [];
+}
+
+function readAvailabilityBlocks(): array
+{
+    $file = availabilityFile();
+
+    if (!is_file($file)) {
+        return [];
+    }
+
+    $contents = @file_get_contents($file);
+
+    if (
+        !is_string($contents) ||
+        trim($contents) === ''
+    ) {
+        return [];
+    }
+
+    $data = json_decode(
+        $contents,
+        true
+    );
+
+    if (!is_array($data)) {
+        return [];
+    }
+
+    return array_values(
+        array_filter(
+            $data,
+            'is_array'
+        )
+    );
 }
 
 /*
@@ -140,8 +192,10 @@ function readBookings($handle): array
 |--------------------------------------------------------------------------
 */
 
-function clean(string $value, int $max = 1000): string
-{
+function clean(
+    string $value,
+    int $max = 1000
+): string {
     $value = trim(
         preg_replace(
             '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u',
@@ -151,10 +205,19 @@ function clean(string $value, int $max = 1000): string
     );
 
     if (function_exists('mb_substr')) {
-        return mb_substr($value, 0, $max, 'UTF-8');
+        return mb_substr(
+            $value,
+            0,
+            $max,
+            'UTF-8'
+        );
     }
 
-    return substr($value, 0, $max);
+    return substr(
+        $value,
+        0,
+        $max
+    );
 }
 
 /*
@@ -163,66 +226,112 @@ function clean(string $value, int $max = 1000): string
 |--------------------------------------------------------------------------
 */
 
-function validDate(string $date): bool
-{
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+function validDate(
+    string $date
+): bool {
+    if (
+        !preg_match(
+            '/^\d{4}-\d{2}-\d{2}$/',
+            $date
+        )
+    ) {
         return false;
     }
 
-    $tz = new DateTimeZone(TIMEZONE);
-
-    $d = DateTimeImmutable::createFromFormat(
-        '!Y-m-d',
-        $date,
-        $tz
+    $tz = new DateTimeZone(
+        TIMEZONE
     );
+
+    $d =
+        DateTimeImmutable::createFromFormat(
+            '!Y-m-d',
+            $date,
+            $tz
+        );
 
     if (!$d) {
         return false;
     }
 
-    $today = new DateTimeImmutable('today', $tz);
+    $today =
+        new DateTimeImmutable(
+            'today',
+            $tz
+        );
 
     return (
         $d >= $today &&
-        $d <= $today->modify('+' . MAX_DAYS_AHEAD . ' days')
+        $d <= $today->modify(
+            '+' .
+            MAX_DAYS_AHEAD .
+            ' days'
+        )
     );
 }
 
-function validTime(string $time): bool
-{
+function validTime(
+    string $time
+): bool {
     return (bool)preg_match(
         '/^(?:[01]\d|2[0-3]):[0-5]\d$/',
         $time
     );
 }
 
-function minutes(string $time): int
-{
-    [$h, $m] = array_map(
+function minutes(
+    string $time
+): int {
+    [
+        $h,
+        $m
+    ] = array_map(
         'intval',
         explode(':', $time)
     );
 
-    return ($h * 60) + $m;
+    return (
+        $h * 60
+    ) + $m;
 }
 
-function overlaps(string $time, array $booking): bool
-{
-    if (($booking['status'] ?? 'confirmed') !== 'confirmed') {
+/*
+|--------------------------------------------------------------------------
+| RÉSERVATIONS EXISTANTES
+|--------------------------------------------------------------------------
+*/
+
+function overlaps(
+    string $time,
+    array $booking
+): bool {
+    if (
+        ($booking['status'] ?? 'confirmed')
+        !== 'confirmed'
+    ) {
         return false;
     }
 
-    $start = minutes($time);
-    $end = $start + 30;
+    $start =
+        minutes($time);
 
-    $otherStart = minutes(
-        (string)($booking['time'] ?? '00:00')
-    );
+    $end =
+        $start +
+        SLOT_STEP;
+
+    $otherStart =
+        minutes(
+            (string)(
+                $booking['time']
+                ?? '00:00'
+            )
+        );
 
     $otherEnd =
         $otherStart +
-        (int)($booking['duration'] ?? 30);
+        (int)(
+            $booking['duration']
+            ?? 30
+        );
 
     return (
         $start < $otherEnd &&
@@ -230,24 +339,136 @@ function overlaps(string $time, array $booking): bool
     );
 }
 
-function getSlots(string $date, array $bookings): array
-{
-    $tz = new DateTimeZone(TIMEZONE);
+/*
+|--------------------------------------------------------------------------
+| INDISPONIBILITÉS ADMINISTRATIVES
+|--------------------------------------------------------------------------
+*/
 
-    $selected = new DateTimeImmutable(
-        $date . ' 12:00:00',
-        $tz
+function blockOverlapsSlot(
+    array $block,
+    string $date,
+    string $time
+): bool {
+    if (
+        ($block['date'] ?? '') !==
+        $date
+    ) {
+        return false;
+    }
+
+    /*
+     * Journée entièrement bloquée.
+     */
+    if (
+        !empty(
+            $block['all_day']
+        )
+    ) {
+        return true;
+    }
+
+    $startTime =
+        (string)(
+            $block['start_time']
+            ?? ''
+        );
+
+    $endTime =
+        (string)(
+            $block['end_time']
+            ?? ''
+        );
+
+    if (
+        !validTime($startTime) ||
+        !validTime($endTime)
+    ) {
+        return false;
+    }
+
+    $start =
+        minutes($time);
+
+    $end =
+        $start +
+        SLOT_STEP;
+
+    $blockStart =
+        minutes($startTime);
+
+    $blockEnd =
+        minutes($endTime);
+
+    /*
+     * Vérifie le chevauchement.
+     *
+     * Exemple :
+     * blocage 14:00 → 16:00
+     *
+     * 14:00 = bloqué
+     * 14:30 = bloqué
+     * 15:00 = bloqué
+     * 15:30 = bloqué
+     * 16:00 = disponible
+     */
+    return (
+        $start < $blockEnd &&
+        $blockStart < $end
     );
+}
 
-    if ((int)$selected->format('N') >= 6) {
+/*
+|--------------------------------------------------------------------------
+| CRÉATION DES CRÉNEAUX
+|--------------------------------------------------------------------------
+*/
+
+function getSlots(
+    string $date,
+    array $bookings
+): array {
+    $tz =
+        new DateTimeZone(
+            TIMEZONE
+        );
+
+    $selected =
+        new DateTimeImmutable(
+            $date . ' 12:00:00',
+            $tz
+        );
+
+    /*
+     * Samedi / dimanche.
+     */
+    if (
+        (int)$selected->format('N')
+        >= 6
+    ) {
         return [];
     }
 
-    $today = new DateTimeImmutable('today', $tz);
-    $now = new DateTimeImmutable('now', $tz);
+    $today =
+        new DateTimeImmutable(
+            'today',
+            $tz
+        );
+
+    $now =
+        new DateTimeImmutable(
+            'now',
+            $tz
+        );
 
     $isToday =
-        $date === $today->format('Y-m-d');
+        $date ===
+        $today->format(
+            'Y-m-d'
+        );
+
+    $blocks =
+        readAvailabilityBlocks();
 
     $slots = [];
 
@@ -256,40 +477,90 @@ function getSlots(string $date, array $bookings): array
         $minute < CLOSE_MINUTE;
         $minute += SLOT_STEP
     ) {
-        $time = sprintf(
-            '%02d:%02d',
-            intdiv($minute, 60),
-            $minute % 60
-        );
+        $time =
+            sprintf(
+                '%02d:%02d',
+                intdiv(
+                    $minute,
+                    60
+                ),
+                $minute % 60
+            );
 
         $available = true;
 
+        /*
+         * Créneau déjà passé.
+         */
         if ($isToday) {
-            $slot = new DateTimeImmutable(
-                $date . ' ' . $time . ':00',
-                $tz
-            );
+            $slot =
+                new DateTimeImmutable(
+                    $date .
+                    ' ' .
+                    $time .
+                    ':00',
+                    $tz
+                );
 
             if (
-                $slot <= $now->modify('+30 minutes')
+                $slot <=
+                $now->modify(
+                    '+30 minutes'
+                )
             ) {
                 $available = false;
             }
         }
 
-        foreach ($bookings as $booking) {
-            if (
-                ($booking['date'] ?? '') === $date &&
-                overlaps($time, $booking)
+        /*
+         * Rendez-vous déjà pris.
+         */
+        if ($available) {
+            foreach (
+                $bookings as $booking
             ) {
-                $available = false;
-                break;
+                if (
+                    ($booking['date'] ?? '')
+                    === $date &&
+                    overlaps(
+                        $time,
+                        $booking
+                    )
+                ) {
+                    $available = false;
+
+                    break;
+                }
+            }
+        }
+
+        /*
+         * Blocages administratifs.
+         */
+        if ($available) {
+            foreach (
+                $blocks as $block
+            ) {
+                if (
+                    blockOverlapsSlot(
+                        $block,
+                        $date,
+                        $time
+                    )
+                ) {
+                    $available = false;
+
+                    break;
+                }
             }
         }
 
         $slots[] = [
-            'time' => $time,
-            'available' => $available
+            'time' =>
+                $time,
+
+            'available' =>
+                $available
         ];
     }
 
@@ -306,10 +577,14 @@ function generateReference(
     DateTimeImmutable $now
 ): string {
     return 'VP-' .
-        $now->format('Ymd') .
+        $now->format(
+            'Ymd'
+        ) .
         '-' .
         strtoupper(
-            bin2hex(random_bytes(3))
+            bin2hex(
+                random_bytes(3)
+            )
         );
 }
 
@@ -319,11 +594,17 @@ function generateReference(
 |--------------------------------------------------------------------------
 */
 
-function smtpRead($socket): string
-{
+function smtpRead(
+    $socket
+): string {
     $response = '';
 
-    while (($line = fgets($socket, 515)) !== false) {
+    while (
+        ($line = fgets(
+            $socket,
+            515
+        )) !== false
+    ) {
         $response .= $line;
 
         if (
@@ -337,9 +618,14 @@ function smtpRead($socket): string
     return $response;
 }
 
-function smtpCode(string $response): int
-{
-    return (int)substr($response, 0, 3);
+function smtpCode(
+    string $response
+): int {
+    return (int)substr(
+        $response,
+        0,
+        3
+    );
 }
 
 function smtpCommand(
@@ -349,14 +635,20 @@ function smtpCommand(
 ): void {
     fwrite(
         $socket,
-        $command . "\r\n"
+        $command .
+        "\r\n"
     );
 
-    $response = smtpRead($socket);
+    $response =
+        smtpRead($socket);
 
-    $code = smtpCode($response);
+    $code =
+        smtpCode($response);
 
-    if ($code !== $expectedCode) {
+    if (
+        $code !==
+        $expectedCode
+    ) {
         throw new RuntimeException(
             'SMTP error ' .
             $code .
@@ -380,13 +672,15 @@ function smtpSendMail(
     $errno = 0;
     $errstr = '';
 
-    $socket = @fsockopen(
-        'ssl://' . $host,
-        $port,
-        $errno,
-        $errstr,
-        15
-    );
+    $socket =
+        @fsockopen(
+            'ssl://' .
+            $host,
+            $port,
+            $errno,
+            $errstr,
+            15
+        );
 
     if (!$socket) {
         throw new RuntimeException(
@@ -395,12 +689,19 @@ function smtpSendMail(
         );
     }
 
-    stream_set_timeout($socket, 15);
+    stream_set_timeout(
+        $socket,
+        15
+    );
 
     try {
-        $response = smtpRead($socket);
+        $response =
+            smtpRead($socket);
 
-        if (smtpCode($response) !== 220) {
+        if (
+            smtpCode($response)
+            !== 220
+        ) {
             throw new RuntimeException(
                 'Réponse SMTP initiale invalide.'
             );
@@ -420,25 +721,33 @@ function smtpSendMail(
 
         smtpCommand(
             $socket,
-            base64_encode($username),
+            base64_encode(
+                $username
+            ),
             334
         );
 
         smtpCommand(
             $socket,
-            base64_encode($password),
+            base64_encode(
+                $password
+            ),
             235
         );
 
         smtpCommand(
             $socket,
-            'MAIL FROM:<' . $from . '>',
+            'MAIL FROM:<' .
+            $from .
+            '>',
             250
         );
 
         smtpCommand(
             $socket,
-            'RCPT TO:<' . $to . '>',
+            'RCPT TO:<' .
+            $to .
+            '>',
             250
         );
 
@@ -450,12 +759,16 @@ function smtpSendMail(
 
         $encodedSubject =
             '=?UTF-8?B?' .
-            base64_encode($subject) .
+            base64_encode(
+                $subject
+            ) .
             '?=';
 
         $encodedName =
             '=?UTF-8?B?' .
-            base64_encode($fromName) .
+            base64_encode(
+                $fromName
+            ) .
             '?=';
 
         $message =
@@ -496,7 +809,8 @@ function smtpSendMail(
 
         smtpCommand(
             $socket,
-            $message . "\r\n.",
+            $message .
+            "\r\n.",
             250
         );
 
@@ -517,7 +831,8 @@ function smtpSendMail(
 */
 
 if (
-    ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET'
+    ($_SERVER['REQUEST_METHOD'] ?? 'GET')
+    === 'GET'
 ) {
     if (
         clean(
@@ -528,29 +843,35 @@ if (
     ) {
         respond([
             'success' => false,
-            'message' => 'Action inconnue.'
+            'message' =>
+                'Action inconnue.'
         ], 400);
     }
 
-    $date = clean(
-        (string)(
-            $_GET['date'] ?? ''
-        )
-    );
+    $date =
+        clean(
+            (string)(
+                $_GET['date'] ?? ''
+            )
+        );
 
-    if (!validDate($date)) {
+    if (
+        !validDate($date)
+    ) {
         respond([
             'success' => false,
-            'message' => 'Date invalide.'
+            'message' =>
+                'Date invalide.'
         ], 422);
     }
 
     ensureStorage();
 
-    $handle = @fopen(
-        bookingsFile(),
-        'r'
-    );
+    $handle =
+        @fopen(
+            bookingsFile(),
+            'r'
+        );
 
     if (!$handle) {
         respond([
@@ -560,17 +881,19 @@ if (
         ], 500);
     }
 
-    $bookings = readBookings($handle);
+    $bookings =
+        readBookings($handle);
 
     fclose($handle);
 
     respond([
         'success' => true,
         'date' => $date,
-        'slots' => getSlots(
-            $date,
-            $bookings
-        )
+        'slots' =>
+            getSlots(
+                $date,
+                $bookings
+            )
     ]);
 }
 
@@ -581,11 +904,13 @@ if (
 */
 
 if (
-    ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+    ($_SERVER['REQUEST_METHOD'] ?? '')
+    !== 'POST'
 ) {
     respond([
         'success' => false,
-        'message' => 'Méthode non autorisée.'
+        'message' =>
+            'Méthode non autorisée.'
     ], 405);
 }
 
@@ -598,7 +923,8 @@ if (
 ) {
     respond([
         'success' => false,
-        'message' => 'Action inconnue.'
+        'message' =>
+            'Action inconnue.'
     ], 400);
 }
 
@@ -608,7 +934,11 @@ if (
 |--------------------------------------------------------------------------
 */
 
-if (!empty($_POST['website'] ?? '')) {
+if (
+    !empty(
+        $_POST['website'] ?? ''
+    )
+) {
     respond([
         'success' => true,
         'reference' => 'VP-SPAM'
@@ -621,45 +951,51 @@ if (!empty($_POST['website'] ?? '')) {
 |--------------------------------------------------------------------------
 */
 
-$name = clean(
-    (string)(
-        $_POST['name'] ?? ''
-    ),
-    120
-);
+$name =
+    clean(
+        (string)(
+            $_POST['name'] ?? ''
+        ),
+        120
+    );
 
-$phone = clean(
-    (string)(
-        $_POST['phone'] ?? ''
-    ),
-    60
-);
+$phone =
+    clean(
+        (string)(
+            $_POST['phone'] ?? ''
+        ),
+        60
+    );
 
-$company = clean(
-    (string)(
-        $_POST['company'] ?? ''
-    ),
-    160
-);
+$company =
+    clean(
+        (string)(
+            $_POST['company'] ?? ''
+        ),
+        160
+    );
 
-$reason = clean(
-    (string)(
-        $_POST['reason'] ?? ''
-    ),
-    2500
-);
+$reason =
+    clean(
+        (string)(
+            $_POST['reason'] ?? ''
+        ),
+        2500
+    );
 
-$date = clean(
-    (string)(
-        $_POST['date'] ?? ''
-    )
-);
+$date =
+    clean(
+        (string)(
+            $_POST['date'] ?? ''
+        )
+    );
 
-$time = clean(
-    (string)(
-        $_POST['time'] ?? ''
-    )
-);
+$time =
+    clean(
+        (string)(
+            $_POST['time'] ?? ''
+        )
+    );
 
 /*
 |--------------------------------------------------------------------------
@@ -680,11 +1016,12 @@ if (
     ], 422);
 }
 
-$digits = preg_replace(
-    '/\D+/',
-    '',
-    $phone
-);
+$digits =
+    preg_replace(
+        '/\D+/',
+        '',
+        $phone
+    );
 
 if (
     !is_string($digits) ||
@@ -708,7 +1045,8 @@ if (
     ], 422);
 }
 
-$slotMinutes = minutes($time);
+$slotMinutes =
+    minutes($time);
 
 if (
     $slotMinutes % SLOT_STEP !== 0 ||
@@ -728,21 +1066,31 @@ if (
 |--------------------------------------------------------------------------
 */
 
-$tz = new DateTimeZone(TIMEZONE);
+$tz =
+    new DateTimeZone(
+        TIMEZONE
+    );
 
-$slotDateTime = new DateTimeImmutable(
-    $date . ' ' . $time . ':00',
-    $tz
-);
+$slotDateTime =
+    new DateTimeImmutable(
+        $date .
+        ' ' .
+        $time .
+        ':00',
+        $tz
+    );
 
-$now = new DateTimeImmutable(
-    'now',
-    $tz
-);
+$now =
+    new DateTimeImmutable(
+        'now',
+        $tz
+    );
 
 if (
     $slotDateTime <=
-    $now->modify('+30 minutes')
+    $now->modify(
+        '+30 minutes'
+    )
 ) {
     respond([
         'success' => false,
@@ -753,20 +1101,55 @@ if (
 
 /*
 |--------------------------------------------------------------------------
+| VÉRIFICATION DES INDISPONIBILITÉS
+|--------------------------------------------------------------------------
+|
+| Cette vérification est volontairement faite côté serveur.
+| Même si quelqu’un tente de contourner l’interface publique
+| et d’envoyer directement une requête POST, un créneau bloqué
+| ne pourra pas être réservé.
+|
+*/
+
+foreach (
+    readAvailabilityBlocks()
+    as $block
+) {
+    if (
+        blockOverlapsSlot(
+            $block,
+            $date,
+            $time
+        )
+    ) {
+        respond([
+            'success' => false,
+            'message' =>
+                'Ce créneau n’est pas disponible.'
+        ], 409);
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
 | VERROUILLAGE / RÉSERVATION
 |--------------------------------------------------------------------------
 */
 
 ensureStorage();
 
-$handle = @fopen(
-    bookingsFile(),
-    'c+'
-);
+$handle =
+    @fopen(
+        bookingsFile(),
+        'c+'
+    );
 
 if (
     !$handle ||
-    !flock($handle, LOCK_EX)
+    !flock(
+        $handle,
+        LOCK_EX
+    )
 ) {
     respond([
         'success' => false,
@@ -775,14 +1158,25 @@ if (
     ], 500);
 }
 
-$bookings = readBookings($handle);
+$bookings =
+    readBookings($handle);
 
-foreach ($bookings as $booking) {
+foreach (
+    $bookings as $booking
+) {
     if (
-        ($booking['date'] ?? '') === $date &&
-        overlaps($time, $booking)
+        ($booking['date'] ?? '')
+        === $date &&
+        overlaps(
+            $time,
+            $booking
+        )
     ) {
-        flock($handle, LOCK_UN);
+        flock(
+            $handle,
+            LOCK_UN
+        );
+
         fclose($handle);
 
         respond([
@@ -799,28 +1193,59 @@ foreach ($bookings as $booking) {
 |--------------------------------------------------------------------------
 */
 
-$reference = generateReference($now);
+$reference =
+    generateReference($now);
 
 $booking = [
-    'reference' => $reference,
+    'reference' =>
+        $reference,
+
     'created_at' =>
-        $now->format(DateTimeInterface::ATOM),
-    'date' => $date,
-    'time' => $time,
-    'duration' => 30,
-    'name' => $name,
-    'phone' => $phone,
-    'company' => $company,
-    'reason' => $reason,
-    'status' => 'confirmed'
+        $now->format(
+            DateTimeInterface::ATOM
+        ),
+
+    'date' =>
+        $date,
+
+    'time' =>
+        $time,
+
+    'duration' =>
+        30,
+
+    'name' =>
+        $name,
+
+    'phone' =>
+        $phone,
+
+    'company' =>
+        $company,
+
+    'reason' =>
+        $reason,
+
+    'status' =>
+        'confirmed'
 ];
 
-$bookings[] = $booking;
+$bookings[] =
+    $booking;
 
 rewind($handle);
 
-if (!ftruncate($handle, 0)) {
-    flock($handle, LOCK_UN);
+if (
+    !ftruncate(
+        $handle,
+        0
+    )
+) {
+    flock(
+        $handle,
+        LOCK_UN
+    );
+
     fclose($handle);
 
     respond([
@@ -830,18 +1255,26 @@ if (!ftruncate($handle, 0)) {
     ], 500);
 }
 
-$json = json_encode(
-    $bookings,
-    JSON_UNESCAPED_UNICODE |
-    JSON_UNESCAPED_SLASHES |
-    JSON_PRETTY_PRINT
-);
+$json =
+    json_encode(
+        $bookings,
+        JSON_UNESCAPED_UNICODE |
+        JSON_UNESCAPED_SLASHES |
+        JSON_PRETTY_PRINT
+    );
 
 if (
     !is_string($json) ||
-    fwrite($handle, $json) === false
+    fwrite(
+        $handle,
+        $json
+    ) === false
 ) {
-    flock($handle, LOCK_UN);
+    flock(
+        $handle,
+        LOCK_UN
+    );
+
     fclose($handle);
 
     respond([
@@ -853,7 +1286,11 @@ if (
 
 fflush($handle);
 
-flock($handle, LOCK_UN);
+flock(
+    $handle,
+    LOCK_UN
+);
+
 fclose($handle);
 
 /*
@@ -862,7 +1299,10 @@ fclose($handle);
 |--------------------------------------------------------------------------
 */
 
-$dateLabel = $slotDateTime->format('d/m/Y');
+$dateLabel =
+    $slotDateTime->format(
+        'd/m/Y'
+    );
 
 $companyLabel =
     $company !== ''
@@ -894,7 +1334,8 @@ $body =
     "{$reason}\n";
 
 try {
-    $config = mailConfig();
+    $config =
+        mailConfig();
 
     smtpSendMail(
         (string)$config['smtp_host'],
@@ -910,20 +1351,25 @@ try {
 
     respond([
         'success' => true,
-        'reference' => $reference,
-        'emailSent' => true
+        'reference' =>
+            $reference,
+        'emailSent' =>
+            true
     ]);
-} catch (Throwable $e) {
-
+} catch (
+    Throwable $e
+) {
     /*
-    | Le rendez-vous reste enregistré même si
-    | l'envoi email échoue.
-    */
+     * Le rendez-vous reste enregistré même
+     * si l'envoi de l'email échoue.
+     */
 
     respond([
         'success' => true,
-        'reference' => $reference,
-        'emailSent' => false,
+        'reference' =>
+            $reference,
+        'emailSent' =>
+            false,
         'message' =>
             'Votre rendez-vous est bien enregistré, mais la notification email n’a pas pu être envoyée.'
     ]);
