@@ -1,5 +1,4 @@
 import {
-  FormEvent,
   useEffect,
   useMemo,
   useState,
@@ -8,471 +7,467 @@ import {
 import {
   ArrowRight,
   CalendarDays,
-  CheckCircle2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Loader2,
   Phone,
-  ShieldCheck,
 } from "lucide-react";
 
-import { Link } from "react-router-dom";
-
 import SEO from "../components/SEO";
-import SectionLabel from "../components/SectionLabel";
 
 type Slot = {
   time: string;
   available: boolean;
 };
 
-const TIMEZONE = "Europe/Paris";
+type BookingResponse = {
+  success?: boolean;
+  message?: string;
+  slots?: Slot[];
+};
 
-function getNextBusinessDays(count: number) {
-  const days: string[] = [];
+const WEEK_DAYS = [
+  "dimanche",
+  "lundi",
+  "mardi",
+  "mercredi",
+  "jeudi",
+  "vendredi",
+  "samedi",
+];
 
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+const MONTHS = [
+  "janvier",
+  "février",
+  "mars",
+  "avril",
+  "mai",
+  "juin",
+  "juillet",
+  "août",
+  "septembre",
+  "octobre",
+  "novembre",
+  "décembre",
+];
 
-  const now = new Date();
-
-  for (
-    let offset = 0;
-    days.length < count && offset < 60;
-    offset++
-  ) {
-    const date = new Date(now);
-
-    date.setDate(
-      date.getDate() + offset
-    );
-
-    const weekday =
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: TIMEZONE,
-        weekday: "short",
-      }).format(date);
-
-    if (
-      weekday === "Sat" ||
-      weekday === "Sun"
-    ) {
-      continue;
-    }
-
-    days.push(
-      formatter.format(date)
-    );
-  }
-
-  return days;
-}
-
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    timeZone: TIMEZONE,
-  }).format(
-    new Date(`${date}T12:00:00`)
-  );
-}
-
-function generateSlots(): Slot[] {
-  const slots: Slot[] = [];
-
-  for (
-    let minutes = 9 * 60;
-    minutes < 18 * 60;
-    minutes += 30
-  ) {
-    const hours =
-      Math.floor(minutes / 60);
-
-    const mins =
-      minutes % 60;
-
-    slots.push({
-      time:
-        `${String(hours).padStart(2, "0")}:` +
-        `${String(mins).padStart(2, "0")}`,
-      available: true,
-    });
-  }
-
-  return slots;
-}
-
-function getParisDateTime(
-  date: string,
-  time: string
+function formatDate(
+  value: Date,
 ) {
-  return new Date(
-    `${date}T${time}:00`
-  );
+  return `${value.getFullYear()}-${String(
+    value.getMonth() + 1,
+  ).padStart(
+    2,
+    "0",
+  )}-${String(
+    value.getDate(),
+  ).padStart(2, "0")}`;
 }
 
-function isSlotInPast(
-  date: string,
-  time: string
+function formatLongDate(
+  value: Date,
 ) {
-  const now = new Date();
+  return `${WEEK_DAYS[value.getDay()]} ${value.getDate()} ${
+    MONTHS[value.getMonth()]
+  } ${value.getFullYear()}`;
+}
 
-  const slot =
-    getParisDateTime(
-      date,
-      time
-    );
+function startOfDay(
+  value: Date,
+) {
+  const date = new Date(value);
+  date.setHours(
+    0,
+    0,
+    0,
+    0,
+  );
+  return date;
+}
 
+function addDays(
+  value: Date,
+  amount: number,
+) {
+  const date = new Date(value);
+  date.setDate(
+    date.getDate() + amount,
+  );
+  return date;
+}
+
+function sameDate(
+  a: Date,
+  b: Date,
+) {
   return (
-    slot.getTime() <=
-    now.getTime() +
-      30 * 60 * 1000
+    a.getFullYear() ===
+      b.getFullYear() &&
+    a.getMonth() ===
+      b.getMonth() &&
+    a.getDate() ===
+      b.getDate()
   );
 }
 
 export default function Booking() {
-  const dates = useMemo(
-    () => getNextBusinessDays(15),
-    []
+  const today = startOfDay(
+    new Date(),
   );
 
-  const [date, setDate] = useState(
-    dates[0] ?? ""
-  );
+  const [selectedDate, setSelectedDate] =
+    useState<Date>(today);
 
-  const [slots, setSlots] =
-    useState<Slot[]>(
-      generateSlots()
+  const [month, setMonth] =
+    useState<Date>(
+      new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1,
+      ),
     );
 
-  const [time, setTime] =
+  const [slots, setSlots] =
+    useState<Slot[]>([]);
+
+  const [selectedTime, setSelectedTime] =
     useState("");
 
-  const [loadingSlots, setLoadingSlots] =
+  const [loading, setLoading] =
     useState(false);
 
-  const [sending, setSending] =
+  const [bookingLoading, setBookingLoading] =
     useState(false);
 
   const [error, setError] =
     useState("");
 
-  const [confirmation, setConfirmation] =
-    useState<{
-      reference: string;
-      date: string;
-      time: string;
-    } | null>(null);
+  const [success, setSuccess] =
+    useState(false);
 
-  /*
-  |--------------------------------------------------------------------------
-  | CHARGEMENT DES CRÉNEAUX
-  |--------------------------------------------------------------------------
-  |
-  | Les horaires sont générés côté navigateur.
-  | Le PHP sert uniquement à connaître les créneaux
-  | déjà réservés.
-  |
-  */
+  const [form, setForm] =
+    useState({
+      name: "",
+      company: "",
+      phone: "",
+      email: "",
+      reason: "",
+    });
 
-  useEffect(() => {
-    async function loadAvailability() {
-      if (!date) {
-        setSlots([]);
-        return;
-      }
+  const firstDay = new Date(
+    month.getFullYear(),
+    month.getMonth(),
+    1,
+  );
 
-      setLoadingSlots(true);
-      setError("");
-      setTime("");
+  const lastDay = new Date(
+    month.getFullYear(),
+    month.getMonth() + 1,
+    0,
+  );
 
-      /*
-       * Toujours afficher les horaires.
-       * On ne dépend plus d'une réponse PHP pour
-       * construire l'interface.
-       */
-      const localSlots =
-        generateSlots().map(
-          (slot) => ({
-            ...slot,
-            available:
-              !isSlotInPast(
-                date,
-                slot.time
-              ),
-          })
-        );
+  const calendarDays = useMemo(() => {
+    const days: Array<
+      Date | null
+    > = [];
 
-      setSlots(localSlots);
+    const offset =
+      (firstDay.getDay() + 6) %
+      7;
 
-      try {
-        const params =
-          new URLSearchParams({
-            action: "slots",
-            date,
-          });
-
-        const response =
-          await fetch(
-            `/booking.php?${params.toString()}`,
-            {
-              method: "GET",
-              cache: "no-store",
-              headers: {
-                Accept:
-                  "application/json",
-              },
-            }
-          );
-
-        /*
-         * Si PHP répond correctement,
-         * on utilise ses disponibilités réelles.
-         */
-        const contentType =
-          response.headers.get(
-            "content-type"
-          ) ?? "";
-
-        if (
-          response.ok &&
-          contentType.includes(
-            "application/json"
-          )
-        ) {
-          const data =
-            await response.json();
-
-          if (
-            data?.success &&
-            Array.isArray(
-              data.slots
-            )
-          ) {
-            const serverSlots =
-              data.slots as Slot[];
-
-            setSlots(
-              localSlots.map(
-                (localSlot) => {
-                  const serverSlot =
-                    serverSlots.find(
-                      (item) =>
-                        item.time ===
-                        localSlot.time
-                    );
-
-                  return {
-                    ...localSlot,
-                    available:
-                      serverSlot
-                        ? Boolean(
-                            serverSlot.available
-                          )
-                        : localSlot.available,
-                  };
-                }
-              )
-            );
-          }
-        }
-      } catch {
-        /*
-         * Très important :
-         * une erreur du PHP ne doit jamais
-         * faire disparaître les horaires.
-         *
-         * Les horaires locaux restent affichés.
-         */
-      } finally {
-        setLoadingSlots(false);
-      }
+    for (
+      let index = 0;
+      index < offset;
+      index += 1
+    ) {
+      days.push(null);
     }
 
-    loadAvailability();
-  }, [date]);
+    for (
+      let day = 1;
+      day <= lastDay.getDate();
+      day += 1
+    ) {
+      days.push(
+        new Date(
+          month.getFullYear(),
+          month.getMonth(),
+          day,
+        ),
+      );
+    }
 
-  async function submit(
-    event: FormEvent<HTMLFormElement>
+    return days;
+  }, [
+    month,
+    firstDay,
+    lastDay,
+  ]);
+
+  async function loadSlots(
+    date: Date,
   ) {
-    event.preventDefault();
-
+    setLoading(true);
     setError("");
-
-    if (!date || !time) {
-      setError(
-        "Choisissez une date et un créneau."
-      );
-
-      return;
-    }
-
-    setSending(true);
-
-    const formData =
-      new FormData(
-        event.currentTarget
-      );
-
-    formData.set(
-      "action",
-      "book"
-    );
-
-    formData.set(
-      "date",
-      date
-    );
-
-    formData.set(
-      "time",
-      time
-    );
+    setSelectedTime("");
+    setSlots([]);
 
     try {
-      const response =
-        await fetch(
-          "/booking.php",
-          {
-            method: "POST",
-            body: formData,
-            cache: "no-store",
-          }
-        );
+      const response = await fetch(
+        `/booking.php?action=slots&date=${formatDate(
+          date,
+        )}&ts=${Date.now()}`,
+        {
+          cache: "no-store",
+        },
+      );
 
-      const contentType =
-        response.headers.get(
-          "content-type"
-        ) ?? "";
-
-      if (
-        !contentType.includes(
-          "application/json"
-        )
-      ) {
-        throw new Error(
-          "Le serveur n’a pas retourné une réponse valide."
-        );
-      }
-
-      const data =
+      const json: BookingResponse =
         await response.json();
 
       if (
         !response.ok ||
-        !data.success
+        !json.success
       ) {
         throw new Error(
-          data.message ||
-            "La réservation n’a pas pu être enregistrée."
+          json.message ||
+            "Impossible de charger les créneaux.",
         );
       }
 
-      setConfirmation({
-        reference:
-          data.reference,
-        date,
-        time,
-      });
+      setSlots(
+        Array.isArray(json.slots)
+          ? json.slots
+          : [],
+      );
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "La réservation n’a pas pu être enregistrée."
+          : "Impossible de charger les créneaux.",
       );
     } finally {
-      setSending(false);
+      setLoading(false);
     }
   }
 
-  if (confirmation) {
+  useEffect(() => {
+    loadSlots(selectedDate);
+  }, [selectedDate]);
+
+  function updateForm(
+    key: keyof typeof form,
+    value: string,
+  ) {
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  async function submitBooking(
+    event: React.FormEvent,
+  ) {
+    event.preventDefault();
+
+    if (!selectedTime) {
+      setError(
+        "Choisissez d'abord un créneau.",
+      );
+      return;
+    }
+
+    if (!form.name.trim()) {
+      setError(
+        "Veuillez indiquer votre nom.",
+      );
+      return;
+    }
+
+    if (!form.phone.trim()) {
+      setError(
+        "Veuillez indiquer votre numéro de téléphone.",
+      );
+      return;
+    }
+
+    setBookingLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        "/booking.php",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            action: "book",
+            date: formatDate(
+              selectedDate,
+            ),
+            time: selectedTime,
+            name: form.name.trim(),
+            company:
+              form.company.trim(),
+            phone: form.phone.trim(),
+            email:
+              form.email.trim(),
+            reason:
+              form.reason.trim(),
+          }),
+        },
+      );
+
+      const json =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !json.success
+      ) {
+        throw new Error(
+          json.message ||
+            "Impossible de confirmer le rendez-vous.",
+        );
+      }
+
+      setSuccess(true);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Impossible de confirmer le rendez-vous.",
+      );
+
+      await loadSlots(
+        selectedDate,
+      );
+    } finally {
+      setBookingLoading(false);
+    }
+  }
+
+  function previousMonth() {
+    const previous = new Date(
+      month.getFullYear(),
+      month.getMonth() - 1,
+      1,
+    );
+
+    const minimum = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1,
+    );
+
+    if (
+      previous.getTime() <
+      minimum.getTime()
+    ) {
+      return;
+    }
+
+    setMonth(previous);
+  }
+
+  function nextMonth() {
+    const maximum = new Date(
+      today.getFullYear(),
+      today.getMonth() + 2,
+      0,
+    );
+
+    const next = new Date(
+      month.getFullYear(),
+      month.getMonth() + 1,
+      1,
+    );
+
+    if (
+      next.getTime() >
+      new Date(
+        maximum.getFullYear(),
+        maximum.getMonth(),
+        1,
+      ).getTime()
+    ) {
+      return;
+    }
+
+    setMonth(next);
+  }
+
+  if (success) {
     return (
       <>
         <SEO
-          title="Rendez-vous confirmé | Vitrine+"
-          description="Votre rendez-vous téléphonique Vitrine+ est confirmé."
+          title="Rendez-vous confirmé — Vitrine+"
+          description="Votre rendez-vous avec Vitrine+ est confirmé."
           canonical="/rendez-vous"
         />
 
-        <section className="px-6 pb-24 pt-36 lg:px-8 lg:pt-44">
-          <div className="mx-auto max-w-3xl rounded-[2rem] bg-[#080808] p-8 text-white sm:p-14">
-            <CheckCircle2
-              size={44}
-              className="text-[#c8a45d]"
-            />
+        <main className="min-h-screen bg-[#080808] px-6 py-20 text-white">
+          <div className="mx-auto max-w-2xl pt-20 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#c8a45d] text-black">
+              <Check size={28} />
+            </div>
 
-            <SectionLabel>
+            <div className="mt-8 text-[10px] font-extrabold uppercase tracking-[.3em] text-[#c8a45d]">
               Rendez-vous confirmé
-            </SectionLabel>
+            </div>
 
-            <h1 className="display mt-5 text-5xl font-extrabold sm:text-7xl">
-              À bientôt.
+            <h1 className="mt-5 text-4xl font-extrabold tracking-tight sm:text-6xl">
+              À très bientôt.
             </h1>
 
-            <p className="mt-5 max-w-xl text-lg leading-8 text-white/55">
-              Votre rendez-vous téléphonique
-              est bien enregistré. Nous vous
-              appellerons au numéro indiqué lors
-              de la réservation.
+            <p className="mx-auto mt-6 max-w-xl text-sm leading-7 text-white/50">
+              Votre demande de rendez-vous a bien été enregistrée. Nous vous appellerons au numéro indiqué.
             </p>
 
-            <div className="mt-8 rounded-2xl border border-white/10 bg-white/[.04] p-6">
+            <div className="mx-auto mt-8 max-w-md rounded-[2rem] border border-white/10 bg-white/[.04] p-6 text-left">
               <div className="flex items-center gap-3">
-                <Phone
-                  size={19}
+                <CalendarDays
+                  size={20}
                   className="text-[#c8a45d]"
                 />
 
-                <span className="font-bold">
-                  Rendez-vous téléphonique
-                </span>
+                <div>
+                  <div className="font-extrabold">
+                    {formatLongDate(
+                      selectedDate,
+                    )}
+                  </div>
+
+                  <div className="mt-1 text-sm text-white/40">
+                    {selectedTime}
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-6 grid gap-5 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs text-white/35">
-                    Date
-                  </p>
+              <div className="mt-5 flex items-center gap-3 text-sm text-white/50">
+                <Phone
+                  size={17}
+                  className="text-[#c8a45d]"
+                />
 
-                  <p className="mt-1 font-bold capitalize">
-                    {formatDate(
-                      confirmation.date
-                    )}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-white/35">
-                    Heure
-                  </p>
-
-                  <p className="mt-1 font-bold">
-                    {confirmation.time}
-                  </p>
-                </div>
+                {form.phone}
               </div>
             </div>
 
-            <p className="mt-5 text-xs text-white/35">
-              Référence :{" "}
-              {confirmation.reference}
-            </p>
-
-            <Link
-              to="/"
-              className="mt-8 inline-flex items-center gap-2 rounded-full bg-[#c8a45d] px-6 py-3.5 text-sm font-bold text-black"
+            <a
+              href="/"
+              className="mt-8 inline-flex items-center gap-2 rounded-full bg-[#c8a45d] px-7 py-4 text-sm font-extrabold text-black transition hover:bg-white"
             >
-              Retour à l’accueil
-
-              <ArrowRight size={16} />
-            </Link>
+              Retour au site
+              <ArrowRight size={17} />
+            </a>
           </div>
-        </section>
+        </main>
       </>
     );
   }
@@ -485,301 +480,338 @@ export default function Booking() {
         canonical="/rendez-vous"
       />
 
-      <section className="relative overflow-hidden px-6 pb-14 pt-32 lg:px-8 lg:pb-20 lg:pt-40">
-        <div className="absolute -right-40 top-10 h-[500px] w-[500px] rounded-full bg-[#c8a45d]/10 blur-[110px]" />
-
-        <div className="relative mx-auto max-w-7xl">
-          <SectionLabel>
-            Prendre rendez-vous
-          </SectionLabel>
-
-          <h1 className="display mt-7 max-w-5xl text-5xl font-extrabold leading-[.95] sm:text-7xl lg:text-[92px]">
-            Parlons de votre projet.
-
-            <span className="block text-black/25">
-              Au téléphone.
-            </span>
-          </h1>
-
-          <p className="mt-7 max-w-2xl text-lg leading-8 text-black/55">
-            Choisissez directement un jour
-            et une heure. Nous vous appellerons
-            au numéro que vous indiquez.
-          </p>
-        </div>
-      </section>
-
-      <section className="px-6 pb-24 lg:px-8 lg:pb-32">
+      <main className="min-h-screen bg-[#f4f4f1] px-5 pb-20 pt-28 text-[#080808] sm:px-8 lg:px-12">
         <div className="mx-auto max-w-7xl">
-          <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]">
-
-            <div className="rounded-[2rem] bg-[#080808] p-8 text-white sm:p-10">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#c8a45d] text-black">
-                <Phone size={21} />
-              </div>
-
-              <h2 className="display mt-8 text-4xl font-extrabold">
-                Un échange simple.
-              </h2>
-
-              <p className="mt-5 text-base leading-7 text-white/50">
-                Pas de visio à installer.
-                Pas de formulaire interminable.
-                Vous choisissez votre créneau
-                et nous vous appelons.
-              </p>
-
-              <div className="mt-8 grid gap-4 border-t border-white/10 pt-7">
-                <div className="flex gap-3">
-                  <CalendarDays
-                    size={18}
-                    className="shrink-0 text-[#c8a45d]"
-                  />
-
-                  <span className="text-sm text-white/60">
-                    Choisissez votre date.
-                  </span>
-                </div>
-
-                <div className="flex gap-3">
-                  <Clock3
-                    size={18}
-                    className="shrink-0 text-[#c8a45d]"
-                  />
-
-                  <span className="text-sm text-white/60">
-                    Choisissez votre heure.
-                  </span>
-                </div>
-
-                <div className="flex gap-3">
-                  <Phone
-                    size={18}
-                    className="shrink-0 text-[#c8a45d]"
-                  />
-
-                  <span className="text-sm text-white/60">
-                    Nous vous appelons.
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-8 border-t border-white/10 pt-6">
-                <div className="flex gap-3">
-                  <ShieldCheck
-                    size={18}
-                    className="shrink-0 text-[#c8a45d]"
-                  />
-
-                  <p className="text-xs leading-5 text-white/40">
-                    Vos informations servent
-                    uniquement à organiser votre
-                    rendez-vous et à vous recontacter
-                    dans ce cadre.
-                  </p>
-                </div>
-              </div>
+          <div className="max-w-3xl">
+            <div className="text-[10px] font-extrabold uppercase tracking-[.3em] text-[#a17e32]">
+              Vitrine+
             </div>
 
-            <div className="rounded-[2rem] border border-black/10 bg-[#f5f5f2] p-7 sm:p-10">
-              <div className="grid gap-10 lg:grid-cols-[.85fr_1.15fr]">
+            <h1 className="mt-5 text-4xl font-extrabold tracking-tight sm:text-6xl">
+              Prendre rendez-vous.
+            </h1>
 
-                {/* DATES */}
+            <p className="mt-5 max-w-2xl text-base leading-7 text-black/50">
+              Choisissez un créneau pour échanger directement sur votre entreprise, votre site et vos objectifs digitaux.
+            </p>
+          </div>
 
+          <div className="mt-12 grid gap-8 lg:grid-cols-[1.05fr_.95fr]">
+            <section className="rounded-[2rem] border border-black/10 bg-white p-5 sm:p-8">
+              <div className="flex items-center justify-between">
                 <div>
+                  <div className="text-xs font-extrabold uppercase tracking-[.15em] text-black/35">
+                    Choisir une date
+                  </div>
+
+                  <div className="mt-2 text-xl font-extrabold">
+                    {MONTHS[
+                      month.getMonth()
+                    ]}{" "}
+                    {month.getFullYear()}
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={
+                      previousMonth
+                    }
+                    className="rounded-full border border-black/10 p-2 transition hover:bg-black hover:text-white"
+                  >
+                    <ChevronLeft
+                      size={18}
+                    />
+                  </button>
+
+                  <button
+                    onClick={
+                      nextMonth
+                    }
+                    className="rounded-full border border-black/10 p-2 transition hover:bg-black hover:text-white"
+                  >
+                    <ChevronRight
+                      size={18}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-7 grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold uppercase tracking-wider text-black/30">
+                <span>L</span>
+                <span>M</span>
+                <span>M</span>
+                <span>J</span>
+                <span>V</span>
+                <span>S</span>
+                <span>D</span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-7 gap-1">
+                {calendarDays.map(
+                  (date, index) => {
+                    if (!date) {
+                      return (
+                        <div
+                          key={`empty-${index}`}
+                          className="aspect-square"
+                        />
+                      );
+                    }
+
+                    const isPast =
+                      startOfDay(
+                        date,
+                      ).getTime() <
+                      today.getTime();
+
+                    const isSelected =
+                      sameDate(
+                        date,
+                        selectedDate,
+                      );
+
+                    const isSunday =
+                      date.getDay() ===
+                      0;
+
+                    const disabled =
+                      isPast ||
+                      isSunday;
+
+                    return (
+                      <button
+                        key={formatDate(
+                          date,
+                        )}
+                        disabled={
+                          disabled
+                        }
+                        onClick={() =>
+                          setSelectedDate(
+                            date,
+                          )
+                        }
+                        className={`aspect-square rounded-xl text-sm font-bold transition ${
+                          isSelected
+                            ? "bg-[#080808] text-white"
+                            : disabled
+                              ? "cursor-not-allowed text-black/15"
+                              : "hover:bg-[#c8a45d]/20"
+                        }`}
+                      >
+                        {date.getDate()}
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+
+              <div className="mt-8 border-t border-black/10 pt-7">
+                <div className="flex items-center gap-3">
+                  <CalendarDays
+                    size={18}
+                    className="text-[#c8a45d]"
+                  />
+
+                  <div>
+                    <div className="text-xs font-extrabold uppercase tracking-[.15em] text-black/35">
+                      Date sélectionnée
+                    </div>
+
+                    <div className="mt-1 font-extrabold capitalize">
+                      {formatLongDate(
+                        selectedDate,
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6">
                   <div className="flex items-center gap-3">
-                    <CalendarDays
-                      size={20}
+                    <Clock3
+                      size={18}
                       className="text-[#c8a45d]"
                     />
 
-                    <span className="text-sm font-bold">
-                      Choisissez une date
-                    </span>
+                    <div className="text-xs font-extrabold uppercase tracking-[.15em] text-black/35">
+                      Créneaux disponibles
+                    </div>
                   </div>
 
-                  <div className="mt-5 grid gap-2">
-                    {dates.map(
-                      (item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() =>
-                            setDate(item)
-                          }
-                         className={`rounded-2xl px-4 py-3 text-left text-sm font-semibold capitalize transition ${
-  date === item
-    ? "!bg-[#080808] !text-white"
-    : "bg-white text-black hover:bg-black/5"
-}`}
-                        >
-                          {formatDate(item)}
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-
-                {/* HORAIRES */}
-
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold">
-                      Choisissez une heure
-                    </span>
-
-                    {loadingSlots && (
+                  {loading ? (
+                    <div className="flex justify-center py-12">
                       <Loader2
-                        size={17}
+                        size={24}
                         className="animate-spin text-[#c8a45d]"
                       />
-                    )}
-                  </div>
-
-                  <p className="mt-2 text-xs text-black/40">
-                    Horaires disponibles :
-                    09h00 à 18h00,
-                    du lundi au vendredi.
-                  </p>
-
-                  <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {slots.map(
-                      (slot) => (
-                        <button
-                          key={slot.time}
-                          type="button"
-                          disabled={
-                            !slot.available
-                          }
-                          onClick={() =>
-                            setTime(
-                              slot.time
-                            )
-                          }
-                          className={`rounded-xl border px-3 py-3 text-sm font-bold transition ${
-  time === slot.time
-    ? "!border-[#080808] !bg-[#080808] !text-white"
-    : slot.available
-      ? "border-black/10 bg-white text-black hover:border-[#c8a45d]"
-      : "cursor-not-allowed border-black/5 bg-black/5 text-black/20"
-}`}
-                        >
-                          {slot.time}
-                        </button>
-                      )
-                    )}
-                  </div>
-
-                  {slots.length === 0 && (
-                    <p className="mt-5 text-sm text-black/45">
-                      Aucun créneau disponible
-                      cette journée.
-                    </p>
+                    </div>
+                  ) : slots.filter(
+                      (slot) =>
+                        slot.available,
+                    ).length ===
+                    0 ? (
+                    <div className="mt-4 rounded-2xl border border-black/10 bg-black/[.02] p-5 text-sm text-black/45">
+                      Aucun créneau disponible pour cette date.
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {slots
+                        .filter(
+                          (slot) =>
+                            slot.available,
+                        )
+                        .map(
+                          (slot) => (
+                            <button
+                              key={
+                                slot.time
+                              }
+                              onClick={() =>
+                                setSelectedTime(
+                                  slot.time,
+                                )
+                              }
+                              className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                                selectedTime ===
+                                slot.time
+                                  ? "border-[#c8a45d] bg-[#c8a45d] text-black"
+                                  : "border-black/10 bg-white hover:border-[#c8a45d]"
+                              }`}
+                            >
+                              {slot.time}
+                            </button>
+                          ),
+                        )}
+                    </div>
                   )}
                 </div>
               </div>
+            </section>
 
-              {/* FORMULAIRE */}
+            <section className="rounded-[2rem] bg-[#080808] p-6 text-white sm:p-8">
+              <div className="text-[10px] font-extrabold uppercase tracking-[.3em] text-[#c8a45d]">
+                Vos coordonnées
+              </div>
+
+              <h2 className="mt-4 text-3xl font-extrabold">
+                Parlons de votre projet.
+              </h2>
+
+              <p className="mt-4 text-sm leading-7 text-white/45">
+                Nous vous appelons directement au créneau choisi.
+              </p>
 
               <form
-                onSubmit={submit}
-                className="mt-10 border-t border-black/10 pt-10"
+                onSubmit={
+                  submitBooking
+                }
+                className="mt-8 space-y-4"
               >
-                <p className="text-xs font-bold uppercase tracking-[.2em] text-black/35">
-                  Pour que nous puissions vous appeler
-                </p>
+                <Field
+                  label="Nom *"
+                  value={form.name}
+                  onChange={(value) =>
+                    updateForm(
+                      "name",
+                      value,
+                    )
+                  }
+                />
 
-                <div className="mt-5 grid gap-5 sm:grid-cols-2">
-                  <Field
-                    label="Nom / prénom"
-                    name="name"
-                    required
-                  />
+                <Field
+                  label="Entreprise"
+                  value={
+                    form.company
+                  }
+                  onChange={(value) =>
+                    updateForm(
+                      "company",
+                      value,
+                    )
+                  }
+                />
 
-                  <Field
-                    label="Téléphone"
-                    name="phone"
-                    type="tel"
-                    required
-                  />
+                <Field
+                  label="Téléphone *"
+                  type="tel"
+                  inputMode="tel"
+                  value={
+                    form.phone
+                  }
+                  onChange={(value) =>
+                    updateForm(
+                      "phone",
+                      value,
+                    )
+                  }
+                />
 
-                  <Field
-                    label="Entreprise"
-                    name="company"
-                  />
-                </div>
+                <Field
+                  label="E-mail"
+                  type="text"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={
+                    form.email
+                  }
+                  onChange={(value) =>
+                    updateForm(
+                      "email",
+                      value,
+                    )
+                  }
+                />
 
-                <div className="mt-5">
-                  <label
-                    htmlFor="reason"
-                    className="mb-2 block text-sm font-semibold"
-                  >
-                    Pourquoi souhaitez-vous être rappelé ?
-                  </label>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold text-white/45">
+                    Sujet
+                  </span>
 
                   <textarea
-                    id="reason"
-                    name="reason"
-                    rows={5}
-                    required
-                    placeholder="Ex. Je souhaite refaire mon site et améliorer ma visibilité sur Google..."
-                    className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3.5 outline-none transition focus:border-[#c8a45d]"
+                    value={
+                      form.reason
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      updateForm(
+                        "reason",
+                        event.target
+                          .value,
+                      )
+                    }
+                    rows={4}
+                    placeholder="Décrivez rapidement votre projet..."
+                    className="w-full rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-[#c8a45d]"
                   />
-                </div>
-
-                <div className="hidden">
-                  <label>
-                    Ne pas remplir
-
-                    <input
-                      name="website"
-                      autoComplete="off"
-                      tabIndex={-1}
-                    />
-                  </label>
-                </div>
-
-                <label className="mt-5 flex gap-3 text-xs leading-5 text-black/50">
-                  <input
-                    name="consent"
-                    type="checkbox"
-                    required
-                    className="mt-1"
-                  />
-
-                  J’accepte que les informations
-                  saisies soient utilisées pour
-                  organiser ce rendez-vous et
-                  répondre à ma demande.
                 </label>
 
-                {error && (
-                  <p className="mt-5 rounded-2xl bg-red-50 p-4 text-sm leading-6 text-red-700">
+                {error ? (
+                  <div className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-xs font-bold text-red-200">
                     {error}
-                  </p>
-                )}
+                  </div>
+                ) : null}
 
                 <button
                   type="submit"
                   disabled={
-                    sending ||
-                    !time
+                    bookingLoading ||
+                    !selectedTime
                   }
-                  className="mt-7 inline-flex items-center justify-center gap-2 rounded-full bg-[#080808] px-7 py-4 text-sm font-bold text-white transition hover:bg-[#c8a45d] hover:text-[#080808] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#c8a45d] px-6 py-4 text-sm font-extrabold text-black transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {sending ? (
+                  {bookingLoading ? (
                     <>
                       <Loader2
                         size={17}
                         className="animate-spin"
                       />
-
-                      Réservation…
+                      Confirmation...
                     </>
                   ) : (
                     <>
-                      Réserver mon appel
-
+                      Confirmer le rendez-vous
                       <ArrowRight
                         size={17}
                       />
@@ -787,52 +819,58 @@ export default function Booking() {
                   )}
                 </button>
 
-                <p className="mt-4 text-xs text-black/35">
-                  Rendez-vous téléphonique
-                  gratuit et sans engagement.
+                <p className="text-center text-[11px] leading-5 text-white/25">
+                  En confirmant, vous demandez simplement à être rappelé au créneau sélectionné.
                 </p>
               </form>
-            </div>
+            </section>
           </div>
         </div>
-      </section>
+      </main>
     </>
   );
 }
 
 function Field({
   label,
-  name,
+  value,
+  onChange,
   type = "text",
-  required = false,
+  inputMode,
+  autoComplete,
 }: {
   label: string;
-  name: string;
+  value: string;
+  onChange: (
+    value: string,
+  ) => void;
   type?: string;
-  required?: boolean;
+  inputMode?:
+    | "email"
+    | "tel"
+    | "text";
+  autoComplete?: string;
 }) {
   return (
-    <div>
-      <label
-        htmlFor={name}
-        className="mb-2 block text-sm font-semibold"
-      >
+    <label className="block">
+      <span className="mb-2 block text-xs font-bold text-white/45">
         {label}
-
-        {!required && (
-          <span className="ml-1 font-normal text-black/35">
-            (facultatif)
-          </span>
-        )}
-      </label>
+      </span>
 
       <input
-        id={name}
-        name={name}
         type={type}
-        required={required}
-        className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3.5 outline-none transition focus:border-[#c8a45d]"
+        inputMode={inputMode}
+        autoComplete={
+          autoComplete
+        }
+        value={value}
+        onChange={(event) =>
+          onChange(
+            event.target.value,
+          )
+        }
+        className="w-full rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-[#c8a45d]"
       />
-    </div>
+    </label>
   );
 }

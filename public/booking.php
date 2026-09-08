@@ -1,681 +1,367 @@
 <?php
+
 declare(strict_types=1);
 
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('X-Content-Type-Options: nosniff');
+header(
+    'Content-Type: application/json; charset=utf-8'
+);
 
-const ADMIN_EMAIL = 'vitrineplus@hotmail.com';
-const FROM_EMAIL = 'contact@vitrineplus.fr';
-const FROM_NAME = 'Vitrine+';
+header(
+    'Cache-Control: no-store, no-cache, must-revalidate, max-age=0'
+);
 
-const TIMEZONE = 'Europe/Paris';
+const BASE_DIR = __DIR__;
 
-const OPEN_MINUTE = 9 * 60;
-const CLOSE_MINUTE = 18 * 60;
-const SLOT_STEP = 30;
-const MAX_DAYS_AHEAD = 60;
+const CONFIG_FILE =
+    BASE_DIR . '/vitrine-mail-config.php';
 
-function respond(array $data, int $status = 200): void
-{
+const BOOKINGS_FILE =
+    BASE_DIR . '/vitrine-data/bookings.json';
+
+const AVAILABILITY_FILE =
+    BASE_DIR . '/vitrine-data/availability.json';
+
+const SLOT_MINUTES = 30;
+
+const OPEN_HOUR = 9;
+
+const CLOSE_HOUR = 18;
+
+function respond(
+    array $data,
+    int $status = 200
+): never {
     http_response_code($status);
 
     echo json_encode(
         $data,
-        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        JSON_UNESCAPED_UNICODE |
+        JSON_UNESCAPED_SLASHES
     );
 
     exit;
 }
 
-/*
-|--------------------------------------------------------------------------
-| CONFIGURATION EMAIL
-|--------------------------------------------------------------------------
-*/
-
-function mailConfig(): array
-{
-    $configFile = __DIR__ . '/vitrine-mail-config.php';
-
-    if (!file_exists($configFile)) {
-        respond([
-            'success' => false,
-            'message' => 'Configuration email introuvable.'
-        ], 500);
-    }
-
-    $config = require $configFile;
-
-    if (!is_array($config)) {
-        respond([
-            'success' => false,
-            'message' => 'Configuration email invalide.'
-        ], 500);
-    }
-
-    $required = [
-        'smtp_host',
-        'smtp_port',
-        'smtp_username',
-        'smtp_password',
-        'from_email',
-        'from_name',
-        'to_email'
-    ];
-
-    foreach ($required as $key) {
-        if (
-            !isset($config[$key]) ||
-            trim((string)$config[$key]) === ''
-        ) {
-            respond([
-                'success' => false,
-                'message' => 'Configuration email incomplète.'
-            ], 500);
-        }
-    }
-
-    return $config;
-}
-
-/*
-|--------------------------------------------------------------------------
-| STOCKAGE
-|--------------------------------------------------------------------------
-*/
-
-function dataDirectory(): string
-{
-    return __DIR__ . '/vitrine-data';
-}
-
-function bookingsFile(): string
-{
-    return dataDirectory() . '/bookings.json';
-}
-
-function availabilityFile(): string
-{
-    return dataDirectory() . '/availability.json';
-}
-
-function ensureStorage(): void
-{
-    if (
-        !is_dir(dataDirectory()) &&
-        !@mkdir(dataDirectory(), 0755, true)
-    ) {
-        respond([
-            'success' => false,
-            'message' =>
-                'Le stockage des rendez-vous est indisponible.'
-        ], 500);
-    }
-
-    if (
-        !file_exists(bookingsFile()) &&
-        @file_put_contents(
-            bookingsFile(),
-            '[]',
-            LOCK_EX
-        ) === false
-    ) {
-        respond([
-            'success' => false,
-            'message' =>
-                'Le stockage des rendez-vous est indisponible.'
-        ], 500);
-    }
-}
-
-function readBookings($handle): array
-{
-    rewind($handle);
-
-    $contents = stream_get_contents($handle);
-
-    if (
-        !is_string($contents) ||
-        trim($contents) === ''
-    ) {
-        return [];
-    }
-
-    $data = json_decode(
-        $contents,
-        true
-    );
-
-    return is_array($data)
-        ? $data
-        : [];
-}
-
-function readAvailabilityBlocks(): array
-{
-    $file = availabilityFile();
-
+function read_json(
+    string $file,
+    mixed $default = []
+): mixed {
     if (!is_file($file)) {
-        return [];
+        return $default;
     }
 
-    $contents = @file_get_contents($file);
+    $content =
+        @file_get_contents($file);
 
-    if (
-        !is_string($contents) ||
-        trim($contents) === ''
-    ) {
-        return [];
+    if ($content === false) {
+        return $default;
     }
 
-    $data = json_decode(
-        $contents,
-        true
-    );
+    $data =
+        json_decode(
+            $content,
+            true
+        );
 
-    if (!is_array($data)) {
-        return [];
-    }
-
-    return array_values(
-        array_filter(
-            $data,
-            'is_array'
-        )
-    );
+    return json_last_error() === JSON_ERROR_NONE
+        ? $data
+        : $default;
 }
 
-/*
-|--------------------------------------------------------------------------
-| NETTOYAGE
-|--------------------------------------------------------------------------
-*/
+function write_json(
+    string $file,
+    mixed $data
+): bool {
+    $directory =
+        dirname($file);
+
+    if (
+        !is_dir($directory) &&
+        !mkdir(
+            $directory,
+            0755,
+            true
+        )
+    ) {
+        return false;
+    }
+
+    $json =
+        json_encode(
+            $data,
+            JSON_PRETTY_PRINT |
+            JSON_UNESCAPED_UNICODE |
+            JSON_UNESCAPED_SLASHES
+        );
+
+    if ($json === false) {
+        return false;
+    }
+
+    return
+        file_put_contents(
+            $file,
+            $json . PHP_EOL,
+            LOCK_EX
+        ) !== false;
+}
 
 function clean(
-    string $value,
-    int $max = 1000
+    mixed $value
 ): string {
-    $value = trim(
-        preg_replace(
-            '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u',
-            '',
-            $value
-        ) ?? ''
-    );
-
-    if (function_exists('mb_substr')) {
-        return mb_substr(
-            $value,
-            0,
-            $max,
-            'UTF-8'
-        );
-    }
-
-    return substr(
-        $value,
-        0,
-        $max
+    return trim(
+        strip_tags(
+            (string) $value
+        )
     );
 }
 
-/*
-|--------------------------------------------------------------------------
-| DATES / HORAIRES
-|--------------------------------------------------------------------------
-*/
-
-function validDate(
+function valid_date(
     string $date
 ): bool {
-    if (
-        !preg_match(
-            '/^\d{4}-\d{2}-\d{2}$/',
+    $object =
+        DateTime::createFromFormat(
+            'Y-m-d',
             $date
-        )
-    ) {
-        return false;
-    }
-
-    $tz = new DateTimeZone(
-        TIMEZONE
-    );
-
-    $d =
-        DateTimeImmutable::createFromFormat(
-            '!Y-m-d',
-            $date,
-            $tz
         );
 
-    if (!$d) {
-        return false;
-    }
-
-    $today =
-        new DateTimeImmutable(
-            'today',
-            $tz
-        );
-
-    return (
-        $d >= $today &&
-        $d <= $today->modify(
-            '+' .
-            MAX_DAYS_AHEAD .
-            ' days'
-        )
-    );
+    return
+        $object !== false &&
+        $object->format('Y-m-d') ===
+            $date;
 }
 
-function validTime(
+function valid_time(
     string $time
 ): bool {
-    return (bool)preg_match(
-        '/^(?:[01]\d|2[0-3]):[0-5]\d$/',
-        $time
-    );
+    return
+        preg_match(
+            '/^(?:[01]\d|2[0-3]):[0-5]\d$/',
+            $time
+        ) === 1;
 }
 
-function minutes(
-    string $time
-): int {
-    [
-        $h,
-        $m
-    ] = array_map(
-        'intval',
-        explode(':', $time)
-    );
-
-    return (
-        $h * 60
-    ) + $m;
-}
-
-/*
-|--------------------------------------------------------------------------
-| RÉSERVATIONS EXISTANTES
-|--------------------------------------------------------------------------
-*/
-
-function overlaps(
+function slot_is_blocked(
+    string $date,
     string $time,
-    array $booking
+    array $blocks
 ): bool {
-    if (
-        ($booking['status'] ?? 'confirmed')
-        !== 'confirmed'
-    ) {
-        return false;
-    }
+    foreach ($blocks as $block) {
+        if (!is_array($block)) {
+            continue;
+        }
 
-    $start =
-        minutes($time);
+        if (
+            ($block['date'] ?? '') !==
+            $date
+        ) {
+            continue;
+        }
 
-    $end =
-        $start +
-        SLOT_STEP;
-
-    $otherStart =
-        minutes(
-            (string)(
-                $booking['time']
-                ?? '00:00'
+        if (
+            !empty(
+                $block['all_day']
             )
-        );
+        ) {
+            return true;
+        }
 
-    $otherEnd =
-        $otherStart +
-        (int)(
-            $booking['duration']
-            ?? 30
-        );
-
-    return (
-        $start < $otherEnd &&
-        $otherStart < $end
-    );
-}
-
-/*
-|--------------------------------------------------------------------------
-| INDISPONIBILITÉS ADMINISTRATIVES
-|--------------------------------------------------------------------------
-*/
-
-function blockOverlapsSlot(
-    array $block,
-    string $date,
-    string $time
-): bool {
-    if (
-        ($block['date'] ?? '') !==
-        $date
-    ) {
-        return false;
-    }
-
-    /*
-     * Journée entièrement bloquée.
-     */
-    if (
-        !empty(
-            $block['all_day']
-        )
-    ) {
-        return true;
-    }
-
-    $startTime =
-        (string)(
-            $block['start_time']
-            ?? ''
-        );
-
-    $endTime =
-        (string)(
-            $block['end_time']
-            ?? ''
-        );
-
-    if (
-        !validTime($startTime) ||
-        !validTime($endTime)
-    ) {
-        return false;
-    }
-
-    $start =
-        minutes($time);
-
-    $end =
-        $start +
-        SLOT_STEP;
-
-    $blockStart =
-        minutes($startTime);
-
-    $blockEnd =
-        minutes($endTime);
-
-    /*
-     * Vérifie le chevauchement.
-     *
-     * Exemple :
-     * blocage 14:00 → 16:00
-     *
-     * 14:00 = bloqué
-     * 14:30 = bloqué
-     * 15:00 = bloqué
-     * 15:30 = bloqué
-     * 16:00 = disponible
-     */
-    return (
-        $start < $blockEnd &&
-        $blockStart < $end
-    );
-}
-
-/*
-|--------------------------------------------------------------------------
-| CRÉATION DES CRÉNEAUX
-|--------------------------------------------------------------------------
-*/
-
-function getSlots(
-    string $date,
-    array $bookings
-): array {
-    $tz =
-        new DateTimeZone(
-            TIMEZONE
-        );
-
-    $selected =
-        new DateTimeImmutable(
-            $date . ' 12:00:00',
-            $tz
-        );
-
-    /*
-     * Samedi / dimanche.
-     */
-    if (
-        (int)$selected->format('N')
-        >= 6
-    ) {
-        return [];
-    }
-
-    $today =
-        new DateTimeImmutable(
-            'today',
-            $tz
-        );
-
-    $now =
-        new DateTimeImmutable(
-            'now',
-            $tz
-        );
-
-    $isToday =
-        $date ===
-        $today->format(
-            'Y-m-d'
-        );
-
-    $blocks =
-        readAvailabilityBlocks();
-
-    $slots = [];
-
-    for (
-        $minute = OPEN_MINUTE;
-        $minute < CLOSE_MINUTE;
-        $minute += SLOT_STEP
-    ) {
-        $time =
-            sprintf(
-                '%02d:%02d',
-                intdiv(
-                    $minute,
-                    60
-                ),
-                $minute % 60
+        $start =
+            (string) (
+                $block['start_time']
+                ?? ''
             );
 
-        $available = true;
+        $end =
+            (string) (
+                $block['end_time']
+                ?? ''
+            );
 
-        /*
-         * Créneau déjà passé.
-         */
-        if ($isToday) {
-            $slot =
-                new DateTimeImmutable(
-                    $date .
-                    ' ' .
-                    $time .
-                    ':00',
-                    $tz
-                );
-
-            if (
-                $slot <=
-                $now->modify(
-                    '+30 minutes'
-                )
-            ) {
-                $available = false;
-            }
+        if (
+            !valid_time($start) ||
+            !valid_time($end)
+        ) {
+            continue;
         }
 
-        /*
-         * Rendez-vous déjà pris.
-         */
-        if ($available) {
-            foreach (
-                $bookings as $booking
-            ) {
-                if (
-                    ($booking['date'] ?? '')
-                    === $date &&
-                    overlaps(
-                        $time,
-                        $booking
-                    )
-                ) {
-                    $available = false;
-
-                    break;
-                }
-            }
+        if (
+            $time >= $start &&
+            $time < $end
+        ) {
+            return true;
         }
+    }
 
-        /*
-         * Blocages administratifs.
-         */
-        if ($available) {
-            foreach (
-                $blocks as $block
-            ) {
-                if (
-                    blockOverlapsSlot(
-                        $block,
-                        $date,
-                        $time
-                    )
-                ) {
-                    $available = false;
+    return false;
+}
 
-                    break;
-                }
-            }
-        }
+function generate_slots(): array {
+    $slots = [];
 
-        $slots[] = [
-            'time' =>
-                $time,
+    $start =
+        OPEN_HOUR * 60;
 
-            'available' =>
-                $available
-        ];
+    $end =
+        CLOSE_HOUR * 60;
+
+    for (
+        $minutes = $start;
+        $minutes < $end;
+        $minutes += SLOT_MINUTES
+    ) {
+        $hours =
+            intdiv(
+                $minutes,
+                60
+            );
+
+        $minute =
+            $minutes % 60;
+
+        $slots[] =
+            sprintf(
+                '%02d:%02d',
+                $hours,
+                $minute
+            );
     }
 
     return $slots;
 }
 
-/*
-|--------------------------------------------------------------------------
-| RÉFÉRENCE
-|--------------------------------------------------------------------------
-*/
-
-function generateReference(
-    DateTimeImmutable $now
-): string {
-    return 'VP-' .
-        $now->format(
-            'Ymd'
-        ) .
-        '-' .
-        strtoupper(
-            bin2hex(
-                random_bytes(3)
-            )
-        );
-}
-
-/*
-|--------------------------------------------------------------------------
-| SMTP
-|--------------------------------------------------------------------------
-*/
-
-function smtpRead(
-    $socket
-): string {
-    $response = '';
-
-    while (
-        ($line = fgets(
-            $socket,
-            515
-        )) !== false
-    ) {
-        $response .= $line;
+function booking_exists(
+    array $bookings,
+    string $date,
+    string $time
+): bool {
+    foreach ($bookings as $booking) {
+        if (!is_array($booking)) {
+            continue;
+        }
 
         if (
-            strlen($line) >= 4 &&
-            $line[3] === ' '
+            ($booking['date'] ?? '') ===
+                $date &&
+            ($booking['time'] ?? '') ===
+                $time &&
+            ($booking['status'] ?? 'confirmed') !==
+                'cancelled'
         ) {
-            break;
+            return true;
         }
     }
 
-    return $response;
+    return false;
 }
 
-function smtpCode(
-    string $response
-): int {
-    return (int)substr(
-        $response,
-        0,
-        3
-    );
-}
+function get_available_slots(
+    string $date,
+    array $bookings,
+    array $blocks
+): array {
+    $result = [];
 
-function smtpCommand(
-    $socket,
-    string $command,
-    int $expectedCode
-): void {
-    fwrite(
-        $socket,
-        $command .
-        "\r\n"
-    );
-
-    $response =
-        smtpRead($socket);
-
-    $code =
-        smtpCode($response);
-
-    if (
-        $code !==
-        $expectedCode
+    foreach (
+        generate_slots()
+        as $time
     ) {
-        throw new RuntimeException(
-            'SMTP error ' .
-            $code .
-            ': ' .
-            trim($response)
-        );
+        $available =
+            !booking_exists(
+                $bookings,
+                $date,
+                $time
+            ) &&
+            !slot_is_blocked(
+                $date,
+                $time,
+                $blocks
+            );
+
+        $result[] = [
+            'time' =>
+                $time,
+            'available' =>
+                $available,
+        ];
     }
+
+    return $result;
 }
 
-function smtpSendMail(
-    string $host,
-    int $port,
-    string $username,
-    string $password,
-    string $from,
-    string $fromName,
+function load_config(): array {
+    if (!is_file(CONFIG_FILE)) {
+        return [];
+    }
+
+    $config =
+        require CONFIG_FILE;
+
+    return is_array($config)
+        ? $config
+        : [];
+}
+
+function smtp_send_mail(
+    array $config,
     string $to,
     string $subject,
-    string $body
-): void {
-    $errno = 0;
-    $errstr = '';
+    string $body,
+    ?string $replyTo = null
+): bool {
+    $host =
+        (string) (
+            $config['smtp_host']
+            ?? ''
+        );
+
+    $port =
+        (int) (
+            $config['smtp_port']
+            ?? 465
+        );
+
+    $username =
+        (string) (
+            $config['smtp_username']
+            ?? ''
+        );
+
+    $password =
+        (string) (
+            $config['smtp_password']
+            ?? ''
+        );
+
+    $fromEmail =
+        (string) (
+            $config['from_email']
+            ?? $username
+        );
+
+    $fromName =
+        (string) (
+            $config['from_name']
+            ?? 'Vitrine+'
+        );
+
+    if (
+        $host === '' ||
+        $username === '' ||
+        $password === '' ||
+        $fromEmail === ''
+    ) {
+        return false;
+    }
+
+    $remote =
+        $port === 465
+            ? 'ssl://' . $host
+            : $host;
 
     $socket =
         @fsockopen(
-            'ssl://' .
-            $host,
+            $remote,
             $port,
             $errno,
             $errstr,
@@ -683,10 +369,7 @@ function smtpSendMail(
         );
 
     if (!$socket) {
-        throw new RuntimeException(
-            'Impossible de se connecter au serveur SMTP: ' .
-            $errstr
-        );
+        return false;
     }
 
     stream_set_timeout(
@@ -695,682 +378,690 @@ function smtpSendMail(
     );
 
     try {
-        $response =
-            smtpRead($socket);
+        $read = function (
+            array $expected
+        ) use ($socket): void {
+            $response =
+                '';
 
-        if (
-            smtpCode($response)
-            !== 220
-        ) {
-            throw new RuntimeException(
-                'Réponse SMTP initiale invalide.'
+            while (
+                !feof($socket)
+            ) {
+                $line =
+                    fgets(
+                        $socket,
+                        4096
+                    );
+
+                if ($line === false) {
+                    break;
+                }
+
+                $response .=
+                    $line;
+
+                if (
+                    strlen(
+                        $line
+                    ) >= 4 &&
+                    $line[3] === ' '
+                ) {
+                    break;
+                }
+            }
+
+            $code =
+                (int) substr(
+                    trim($response),
+                    0,
+                    3
+                );
+
+            if (
+                !in_array(
+                    $code,
+                    $expected,
+                    true
+                )
+            ) {
+                throw new RuntimeException(
+                    'SMTP'
+                );
+            }
+        };
+
+        $command =
+            function (
+                string $value,
+                array $expected
+            ) use (
+                $socket,
+                $read
+            ): void {
+                fwrite(
+                    $socket,
+                    $value . "\r\n"
+                );
+
+                $read(
+                    $expected
+                );
+            };
+
+        $read([220]);
+
+        $hostname =
+            $_SERVER[
+                'SERVER_NAME'
+            ] ?? 'vitrineplus.fr';
+
+        $command(
+            'EHLO ' . $hostname,
+            [250]
+        );
+
+        if ($port !== 465) {
+            $command(
+                'STARTTLS',
+                [220]
+            );
+
+            if (
+                !stream_socket_enable_crypto(
+                    $socket,
+                    true,
+                    STREAM_CRYPTO_METHOD_TLS_CLIENT
+                )
+            ) {
+                throw new RuntimeException(
+                    'TLS'
+                );
+            }
+
+            $command(
+                'EHLO ' . $hostname,
+                [250]
             );
         }
 
-        smtpCommand(
-            $socket,
-            'EHLO vitrineplus.fr',
-            250
-        );
-
-        smtpCommand(
-            $socket,
+        $command(
             'AUTH LOGIN',
-            334
+            [334]
         );
 
-        smtpCommand(
-            $socket,
+        $command(
             base64_encode(
                 $username
             ),
-            334
+            [334]
         );
 
-        smtpCommand(
-            $socket,
+        $command(
             base64_encode(
                 $password
             ),
-            235
+            [235]
         );
 
-        smtpCommand(
-            $socket,
+        $command(
             'MAIL FROM:<' .
-            $from .
-            '>',
-            250
+                $fromEmail .
+                '>',
+            [250]
         );
 
-        smtpCommand(
-            $socket,
+        $command(
             'RCPT TO:<' .
-            $to .
-            '>',
-            250
+                $to .
+                '>',
+            [250, 251]
         );
 
-        smtpCommand(
-            $socket,
+        $command(
             'DATA',
-            354
+            [354]
         );
 
-        $encodedSubject =
-            '=?UTF-8?B?' .
-            base64_encode(
+        $safeSubject =
+            preg_replace(
+                "/[\r\n]+/",
+                ' ',
                 $subject
-            ) .
-            '?=';
+            );
 
-        $encodedName =
-            '=?UTF-8?B?' .
-            base64_encode(
+        $safeFromName =
+            preg_replace(
+                "/[\r\n]+/",
+                ' ',
                 $fromName
-            ) .
-            '?=';
+            );
 
-        $message =
+        $headers =
             'From: ' .
-            $encodedName .
+            $safeFromName .
             ' <' .
-            $from .
+            $fromEmail .
             ">\r\n" .
-
+            (
+                $replyTo
+                    ? 'Reply-To: ' .
+                        $replyTo .
+                        "\r\n"
+                    : ''
+            ) .
             'To: <' .
             $to .
             ">\r\n" .
-
-            'Subject: ' .
-            $encodedSubject .
-            "\r\n" .
-
+            'Subject: =?UTF-8?B?' .
+            base64_encode(
+                (string)
+                    $safeSubject
+            ) .
+            "?=\r\n" .
             "MIME-Version: 1.0\r\n" .
-
             "Content-Type: text/plain; charset=UTF-8\r\n" .
+            "Content-Transfer-Encoding: 8bit\r\n\r\n";
 
-            "Content-Transfer-Encoding: 8bit\r\n" .
-
-            "\r\n" .
-
-            str_replace(
-                ["\r\n", "\r"],
-                "\n",
+        $body =
+            preg_replace(
+                '/^\./m',
+                '..',
                 $body
-            );
+            ) ?? $body;
 
-        $message =
-            str_replace(
-                "\n",
-                "\r\n",
-                $message
-            );
-
-        smtpCommand(
+        fwrite(
             $socket,
-            $message .
-            "\r\n.",
-            250
+            $headers .
+            $body .
+            "\r\n.\r\n"
         );
 
-        smtpCommand(
+        $read([250]);
+
+        fwrite(
             $socket,
-            'QUIT',
-            221
+            "QUIT\r\n"
         );
-    } finally {
+
         fclose($socket);
+
+        return true;
+    } catch (
+        Throwable $error
+    ) {
+        fclose($socket);
+
+        return false;
     }
 }
 
-/*
-|--------------------------------------------------------------------------
-| GET — DISPONIBILITÉS
-|--------------------------------------------------------------------------
-*/
+$method =
+    $_SERVER[
+        'REQUEST_METHOD'
+    ] ?? 'GET';
 
-if (
-    ($_SERVER['REQUEST_METHOD'] ?? 'GET')
-    === 'GET'
-) {
-    if (
+$bookings =
+    read_json(
+        BOOKINGS_FILE,
+        []
+    );
+
+if (!is_array($bookings)) {
+    $bookings = [];
+}
+
+$blocks =
+    read_json(
+        AVAILABILITY_FILE,
+        []
+    );
+
+if (!is_array($blocks)) {
+    $blocks = [];
+}
+
+if ($method === 'GET') {
+    $action =
         clean(
-            (string)(
-                $_GET['action'] ?? ''
-            )
-        ) !== 'slots'
+            $_GET['action']
+                ?? ''
+        );
+
+    if (
+        $action !==
+        'slots'
     ) {
-        respond([
-            'success' => false,
-            'message' =>
-                'Action inconnue.'
-        ], 400);
+        respond(
+            [
+                'success' =>
+                    false,
+                'message' =>
+                    'Action inconnue.',
+            ],
+            400
+        );
     }
 
     $date =
         clean(
-            (string)(
-                $_GET['date'] ?? ''
-            )
+            $_GET['date']
+                ?? ''
         );
 
-    if (
-        !validDate($date)
-    ) {
-        respond([
-            'success' => false,
-            'message' =>
-                'Date invalide.'
-        ], 422);
-    }
-
-    ensureStorage();
-
-    $handle =
-        @fopen(
-            bookingsFile(),
-            'r'
+    if (!valid_date($date)) {
+        respond(
+            [
+                'success' =>
+                    false,
+                'message' =>
+                    'Date invalide.',
+            ],
+            400
         );
-
-    if (!$handle) {
-        respond([
-            'success' => false,
-            'message' =>
-                'Impossible de lire les disponibilités.'
-        ], 500);
     }
 
-    $bookings =
-        readBookings($handle);
-
-    fclose($handle);
+    $slots =
+        get_available_slots(
+            $date,
+            $bookings,
+            $blocks
+        );
 
     respond([
-        'success' => true,
-        'date' => $date,
+        'success' =>
+            true,
+        'date' =>
+            $date,
         'slots' =>
-            getSlots(
-                $date,
-                $bookings
-            )
+            $slots,
     ]);
 }
 
-/*
-|--------------------------------------------------------------------------
-| POST
-|--------------------------------------------------------------------------
-*/
-
-if (
-    ($_SERVER['REQUEST_METHOD'] ?? '')
-    !== 'POST'
-) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Méthode non autorisée.'
-    ], 405);
+if ($method !== 'POST') {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Méthode non autorisée.',
+        ],
+        405
+    );
 }
 
-if (
-    clean(
-        (string)(
-            $_POST['action'] ?? ''
-        )
-    ) !== 'book'
-) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Action inconnue.'
-    ], 400);
-}
+$raw =
+    file_get_contents(
+        'php://input'
+    );
 
-/*
-|--------------------------------------------------------------------------
-| ANTI-SPAM
-|--------------------------------------------------------------------------
-*/
+$data =
+    json_decode(
+        $raw ?: '{}',
+        true
+    );
 
 if (
-    !empty(
-        $_POST['website'] ?? ''
-    )
+    !is_array($data)
 ) {
-    respond([
-        'success' => true,
-        'reference' => 'VP-SPAM'
-    ]);
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Données invalides.',
+        ],
+        400
+    );
 }
 
-/*
-|--------------------------------------------------------------------------
-| DONNÉES
-|--------------------------------------------------------------------------
-*/
-
-$name =
+$action =
     clean(
-        (string)(
-            $_POST['name'] ?? ''
-        ),
-        120
+        $data['action']
+            ?? ''
     );
 
-$phone =
-    clean(
-        (string)(
-            $_POST['phone'] ?? ''
-        ),
-        60
+if (
+    $action !==
+    'book'
+) {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Action inconnue.',
+        ],
+        400
     );
-
-$company =
-    clean(
-        (string)(
-            $_POST['company'] ?? ''
-        ),
-        160
-    );
-
-$reason =
-    clean(
-        (string)(
-            $_POST['reason'] ?? ''
-        ),
-        2500
-    );
+}
 
 $date =
     clean(
-        (string)(
-            $_POST['date'] ?? ''
-        )
+        $data['date']
+            ?? ''
     );
 
 $time =
     clean(
-        (string)(
-            $_POST['time'] ?? ''
-        )
+        $data['time']
+            ?? ''
     );
 
-/*
-|--------------------------------------------------------------------------
-| VALIDATION
-|--------------------------------------------------------------------------
-*/
+$name =
+    clean(
+        $data['name']
+            ?? ''
+    );
 
-if (
-    $name === '' ||
-    $phone === '' ||
-    $reason === '' ||
-    !isset($_POST['consent'])
-) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Merci de compléter les informations obligatoires.'
-    ], 422);
+$company =
+    clean(
+        $data['company']
+            ?? ''
+    );
+
+$phone =
+    clean(
+        $data['phone']
+            ?? ''
+    );
+
+$email =
+    clean(
+        $data['email']
+            ?? ''
+    );
+
+$reason =
+    clean(
+        $data['reason']
+            ?? ''
+    );
+
+if (!valid_date($date)) {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'La date sélectionnée est invalide.',
+        ],
+        400
+    );
 }
 
-$digits =
-    preg_replace(
-        '/\D+/',
-        '',
-        $phone
+if (!valid_time($time)) {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'L’heure sélectionnée est invalide.',
+        ],
+        400
     );
+}
 
-if (
-    !is_string($digits) ||
-    strlen($digits) < 8
-) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Veuillez indiquer un numéro de téléphone valide.'
-    ], 422);
+if ($name === '') {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Votre nom est obligatoire.',
+        ],
+        400
+    );
+}
+
+if ($phone === '') {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Votre numéro de téléphone est obligatoire.',
+        ],
+        400
+    );
 }
 
 if (
-    !validDate($date) ||
-    !validTime($time)
-) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Le créneau sélectionné n’est pas valide.'
-    ], 422);
-}
-
-$slotMinutes =
-    minutes($time);
-
-if (
-    $slotMinutes % SLOT_STEP !== 0 ||
-    $slotMinutes < OPEN_MINUTE ||
-    $slotMinutes + 30 > CLOSE_MINUTE
-) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Ce créneau n’est pas disponible.'
-    ], 422);
-}
-
-/*
-|--------------------------------------------------------------------------
-| VÉRIFICATION HEURE
-|--------------------------------------------------------------------------
-*/
-
-$tz =
-    new DateTimeZone(
-        TIMEZONE
-    );
-
-$slotDateTime =
-    new DateTimeImmutable(
-        $date .
-        ' ' .
-        $time .
-        ':00',
-        $tz
-    );
-
-$now =
-    new DateTimeImmutable(
-        'now',
-        $tz
-    );
-
-if (
-    $slotDateTime <=
-    $now->modify(
-        '+30 minutes'
+    $email !== '' &&
+    !filter_var(
+        $email,
+        FILTER_VALIDATE_EMAIL
     )
 ) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Ce créneau n’est plus disponible.'
-    ], 409);
-}
-
-/*
-|--------------------------------------------------------------------------
-| VÉRIFICATION DES INDISPONIBILITÉS
-|--------------------------------------------------------------------------
-|
-| Cette vérification est volontairement faite côté serveur.
-| Même si quelqu’un tente de contourner l’interface publique
-| et d’envoyer directement une requête POST, un créneau bloqué
-| ne pourra pas être réservé.
-|
-*/
-
-foreach (
-    readAvailabilityBlocks()
-    as $block
-) {
-    if (
-        blockOverlapsSlot(
-            $block,
-            $date,
-            $time
-        )
-    ) {
-        respond([
-            'success' => false,
+    respond(
+        [
+            'success' =>
+                false,
             'message' =>
-                'Ce créneau n’est pas disponible.'
-        ], 409);
-    }
+                'L’adresse e-mail est invalide.',
+        ],
+        400
+    );
 }
 
-/*
-|--------------------------------------------------------------------------
-| VERROUILLAGE / RÉSERVATION
-|--------------------------------------------------------------------------
-*/
+$today =
+    date('Y-m-d');
 
-ensureStorage();
-
-$handle =
-    @fopen(
-        bookingsFile(),
-        'c+'
+if ($date < $today) {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Cette date est déjà passée.',
+        ],
+        409
     );
+}
 
 if (
-    !$handle ||
-    !flock(
-        $handle,
-        LOCK_EX
+    slot_is_blocked(
+        $date,
+        $time,
+        $blocks
     )
 ) {
-    respond([
-        'success' => false,
-        'message' =>
-            'Impossible de sécuriser la réservation.'
-    ], 500);
-}
-
-$bookings =
-    readBookings($handle);
-
-foreach (
-    $bookings as $booking
-) {
-    if (
-        ($booking['date'] ?? '')
-        === $date &&
-        overlaps(
-            $time,
-            $booking
-        )
-    ) {
-        flock(
-            $handle,
-            LOCK_UN
-        );
-
-        fclose($handle);
-
-        respond([
-            'success' => false,
+    respond(
+        [
+            'success' =>
+                false,
             'message' =>
-                'Ce créneau vient d’être réservé. Choisissez-en un autre.'
-        ], 409);
-    }
+                'Ce créneau n’est plus disponible.',
+        ],
+        409
+    );
 }
 
-/*
-|--------------------------------------------------------------------------
-| CRÉATION DU RENDEZ-VOUS
-|--------------------------------------------------------------------------
-*/
+if (
+    booking_exists(
+        $bookings,
+        $date,
+        $time
+    )
+) {
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Ce créneau vient d’être réservé. Choisissez-en un autre.',
+        ],
+        409
+    );
+}
 
 $reference =
-    generateReference($now);
+    'VP-' .
+    date('YmdHis') .
+    '-' .
+    strtoupper(
+        bin2hex(
+            random_bytes(3)
+        )
+    );
 
 $booking = [
     'reference' =>
         $reference,
-
     'created_at' =>
-        $now->format(
-            DateTimeInterface::ATOM
-        ),
-
+        date(DATE_ATOM),
     'date' =>
         $date,
-
     'time' =>
         $time,
-
     'duration' =>
-        30,
-
+        SLOT_MINUTES,
     'name' =>
         $name,
-
-    'phone' =>
-        $phone,
-
     'company' =>
         $company,
-
+    'phone' =>
+        $phone,
+    'email' =>
+        $email,
     'reason' =>
         $reason,
-
     'status' =>
-        'confirmed'
+        'confirmed',
 ];
 
 $bookings[] =
     $booking;
 
-rewind($handle);
-
 if (
-    !ftruncate(
-        $handle,
-        0
+    !write_json(
+        BOOKINGS_FILE,
+        $bookings
     )
 ) {
-    flock(
-        $handle,
-        LOCK_UN
+    respond(
+        [
+            'success' =>
+                false,
+            'message' =>
+                'Impossible d’enregistrer le rendez-vous.',
+        ],
+        500
     );
-
-    fclose($handle);
-
-    respond([
-        'success' => false,
-        'message' =>
-            'Impossible d’enregistrer le rendez-vous.'
-    ], 500);
 }
 
-$json =
-    json_encode(
-        $bookings,
-        JSON_UNESCAPED_UNICODE |
-        JSON_UNESCAPED_SLASHES |
-        JSON_PRETTY_PRINT
+$config =
+    load_config();
+
+$adminEmail =
+    (string) (
+        $config[
+            'admin_email'
+        ]
+        ??
+        $config[
+            'to_email'
+        ]
+        ??
+        $config[
+            'from_email'
+        ]
+        ??
+        $config[
+            'smtp_username'
+        ]
+        ??
+        ''
     );
+
+$adminBody =
+    "NOUVEAU RENDEZ-VOUS VITRINE+\n\n" .
+    "Nom : " .
+    $name .
+    "\n" .
+    "Entreprise : " .
+    (
+        $company !== ''
+            ? $company
+            : 'Non renseignée'
+    ) .
+    "\n" .
+    "Téléphone : " .
+    $phone .
+    "\n" .
+    "E-mail : " .
+    (
+        $email !== ''
+            ? $email
+            : 'Non renseigné'
+    ) .
+    "\n" .
+    "Date : " .
+    $date .
+    "\n" .
+    "Heure : " .
+    $time .
+    "\n" .
+    "Motif : " .
+    (
+        $reason !== ''
+            ? $reason
+            : 'Non renseigné'
+    ) .
+    "\n" .
+    "Référence : " .
+    $reference .
+    "\n";
 
 if (
-    !is_string($json) ||
-    fwrite(
-        $handle,
-        $json
-    ) === false
+    $adminEmail !== ''
 ) {
-    flock(
-        $handle,
-        LOCK_UN
+    smtp_send_mail(
+        $config,
+        $adminEmail,
+        'Nouveau rendez-vous — Vitrine+',
+        $adminBody,
+        $email !== ''
+            ? $email
+            : null
     );
-
-    fclose($handle);
-
-    respond([
-        'success' => false,
-        'message' =>
-            'Impossible d’enregistrer le rendez-vous.'
-    ], 500);
 }
 
-fflush($handle);
-
-flock(
-    $handle,
-    LOCK_UN
-);
-
-fclose($handle);
-
-/*
-|--------------------------------------------------------------------------
-| EMAIL
-|--------------------------------------------------------------------------
-*/
-
-$dateLabel =
-    $slotDateTime->format(
-        'd/m/Y'
-    );
-
-$companyLabel =
-    $company !== ''
-        ? $company
-        : '(Non renseignée)';
-
-$subject =
-    'Nouveau rendez-vous Vitrine+ — ' .
-    $name;
-
-$body =
-    "NOUVEAU RENDEZ-VOUS VITRINE+\n" .
-    "================================\n\n" .
-
-    "Référence : {$reference}\n\n" .
-
-    "RENDEZ-VOUS\n" .
-    "Date : {$dateLabel}\n" .
-    "Heure : {$time}\n" .
-    "Durée : 30 minutes\n" .
-    "Type : Appel téléphonique\n\n" .
-
-    "CONTACT\n" .
-    "Nom : {$name}\n" .
-    "Téléphone : {$phone}\n" .
-    "Entreprise : {$companyLabel}\n\n" .
-
-    "MOTIF\n" .
-    "{$reason}\n";
-
-try {
-    $config =
-        mailConfig();
-
-    smtpSendMail(
-        (string)$config['smtp_host'],
-        (int)$config['smtp_port'],
-        (string)$config['smtp_username'],
-        (string)$config['smtp_password'],
-        (string)$config['from_email'],
-        (string)$config['from_name'],
-        (string)$config['to_email'],
-        $subject,
-        $body
-    );
-
-    respond([
-        'success' => true,
-        'reference' =>
-            $reference,
-        'emailSent' =>
-            true
-    ]);
-} catch (
-    Throwable $e
+if (
+    $email !== ''
 ) {
-    /*
-     * Le rendez-vous reste enregistré même
-     * si l'envoi de l'email échoue.
-     */
+    $clientBody =
+        "Bonjour " .
+        $name .
+        ",\n\n" .
+        "Votre rendez-vous avec Vitrine+ est bien confirmé.\n\n" .
+        "Date : " .
+        $date .
+        "\n" .
+        "Heure : " .
+        $time .
+        "\n" .
+        "Référence : " .
+        $reference .
+        "\n\n" .
+        "Nous vous appellerons au numéro indiqué lors de votre réservation.\n\n" .
+        "À bientôt,\n\n" .
+        "Vitrine+\n" .
+        "Votre entreprise. En mieux.\n\n" .
+        "https://vitrineplus.fr/rendez-vous\n";
 
-    respond([
-        'success' => true,
-        'reference' =>
-            $reference,
-        'emailSent' =>
-            false,
-        'message' =>
-            'Votre rendez-vous est bien enregistré, mais la notification email n’a pas pu être envoyée.'
-    ]);
+    smtp_send_mail(
+        $config,
+        $email,
+        'Votre rendez-vous avec Vitrine+ est confirmé',
+        $clientBody
+    );
 }
+
+respond([
+    'success' =>
+        true,
+    'reference' =>
+        $reference,
+    'booking' =>
+        $booking,
+]);

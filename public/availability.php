@@ -2,421 +2,502 @@
 
 declare(strict_types=1);
 
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Pragma: no-cache');
-header('X-Content-Type-Options: nosniff');
+header(
+    'Content-Type: application/json; charset=utf-8'
+);
 
-const TIMEZONE = 'Europe/Paris';
-const MAX_DAYS_AHEAD = 365;
-const STORAGE_DIR = __DIR__ . '/vitrine-data';
-const AVAILABILITY_FILE = STORAGE_DIR . '/availability.json';
-const CONFIG_FILE = __DIR__ . '/vitrine-mail-config.php';
+header(
+    'Cache-Control: no-store, no-cache, must-revalidate, max-age=0'
+);
 
-function respond(array $data, int $status = 200): never
-{
+const BASE_DIR = __DIR__;
+
+const CONFIG_FILE =
+    BASE_DIR . '/vitrine-mail-config.php';
+
+const AVAILABILITY_FILE =
+    BASE_DIR . '/vitrine-data/availability.json';
+
+function respond(
+    array $data,
+    int $status = 200
+): never {
     http_response_code($status);
 
     echo json_encode(
         $data,
-        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        JSON_UNESCAPED_UNICODE |
+        JSON_UNESCAPED_SLASHES
     );
 
     exit;
 }
 
-function loadConfig(): array
-{
+function config(): array {
     if (!is_file(CONFIG_FILE)) {
         return [];
     }
 
-    $config = require CONFIG_FILE;
+    $config =
+        require CONFIG_FILE;
 
-    return is_array($config) ? $config : [];
+    return is_array($config)
+        ? $config
+        : [];
 }
 
-function requireAuth(): void
-{
-    $config = loadConfig();
+function require_auth(): void {
+    $config =
+        config();
 
-    $expectedUser = trim(
-        (string)($config['grand_plus_admin_user'] ?? '')
-    );
+    $user =
+        trim(
+            (string) (
+                $config[
+                    'grand_plus_admin_user'
+                ] ?? ''
+            )
+        );
 
-    $expectedPassword = (string)(
-        $config['grand_plus_admin_password'] ?? ''
-    );
+    $password =
+        (string) (
+            $config[
+                'grand_plus_admin_password'
+            ] ?? ''
+        );
 
-    $user = (string)(
-        $_SERVER['PHP_AUTH_USER'] ?? ''
-    );
+    $providedUser =
+        $_SERVER[
+            'PHP_AUTH_USER'
+        ] ?? '';
 
-    $password = (string)(
-        $_SERVER['PHP_AUTH_PW'] ?? ''
-    );
+    $providedPassword =
+        $_SERVER[
+            'PHP_AUTH_PW'
+        ] ?? '';
 
     if (
-        $expectedUser === '' ||
-        $expectedPassword === '' ||
-        !hash_equals($expectedUser, $user) ||
-        !hash_equals($expectedPassword, $password)
+        $user === '' ||
+        $password === ''
+    ) {
+        respond(
+            [
+                'success' =>
+                    false,
+                'message' =>
+                    'Configuration administrateur absente.',
+            ],
+            500
+        );
+    }
+
+    if (
+        !hash_equals(
+            $user,
+            (string)
+                $providedUser
+        ) ||
+        !hash_equals(
+            $password,
+            (string)
+                $providedPassword
+        )
     ) {
         header(
-            'WWW-Authenticate: Basic realm="Vitrine+ Administration"'
+            'WWW-Authenticate: Basic realm="Vitrine+ Disponibilités"'
         );
 
         respond(
             [
-                'success' => false,
-                'message' => 'Authentification requise.',
+                'success' =>
+                    false,
+                'message' =>
+                    'Authentification requise.',
             ],
             401
         );
     }
 }
 
-function clean(
-    mixed $value,
-    int $max = 500
-): string {
-    if (!is_string($value)) {
-        return '';
+function read_blocks(): array {
+    if (
+        !is_file(
+            AVAILABILITY_FILE
+        )
+    ) {
+        return [];
     }
 
-    $value = trim(
-        preg_replace(
-            '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u',
-            '',
-            $value
-        ) ?? ''
-    );
-
-    return function_exists('mb_substr')
-        ? mb_substr(
-            $value,
-            0,
-            $max,
-            'UTF-8'
-        )
-        : substr(
-            $value,
-            0,
-            $max
+    $content =
+        file_get_contents(
+            AVAILABILITY_FILE
         );
-}
 
-function validDate(string $date): bool
-{
-    if (
-        !preg_match(
-            '/^\d{4}-\d{2}-\d{2}$/',
-            $date
-        )
-    ) {
-        return false;
+    if ($content === false) {
+        return [];
     }
 
-    $tz = new DateTimeZone(TIMEZONE);
+    $data =
+        json_decode(
+            $content,
+            true
+        );
 
-    $parsed = DateTimeImmutable::createFromFormat(
-        '!Y-m-d',
-        $date,
-        $tz
-    );
+    return is_array($data)
+        ? $data
+        : [];
+}
+
+function write_blocks(
+    array $blocks
+): bool {
+    $directory =
+        dirname(
+            AVAILABILITY_FILE
+        );
 
     if (
-        !$parsed ||
-        $parsed->format('Y-m-d') !== $date
-    ) {
-        return false;
-    }
-
-    $today = new DateTimeImmutable(
-        'today',
-        $tz
-    );
-
-    $max = $today->modify(
-        '+' . MAX_DAYS_AHEAD . ' days'
-    );
-
-    return (
-        $parsed >= $today &&
-        $parsed <= $max
-    );
-}
-
-function validTime(string $time): bool
-{
-    return (bool)preg_match(
-        '/^(?:[01]\d|2[0-3]):[0-5]\d$/',
-        $time
-    );
-}
-
-function minutes(string $time): int
-{
-    [
-        $hours,
-        $mins
-    ] = array_map(
-        'intval',
-        explode(':', $time)
-    );
-
-    return ($hours * 60) + $mins;
-}
-
-function ensureStorage(): void
-{
-    if (
-        !is_dir(STORAGE_DIR) &&
-        !@mkdir(
-            STORAGE_DIR,
+        !is_dir($directory) &&
+        !mkdir(
+            $directory,
             0755,
             true
         )
     ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Le stockage des disponibilités est indisponible.',
-            ],
-            500
-        );
+        return false;
     }
 
-    if (!file_exists(AVAILABILITY_FILE)) {
-        if (
-            @file_put_contents(
-                AVAILABILITY_FILE,
-                '[]',
-                LOCK_EX
-            ) === false
-        ) {
-            respond(
-                [
-                    'success' => false,
-                    'message' =>
-                        'Le stockage des disponibilités est indisponible.',
-                ],
-                500
-            );
-        }
+    $json =
+        json_encode(
+            $blocks,
+            JSON_PRETTY_PRINT |
+            JSON_UNESCAPED_UNICODE |
+            JSON_UNESCAPED_SLASHES
+        );
+
+    if ($json === false) {
+        return false;
     }
+
+    return
+        file_put_contents(
+            AVAILABILITY_FILE,
+            $json . PHP_EOL,
+            LOCK_EX
+        ) !== false;
 }
 
-function readBlocks(): array
-{
-    ensureStorage();
-
-    $contents = @file_get_contents(
-        AVAILABILITY_FILE
-    );
-
-    if (
-        !is_string($contents) ||
-        trim($contents) === ''
-    ) {
-        return [];
-    }
-
-    $data = json_decode(
-        $contents,
-        true
-    );
-
-    if (!is_array($data)) {
-        return [];
-    }
-
-    return array_values(
-        array_filter(
-            $data,
-            'is_array'
+function clean(
+    mixed $value
+): string {
+    return trim(
+        strip_tags(
+            (string) $value
         )
     );
 }
 
-function writeBlocks(
-    array $blocks
-): void {
-    $json = json_encode(
-        array_values($blocks),
-        JSON_PRETTY_PRINT |
-        JSON_UNESCAPED_UNICODE |
-        JSON_UNESCAPED_SLASHES
-    );
-
-    if (
-        !is_string($json) ||
-        @file_put_contents(
-            AVAILABILITY_FILE,
-            $json,
-            LOCK_EX
-        ) === false
-    ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Impossible d’enregistrer les disponibilités.',
-            ],
-            500
+function valid_date(
+    string $date
+): bool {
+    $object =
+        DateTime::createFromFormat(
+            'Y-m-d',
+            $date
         );
-    }
+
+    return
+        $object !== false &&
+        $object->format('Y-m-d') ===
+            $date;
 }
 
-function blockOverlapsSlot(
-    array $block,
-    string $date,
+function valid_time(
     string $time
 ): bool {
-    if (
-        ($block['date'] ?? '') !== $date
-    ) {
-        return false;
-    }
-
-    if (!empty($block['all_day'])) {
-        return true;
-    }
-
-    if (
-        !validTime(
-            (string)($block['start_time'] ?? '')
-        ) ||
-        !validTime(
-            (string)($block['end_time'] ?? '')
-        )
-    ) {
-        return false;
-    }
-
-    $start = minutes($time);
-    $end = $start + 30;
-
-    $blockStart = minutes(
-        (string)$block['start_time']
-    );
-
-    $blockEnd = minutes(
-        (string)$block['end_time']
-    );
-
-    return (
-        $start < $blockEnd &&
-        $blockStart < $end
-    );
+    return
+        preg_match(
+            '/^(?:[01]\d|2[0-3]):[0-5]\d$/',
+            $time
+        ) === 1;
 }
 
-requireAuth();
+require_auth();
 
-$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$blocks =
+    read_blocks();
+
+$method =
+    $_SERVER[
+        'REQUEST_METHOD'
+    ] ?? 'GET';
 
 if ($method === 'GET') {
-    $action = clean(
-        $_GET['action'] ?? ''
-    );
-
-    if ($action !== 'list') {
-        respond(
-            [
-                'success' => false,
-                'message' => 'Action inconnue.',
-            ],
-            400
-        );
-    }
-
-    respond(
-        [
-            'success' => true,
-            'blocks' => readBlocks(),
-        ]
-    );
+    respond([
+        'success' =>
+            true,
+        'blocks' =>
+            $blocks,
+    ]);
 }
 
 if ($method !== 'POST') {
     respond(
         [
-            'success' => false,
-            'message' => 'Méthode non autorisée.',
+            'success' =>
+                false,
+            'message' =>
+                'Méthode non autorisée.',
         ],
         405
     );
 }
 
-$payload = json_decode(
-    (string)file_get_contents(
+$raw =
+    file_get_contents(
         'php://input'
-    ),
-    true
-);
+    );
 
-if (!is_array($payload)) {
+$data =
+    json_decode(
+        $raw ?: '{}',
+        true
+    );
+
+if (!is_array($data)) {
     respond(
         [
-            'success' => false,
-            'message' => 'Données invalides.',
+            'success' =>
+                false,
+            'message' =>
+                'Données invalides.',
         ],
         400
     );
 }
 
-$action = clean(
-    $payload['action'] ?? ''
-);
-
-if ($action === 'delete_block') {
-    $id = clean(
-        $payload['id'] ?? ''
+$action =
+    clean(
+        $data['action']
+            ?? ''
     );
+
+if (
+    $action ===
+    'add_block'
+) {
+    $date =
+        clean(
+            $data['date']
+                ?? ''
+        );
+
+    $allDay =
+        !empty(
+            $data['all_day']
+        );
+
+    $start =
+        isset(
+            $data[
+                'start_time'
+            ]
+        )
+            ? clean(
+                $data[
+                    'start_time'
+                ]
+            )
+            : '';
+
+    $end =
+        isset(
+            $data[
+                'end_time'
+            ]
+        )
+            ? clean(
+                $data[
+                    'end_time'
+                ]
+            )
+            : '';
+
+    $reason =
+        clean(
+            $data['reason']
+                ?? 'Indisponible'
+        );
+
+    if (!valid_date($date)) {
+        respond(
+            [
+                'success' =>
+                    false,
+                'message' =>
+                    'Date invalide.',
+            ],
+            400
+        );
+    }
+
+    if (!$allDay) {
+        if (
+            !valid_time(
+                $start
+            ) ||
+            !valid_time(
+                $end
+            )
+        ) {
+            respond(
+                [
+                    'success' =>
+                        false,
+                    'message' =>
+                        'Horaires invalides.',
+                ],
+                400
+            );
+        }
+
+        if ($start >= $end) {
+            respond(
+                [
+                    'success' =>
+                        false,
+                    'message' =>
+                        'L’heure de début doit être avant l’heure de fin.',
+                ],
+                400
+            );
+        }
+    }
+
+    $block = [
+        'id' =>
+            'block-' .
+            date('YmdHis') .
+            '-' .
+            bin2hex(
+                random_bytes(3)
+            ),
+
+        'date' =>
+            $date,
+
+        'all_day' =>
+            $allDay,
+
+        'start_time' =>
+            $allDay
+                ? null
+                : $start,
+
+        'end_time' =>
+            $allDay
+                ? null
+                : $end,
+
+        'reason' =>
+            $reason !== ''
+                ? $reason
+                : 'Indisponible',
+
+        'created_at' =>
+            date(DATE_ATOM),
+    ];
+
+    $blocks[] =
+        $block;
+
+    if (
+        !write_blocks(
+            $blocks
+        )
+    ) {
+        respond(
+            [
+                'success' =>
+                    false,
+                'message' =>
+                    'Impossible d’enregistrer l’indisponibilité.',
+            ],
+            500
+        );
+    }
+
+    respond([
+        'success' =>
+            true,
+        'block' =>
+            $block,
+        'blocks' =>
+            $blocks,
+    ]);
+}
+
+if (
+    $action ===
+    'delete_block'
+) {
+    $id =
+        clean(
+            $data['id']
+                ?? ''
+        );
 
     if ($id === '') {
         respond(
             [
-                'success' => false,
-                'message' => 'Identifiant manquant.',
+                'success' =>
+                    false,
+                'message' =>
+                    'Identifiant invalide.',
             ],
-            422
+            400
         );
     }
 
-    $blocks = readBlocks();
-
     $found = false;
 
-    $blocks = array_values(
-        array_filter(
-            $blocks,
-            function (
-                array $block
-            ) use (
-                $id,
-                &$found
-            ): bool {
-                if (
-                    (string)(
-                        $block['id'] ?? ''
-                    ) === $id
+    $blocks =
+        array_values(
+            array_filter(
+                $blocks,
+                function (
+                    $block
+                ) use (
+                    $id,
+                    &$found
                 ) {
-                    $found = true;
+                    if (
+                        is_array(
+                            $block
+                        ) &&
+                        (
+                            string
+                        ) (
+                            $block['id']
+                            ?? ''
+                        ) === $id
+                    ) {
+                        $found =
+                            true;
 
-                    return false;
+                        return false;
+                    }
+
+                    return true;
                 }
-
-                return true;
-            }
-        )
-    );
+            )
+        );
 
     if (!$found) {
         respond(
             [
-                'success' => false,
+                'success' =>
+                    false,
                 'message' =>
                     'Indisponibilité introuvable.',
             ],
@@ -424,237 +505,36 @@ if ($action === 'delete_block') {
         );
     }
 
-    writeBlocks($blocks);
-
-    respond(
-        [
-            'success' => true,
-            'message' =>
-                'Indisponibilité supprimée.',
-            'blocks' => $blocks,
-        ]
-    );
-}
-
-if ($action !== 'add_block') {
-    respond(
-        [
-            'success' => false,
-            'message' => 'Action inconnue.',
-        ],
-        400
-    );
-}
-
-$date = clean(
-    $payload['date'] ?? '',
-    10
-);
-
-$allDay = (bool)(
-    $payload['all_day'] ?? false
-);
-
-$startTime = clean(
-    $payload['start_time'] ?? '',
-    5
-);
-
-$endTime = clean(
-    $payload['end_time'] ?? '',
-    5
-);
-
-$reason = clean(
-    $payload['reason'] ?? 'Indisponible',
-    160
-);
-
-if (!validDate($date)) {
-    respond(
-        [
-            'success' => false,
-            'message' =>
-                'La date sélectionnée est invalide.',
-        ],
-        422
-    );
-}
-
-if (!$allDay) {
     if (
-        !validTime($startTime) ||
-        !validTime($endTime)
-    ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Les horaires sélectionnés sont invalides.',
-            ],
-            422
-        );
-    }
-
-    if (
-        minutes($startTime) >=
-        minutes($endTime)
-    ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'L’heure de début doit être avant l’heure de fin.',
-            ],
-            422
-        );
-    }
-} else {
-    $startTime = null;
-    $endTime = null;
-}
-
-if ($reason === '') {
-    $reason = 'Indisponible';
-}
-
-$blocks = readBlocks();
-
-foreach ($blocks as $existing) {
-    if (
-        ($existing['date'] ?? '') !== $date
-    ) {
-        continue;
-    }
-
-    if (
-        $allDay ||
-        !empty($existing['all_day'])
-    ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Une indisponibilité existe déjà sur cette date.',
-            ],
-            409
-        );
-    }
-
-    if (
-        !validTime(
-            (string)($existing['start_time'] ?? '')
-        ) ||
-        !validTime(
-            (string)($existing['end_time'] ?? '')
+        !write_blocks(
+            $blocks
         )
     ) {
-        continue;
-    }
-
-    $newStart = minutes($startTime);
-    $newEnd = minutes($endTime);
-
-    $existingStart = minutes(
-        (string)$existing['start_time']
-    );
-
-    $existingEnd = minutes(
-        (string)$existing['end_time']
-    );
-
-    if (
-        $newStart < $existingEnd &&
-        $existingStart < $newEnd
-    ) {
         respond(
             [
-                'success' => false,
+                'success' =>
+                    false,
                 'message' =>
-                    'Cette plage horaire chevauche une indisponibilité existante.',
+                    'Impossible de supprimer l’indisponibilité.',
             ],
-            409
+            500
         );
     }
+
+    respond([
+        'success' =>
+            true,
+        'blocks' =>
+            $blocks,
+    ]);
 }
-
-$tz = new DateTimeZone(TIMEZONE);
-
-$newBlock = [
-    'id' =>
-        'AV-' .
-        str_replace(
-            '-',
-            '',
-            $date
-        ) .
-        '-' .
-        strtoupper(
-            bin2hex(
-                random_bytes(4)
-            )
-        ),
-
-    'date' => $date,
-
-    'all_day' => $allDay,
-
-    'start_time' => $startTime,
-
-    'end_time' => $endTime,
-
-    'reason' => $reason,
-
-    'created_at' =>
-        (new DateTimeImmutable(
-            'now',
-            $tz
-        ))->format(
-            DateTimeInterface::ATOM
-        ),
-];
-
-$blocks[] = $newBlock;
-
-usort(
-    $blocks,
-    static function (
-        array $a,
-        array $b
-    ): int {
-        $aKey =
-            (string)($a['date'] ?? '') .
-            ' ' .
-            (
-                !empty($a['all_day'])
-                    ? '00:00'
-                    : (string)($a['start_time'] ?? '00:00')
-            );
-
-        $bKey =
-            (string)($b['date'] ?? '') .
-            ' ' .
-            (
-                !empty($b['all_day'])
-                    ? '00:00'
-                    : (string)($b['start_time'] ?? '00:00')
-            );
-
-        return strcmp(
-            $aKey,
-            $bKey
-        );
-    }
-);
-
-writeBlocks($blocks);
 
 respond(
     [
-        'success' => true,
+        'success' =>
+            false,
         'message' =>
-            'Indisponibilité ajoutée.',
-        'block' => $newBlock,
-        'blocks' => $blocks,
-    ]
+            'Action inconnue.',
+    ],
+    400
 );
