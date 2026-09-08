@@ -1223,39 +1223,23 @@ export default function AdminDashboard() {
           NEW PROSPECT
       ========================================================= */}
 
-      {newProspect && (
-        <NewProspectModal
-          onClose={() =>
-            setNewProspect(false)
-          }
-          onCreate={async (
-            prospect,
-          ) => {
-            try {
-              await action({
-                action:
-                  "create_prospect",
-                ...prospect,
-              });
+     {newProspect && (
+  <NewProspectModal
+    onClose={() =>
+      setNewProspect(false)
+    }
+    onCreate={async (prospect) => {
+      await action({
+        action: "create_prospect",
+        ...prospect,
+      });
 
-              await load();
-
-              setNewProspect(false);
-              setSection("prospects");
-
-              setToast(
-                "Prospect créé.",
-              );
-            } catch (error) {
-              setToast(
-                error instanceof Error
-                  ? error.message
-                  : "Erreur",
-              );
-            }
-          }}
-        />
-      )}
+      setNewProspect(false);
+      setSection("prospects");
+      setToast("Prospect créé.");
+    }}
+  />
+)}
     </div>
   );
 }
@@ -3232,68 +3216,145 @@ function NewProspectModal({
 }: {
   onClose: () => void;
   onCreate: (
-    prospect: Record<
-      string,
-      unknown
-    >,
+    prospect: Record<string, string>,
   ) => Promise<void>;
 }) {
-  const [form, setForm] =
-    useState({
-      name: "",
-      company: "",
-      email: "",
-      phone: "",
-      website: "",
-      sector: "",
-      source: "manual",
-      status: "new",
-      offer: "",
-      estimated_value: "",
-      recurring_value: "",
-      notes: "",
-    });
+  const [form, setForm] = useState({
+    name: "",
+    company: "",
+    email: "",
+    phone: "",
+    website: "",
+    notes: "",
+  });
 
-  const [saving, setSaving] =
-    useState(false);
+  const [error, setError] = useState("");
 
-  async function create() {
-    if (!form.name.trim()) {
+  function updateField(
+    field: keyof typeof form,
+    value: string,
+  ) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+
+    if (error) {
+      setError("");
+    }
+  }
+
+  function normalizeWebsite(value: string) {
+    const website = value.trim();
+
+    if (!website) {
+      return "";
+    }
+
+    if (
+      website.startsWith("http://") ||
+      website.startsWith("https://")
+    ) {
+      return website;
+    }
+
+    return `https://${website}`;
+  }
+
+  function validateEmail(value: string) {
+    if (!value.trim()) {
+      return true;
+    }
+
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+      value.trim(),
+    );
+  }
+
+  function validateWebsite(value: string) {
+    if (!value.trim()) {
+      return true;
+    }
+
+    try {
+      const url = new URL(
+        normalizeWebsite(value),
+      );
+
+      return (
+        url.protocol === "http:" ||
+        url.protocol === "https:"
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async function handleCreate() {
+    const name = form.name.trim();
+    const company = form.company.trim();
+    const email = form.email.trim();
+    const phone = form.phone.trim();
+    const website = normalizeWebsite(
+      form.website,
+    );
+    const notes = form.notes.trim();
+
+    if (!name) {
+      setError("Veuillez renseigner le nom du prospect.");
       return;
     }
 
-    setSaving(true);
+    if (!company) {
+      setError(
+        "Veuillez renseigner le nom de l'entreprise.",
+      );
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      setError(
+        "Veuillez renseigner une adresse e-mail valide.",
+      );
+      return;
+    }
+
+    if (!validateWebsite(form.website)) {
+      setError(
+        "L'adresse du site internet semble invalide.",
+      );
+      return;
+    }
 
     try {
       await onCreate({
-        ...form,
-        estimated_value:
-          Number(
-            form.estimated_value ||
-              0,
-          ),
-        recurring_value:
-          Number(
-            form.recurring_value ||
-              0,
-          ),
+        name,
+        company,
+        email,
+        phone,
+        website,
+        notes,
       });
-    } finally {
-      setSaving(false);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Impossible de créer le prospect.",
+      );
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto !bg-black/50 p-4 backdrop-blur-sm">
-      <div className="mx-auto my-8 max-w-3xl rounded-[30px] !bg-[#f5f5f3] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-black/10 px-6 py-5 sm:px-8">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center !bg-black/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-[30px] !bg-[#f5f5f3] p-6 shadow-2xl sm:p-8">
+        <div className="flex justify-between">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.2em] !text-[#c8a45d]">
-              CRM
+              Nouveau
             </div>
 
-            <h2 className="mt-1 text-2xl font-black !text-[#080808]">
-              Nouveau prospect
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.05em] !text-[#080808]">
+              Ajouter un prospect
             </h2>
           </div>
 
@@ -3306,294 +3367,124 @@ function NewProspectModal({
           </button>
         </div>
 
-        <div className="p-6 sm:p-8">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Nom"
+        <div className="mt-7 grid gap-4 sm:grid-cols-2">
+          <Field label="Nom *">
+            <input
+              type="text"
               value={form.name}
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    name: value,
-                  }),
+              onChange={(event) =>
+                updateField(
+                  "name",
+                  event.target.value,
                 )
               }
+              placeholder="Jean Dupont"
+              autoComplete="name"
             />
+          </Field>
 
-            <Field
-              label="Entreprise"
+          <Field label="Entreprise *">
+            <input
+              type="text"
               value={form.company}
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    company: value,
-                  }),
+              onChange={(event) =>
+                updateField(
+                  "company",
+                  event.target.value,
                 )
               }
+              placeholder="Entreprise"
+              autoComplete="organization"
             />
+          </Field>
 
-            <Field
-              label="Email"
+          <Field label="E-mail">
+            <input
+              type="email"
               value={form.email}
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    email: value,
-                  }),
+              onChange={(event) =>
+                updateField(
+                  "email",
+                  event.target.value,
                 )
               }
+              placeholder="contact@entreprise.fr"
+              autoComplete="email"
             />
+          </Field>
 
-            <Field
-              label="Téléphone"
+          <Field label="Téléphone">
+            <input
+              type="tel"
               value={form.phone}
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    phone: value,
-                  }),
+              onChange={(event) =>
+                updateField(
+                  "phone",
+                  event.target.value,
                 )
               }
+              placeholder="06 12 34 56 78"
+              autoComplete="tel"
             />
+          </Field>
 
-            <Field
-              label="Site internet"
+          <Field label="Site internet">
+            <input
+              type="text"
               value={form.website}
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    website: value,
-                  }),
+              onChange={(event) =>
+                updateField(
+                  "website",
+                  event.target.value,
                 )
               }
+              placeholder="entreprise.fr"
+              autoComplete="url"
+              inputMode="url"
             />
+          </Field>
 
-            <Field
-              label="Secteur"
-              value={form.sector}
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    sector: value,
-                  }),
-                )
-              }
-            />
-
-            <Field
-              label="Offre"
-              value={form.offer}
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    offer: value,
-                  }),
-                )
-              }
-            />
-
-            <Field
-              label="Valeur estimée"
-              type="number"
-              value={
-                form.estimated_value
-              }
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    estimated_value:
-                      value,
-                  }),
-                )
-              }
-            />
-
-            <Field
-              label="Récurrent"
-              type="number"
-              value={
-                form.recurring_value
-              }
-              onChange={(value) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    recurring_value:
-                      value,
-                  }),
-                )
-              }
-            />
-
-            <label className="grid gap-2">
-              <span className="text-xs font-bold !text-black/55">
-                Source
-              </span>
-
-              <select
-                value={form.source}
-                onChange={(
-                  event,
-                ) =>
-                  setForm(
-                    (
-                      current,
-                    ) => ({
-                      ...current,
-                      source:
-                        event
-                          .target
-                          .value,
-                    }),
-                  )
-                }
-                className="h-11 rounded-xl border border-black/10 !bg-white px-3 text-sm outline-none"
-              >
-                <option value="manual">
-                  Manuel
-                </option>
-
-                <option value="grand-plus">
-                  Grand+
-                </option>
-
-                <option value="audit">
-                  Audit
-                </option>
-
-                <option value="booking">
-                  Rendez-vous
-                </option>
-
-                <option value="contact">
-                  Contact
-                </option>
-              </select>
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-xs font-bold !text-black/55">
-                Statut
-              </span>
-
-              <select
-                value={form.status}
-                onChange={(
-                  event,
-                ) =>
-                  setForm(
-                    (
-                      current,
-                    ) => ({
-                      ...current,
-                      status:
-                        event
-                          .target
-                          .value,
-                    }),
-                  )
-                }
-                className="h-11 rounded-xl border border-black/10 !bg-white px-3 text-sm outline-none"
-              >
-                {statuses.map(
-                  ([
-                    key,
-                    label,
-                  ]) => (
-                    <option
-                      key={key}
-                      value={key}
-                    >
-                      {label}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
-          </div>
-
-          <label className="mt-4 grid gap-2">
-            <span className="text-xs font-bold !text-black/55">
-              Notes
-            </span>
-
-            <textarea
+          <Field label="Notes">
+            <input
+              type="text"
               value={form.notes}
               onChange={(event) =>
-                setForm(
-                  (
-                    current,
-                  ) => ({
-                    ...current,
-                    notes:
-                      event.target
-                        .value,
-                  }),
+                updateField(
+                  "notes",
+                  event.target.value,
                 )
               }
-              rows={5}
-              className="resize-none rounded-xl border border-black/10 !bg-white p-3 text-sm outline-none"
+              placeholder="Informations complémentaires..."
             />
-          </label>
+          </Field>
+        </div>
 
-          <div className="mt-6 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className={`${buttonLight} px-5 py-3 text-sm`}
-            >
-              Annuler
-            </button>
-
-            <button
-              type="button"
-              onClick={create}
-              disabled={
-                saving ||
-                !form.name.trim()
-              }
-              className={`${buttonGold} px-5 py-3 text-sm disabled:opacity-50`}
-            >
-              {saving ? (
-                <RefreshCw
-                  size={15}
-                  className="mr-2 animate-spin"
-                />
-              ) : (
-                <UserPlus
-                  size={15}
-                  className="mr-2"
-                />
-              )}
-              Créer le prospect
-            </button>
+        {error && (
+          <div className="mt-5 rounded-2xl border border-red-200 !bg-red-50 px-4 py-3 text-sm font-medium !text-red-700">
+            {error}
           </div>
+        )}
+
+        <div className="mt-7 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className={`${buttonLight} px-5 py-3 text-sm`}
+          >
+            Annuler
+          </button>
+
+          <button
+            type="button"
+            disabled={
+              !form.name.trim() ||
+              !form.company.trim()
+            }
+            onClick={handleCreate}
+            className={`${buttonDark} px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
+          >
+            Créer le prospect
+          </button>
         </div>
       </div>
     </div>
@@ -3606,33 +3497,60 @@ function NewProspectModal({
 
 function Field({
   label,
-  value,
-  onChange,
-  type = "text",
+  children,
 }: {
   label: string;
-  value: string;
-  onChange: (
-    value: string,
-  ) => void;
-  type?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-2">
-      <span className="text-xs font-bold !text-black/55">
-        {label}
-      </span>
+    <label className="grid gap-2 text-xs font-bold !text-black/45">
+      {label}
 
-      <input
-        type={type}
-        value={value}
-        onChange={(event) =>
-          onChange(
-            event.target.value,
-          )
-        }
-        className="h-11 rounded-xl border border-black/10 !bg-white px-3 text-sm outline-none focus:border-[#c8a45d]"
-      />
+      <div
+        className="
+          [&_input]:w-full
+          [&_input]:rounded-2xl
+          [&_input]:!bg-[#f5f5f3]
+          [&_input]:px-4
+          [&_input]:py-3
+          [&_input]:text-sm
+          [&_input]:font-medium
+          [&_input]:!text-[#080808]
+          [&_input]:outline-none
+          [&_input]:placeholder:!text-black/30
+          [&_input]:focus:border-[#c8a45d]
+          [&_input]:focus:ring-2
+          [&_input]:focus:ring-[#c8a45d]/10
+
+          [&_select]:w-full
+          [&_select]:rounded-2xl
+          [&_select]:!bg-[#f5f5f3]
+          [&_select]:px-4
+          [&_select]:py-3
+          [&_select]:text-sm
+          [&_select]:font-medium
+          [&_select]:!text-[#080808]
+          [&_select]:outline-none
+          [&_select]:focus:border-[#c8a45d]
+          [&_select]:focus:ring-2
+          [&_select]:focus:ring-[#c8a45d]/10
+
+          [&_textarea]:w-full
+          [&_textarea]:rounded-2xl
+          [&_textarea]:!bg-[#f5f5f3]
+          [&_textarea]:px-4
+          [&_textarea]:py-3
+          [&_textarea]:text-sm
+          [&_textarea]:font-medium
+          [&_textarea]:!text-[#080808]
+          [&_textarea]:outline-none
+          [&_textarea]:focus:border-[#c8a45d]
+          [&_textarea]:focus:ring-2
+          [&_textarea]:focus:ring-[#c8a45d]/10
+        "
+      >
+        {children}
+      </div>
     </label>
   );
 }
