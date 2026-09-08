@@ -871,7 +871,7 @@ export default function AdminDashboard() {
             </button>
 
             <a
-              href="/vitrine.fr?logout=1"
+              href="/vitrine.fr/admin/logout.php"
               className="admin-white-button inline-flex rounded-full border border-black/10 p-2"
             >
               <LogOut size={16} />
