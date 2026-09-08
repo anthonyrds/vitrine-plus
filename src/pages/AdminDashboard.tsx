@@ -3400,32 +3400,32 @@ function NewProspectModal({
 
           <Field label="E-mail">
             <input
-              type="email"
-              value={form.email}
-              onChange={(event) =>
-                updateField(
-                  "email",
-                  event.target.value,
-                )
-              }
-              placeholder="contact@entreprise.fr"
-              autoComplete="email"
-            />
+  type="text"
+  inputMode="email"
+  autoComplete="email"
+  value={form.email}
+  onChange={(event) =>
+    setForm({
+      ...form,
+      email: event.target.value,
+    })
+  }
+/>
           </Field>
 
           <Field label="Téléphone">
             <input
-              type="tel"
-              value={form.phone}
-              onChange={(event) =>
-                updateField(
-                  "phone",
-                  event.target.value,
-                )
-              }
-              placeholder="06 12 34 56 78"
-              autoComplete="tel"
-            />
+  type="text"
+  inputMode="tel"
+  autoComplete="tel"
+  value={form.phone}
+  onChange={(event) =>
+    setForm({
+      ...form,
+      phone: event.target.value,
+    })
+  }
+/>
           </Field>
 
           <Field label="Site internet">
