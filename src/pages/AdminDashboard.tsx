@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import {
   Activity,
   BarChart3,
   CalendarDays,
-  Check,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -21,6 +21,10 @@ import {
   Users,
   X,
 } from "lucide-react";
+
+/* ================================================================
+   TYPES
+================================================================ */
 
 type Interaction = {
   id: string;
@@ -67,7 +71,6 @@ type Prospect = {
   next_action_at: string;
 
   notes: string;
-
   interactions: Interaction[];
 };
 
@@ -77,15 +80,17 @@ type Booking = {
   date: string;
   time: string;
   duration?: number;
+
   name: string;
   phone: string;
   company: string;
   email?: string;
   reason: string;
+
   status: string;
 };
 
-type Block = {
+type AvailabilityBlock = {
   id: string;
   date: string;
   all_day: boolean;
@@ -95,15 +100,17 @@ type Block = {
   created_at?: string;
 };
 
-type Grand = {
+type GrandPlusParticipant = {
   id?: string;
   month_key?: string;
   month_label?: string;
+
   name?: string;
   company?: string;
   email?: string;
   phone?: string;
   website?: string;
+
   marketing_consent?: boolean;
   status?: string;
 };
@@ -118,10 +125,14 @@ type Data = {
 
   prospects: Prospect[];
   bookings: Booking[];
-  grand_plus: Grand[];
+  grand_plus: GrandPlusParticipant[];
 };
 
-const EMPTY: Data = {
+/* ================================================================
+   CONSTANTES
+================================================================ */
+
+const EMPTY_DATA: Data = {
   success: true,
   generated_at: "",
 
@@ -178,6 +189,10 @@ const SOURCE_LABEL: Record<string, string> = {
   manual: "Manuel",
 };
 
+/* ================================================================
+   HELPERS
+================================================================ */
+
 function euro(value: number) {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
@@ -223,41 +238,38 @@ function frDateTime(value: string) {
 }
 
 function statusClass(status: string) {
-  if (status === "won") {
-    return "bg-emerald-100 text-emerald-700";
-  }
+  switch (status) {
+    case "won":
+      return "bg-emerald-100 text-emerald-700";
 
-  if (status === "lost") {
-    return "bg-red-100 text-red-700";
-  }
+    case "lost":
+      return "bg-red-100 text-red-700";
 
-  if (status === "meeting") {
-    return "bg-blue-100 text-blue-700";
-  }
+    case "meeting":
+      return "bg-blue-100 text-blue-700";
 
-  if (status === "proposal") {
-    return "bg-purple-100 text-purple-700";
-  }
+    case "proposal":
+      return "bg-purple-100 text-purple-700";
 
-  if (status === "negotiation") {
-    return "bg-orange-100 text-orange-700";
-  }
+    case "negotiation":
+      return "bg-orange-100 text-orange-700";
 
-  if (status === "qualified") {
-    return "bg-[#c8a45d]/20 text-[#85671f]";
-  }
+    case "qualified":
+      return "bg-[#c8a45d]/20 text-[#85671f]";
 
-  return "bg-black/5 text-black/60";
+    default:
+      return "bg-black/5 text-black/60";
+  }
 }
 
-function Badge({
+function StatusBadge({
   status,
 }: {
   status: string;
 }) {
   return (
     <span
-      className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[.1em] ${statusClass(
+      className={`inline-flex rounded-full px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.1em] ${statusClass(
         status,
       )}`}
     >
@@ -266,8 +278,75 @@ function Badge({
   );
 }
 
+/* ================================================================
+   STYLES ADMIN
+================================================================ */
+
+function AdminButtonStyles() {
+  return (
+    <style>
+      {`
+        .vplus-admin,
+        .vplus-admin button,
+        .vplus-admin input,
+        .vplus-admin select,
+        .vplus-admin textarea {
+          font-family: inherit;
+        }
+
+        .vplus-admin button {
+          color: inherit !important;
+        }
+
+        .vplus-admin .admin-white-button {
+          color: #080808 !important;
+          background: #ffffff !important;
+        }
+
+        .vplus-admin .admin-dark-button {
+          color: #ffffff !important;
+          background: #080808 !important;
+        }
+
+        .vplus-admin .admin-gold-button {
+          color: #080808 !important;
+          background: #c8a45d !important;
+        }
+
+        .vplus-admin .admin-danger-button {
+          color: #dc2626 !important;
+          background: #ffffff !important;
+        }
+
+        .vplus-admin .admin-sidebar-button {
+          color: rgba(255,255,255,.65) !important;
+        }
+
+        .vplus-admin .admin-sidebar-button-active {
+          color: #080808 !important;
+          background: #c8a45d !important;
+        }
+
+        .vplus-admin a {
+          color: inherit;
+        }
+
+        .vplus-admin input::placeholder,
+        .vplus-admin textarea::placeholder {
+          color: rgba(0,0,0,.35);
+        }
+      `}
+    </style>
+  );
+}
+
+/* ================================================================
+   COMPONENT PRINCIPAL
+================================================================ */
+
 export default function AdminDashboard() {
-  const [data, setData] = useState<Data>(EMPTY);
+  const [data, setData] = useState<Data>(EMPTY_DATA);
+
   const [loading, setLoading] = useState(true);
 
   const [section, setSection] = useState("dashboard");
@@ -280,15 +359,28 @@ export default function AdminDashboard() {
   const [status, setStatus] = useState("all");
 
   const [toast, setToast] = useState("");
+
   const [newOpen, setNewOpen] = useState(false);
+
   const [mobile, setMobile] = useState(false);
 
-  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [blocks, setBlocks] =
+    useState<AvailabilityBlock[]>([]);
+
   const [blockDate, setBlockDate] = useState("");
+
   const [allDay, setAllDay] = useState(true);
+
   const [start, setStart] = useState("09:00");
+
   const [end, setEnd] = useState("18:00");
-  const [reason, setReason] = useState("Indisponible");
+
+  const [reason, setReason] =
+    useState("Indisponible");
+
+  /* ==============================================================
+     CHARGEMENT CRM
+  ============================================================== */
 
   async function load() {
     setLoading(true);
@@ -320,12 +412,13 @@ export default function AdminDashboard() {
       setData(json);
 
       if (selected) {
-        setSelected(
+        const refreshed =
           (json.prospects as Prospect[]).find(
             (prospect) =>
               prospect.id === selected.id,
-          ) ?? null,
-        );
+          ) ?? null;
+
+        setSelected(refreshed);
       }
     } catch (error) {
       setToast(
@@ -337,6 +430,10 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   }
+
+  /* ==============================================================
+     CHARGEMENT DISPONIBILITÉS
+  ============================================================== */
 
   async function loadBlocks() {
     try {
@@ -359,7 +456,7 @@ export default function AdminDashboard() {
       if (!response.ok || !json.success) {
         throw new Error(
           json.message ||
-            "Impossible de charger les indisponibilités.",
+            "Impossible de charger les disponibilités.",
         );
       }
 
@@ -376,6 +473,10 @@ export default function AdminDashboard() {
       );
     }
   }
+
+  /* ==============================================================
+     API CRM
+  ============================================================== */
 
   async function api(
     payload: Record<string, unknown>,
@@ -412,6 +513,10 @@ export default function AdminDashboard() {
 
     return json;
   }
+
+  /* ==============================================================
+     API DISPONIBILITÉS
+  ============================================================== */
 
   async function availability(
     payload: Record<string, unknown>,
@@ -457,20 +562,23 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!toast) {
-      return;
-    }
+    if (!toast) return;
 
-    const timer = setTimeout(
+    const timer = window.setTimeout(
       () => setToast(""),
       3500,
     );
 
-    return () => clearTimeout(timer);
+    return () =>
+      window.clearTimeout(timer);
   }, [toast]);
 
+  /* ==============================================================
+     FILTRES
+  ============================================================== */
+
   const filtered = useMemo(() => {
-    const search =
+    const q =
       query.trim().toLowerCase();
 
     return data.prospects.filter(
@@ -488,13 +596,21 @@ export default function AdminDashboard() {
           .join(" ")
           .toLowerCase();
 
+        const matchesQuery =
+          !q || haystack.includes(q);
+
+        const matchesSource =
+          source === "all" ||
+          prospect.source === source;
+
+        const matchesStatus =
+          status === "all" ||
+          prospect.status === status;
+
         return (
-          (!search ||
-            haystack.includes(search)) &&
-          (source === "all" ||
-            prospect.source === source) &&
-          (status === "all" ||
-            prospect.status === status)
+          matchesQuery &&
+          matchesSource &&
+          matchesStatus
         );
       },
     );
@@ -505,21 +621,23 @@ export default function AdminDashboard() {
     status,
   ]);
 
-  const upcoming = useMemo(
-    () =>
-      [...data.bookings]
-        .filter(
-          (booking) =>
-            booking.status !==
-            "cancelled",
-        )
-        .sort((a, b) =>
-          `${a.date} ${a.time}`.localeCompare(
-            `${b.date} ${b.time}`,
-          ),
+  const upcoming = useMemo(() => {
+    return [...data.bookings]
+      .filter(
+        (booking) =>
+          booking.status !==
+          "cancelled",
+      )
+      .sort((a, b) =>
+        `${a.date} ${a.time}`.localeCompare(
+          `${b.date} ${b.time}`,
         ),
-    [data.bookings],
-  );
+      );
+  }, [data.bookings]);
+
+  /* ==============================================================
+     NAVIGATION
+  ============================================================== */
 
   const menu = [
     [
@@ -559,23 +677,28 @@ export default function AdminDashboard() {
     ],
   ] as const;
 
-  function navigate(value: string) {
-    setSection(value);
+  function navigate(
+    sectionName: string,
+  ) {
+    setSection(sectionName);
+    setSelected(null);
     setMobile(false);
   }
+
+  /* ==============================================================
+     PROSPECT
+  ============================================================== */
 
   async function saveProspect(
     payload: Record<string, unknown>,
   ) {
-    if (!selected) {
-      return;
-    }
+    if (!selected) return;
 
     try {
       await api({
         action: "update_prospect",
-        ...payload,
         id: selected.id,
+        ...payload,
       });
 
       setToast(
@@ -594,9 +717,7 @@ export default function AdminDashboard() {
     text: string,
     type: string,
   ) {
-    if (!selected) {
-      return;
-    }
+    if (!selected) return;
 
     try {
       await api({
@@ -618,77 +739,26 @@ export default function AdminDashboard() {
     }
   }
 
-  async function addBlock() {
-    if (!blockDate) {
-      setToast(
-        "Choisissez une date.",
-      );
-      return;
-    }
-
-    if (
-      !allDay &&
-      start >= end
-    ) {
-      setToast(
-        "L'heure de début doit être avant l'heure de fin.",
-      );
-      return;
-    }
-
-    try {
-      await availability({
-        action: "add_block",
-        date: blockDate,
-        all_day: allDay,
-        start_time: allDay
-          ? null
-          : start,
-        end_time: allDay
-          ? null
-          : end,
-        reason:
-          reason.trim() ||
-          "Indisponible",
-      });
-
-      setToast(
-        "Indisponibilité ajoutée.",
-      );
-
-      setBlockDate("");
-      setAllDay(true);
-      setStart("09:00");
-      setEnd("18:00");
-      setReason("Indisponible");
-    } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Erreur.",
-      );
-    }
-  }
-
-  async function deleteBlock(
+  async function deleteProspect(
     id: string,
   ) {
-    if (
-      !window.confirm(
-        "Supprimer cette indisponibilité ?",
-      )
-    ) {
-      return;
-    }
+    const confirmed =
+      window.confirm(
+        "Supprimer définitivement ce prospect ?\n\nCette action supprimera également sa donnée source si elle provient d'un formulaire du site.\n\nCette action est irréversible.",
+      );
+
+    if (!confirmed) return;
 
     try {
-      await availability({
-        action: "delete_block",
+      await api({
+        action: "delete_prospect",
         id,
       });
 
+      setSelected(null);
+
       setToast(
-        "Indisponibilité supprimée.",
+        "Prospect supprimé.",
       );
     } catch (error) {
       setToast(
@@ -699,22 +769,86 @@ export default function AdminDashboard() {
     }
   }
 
+  /* ==============================================================
+     RENDEZ-VOUS
+  ============================================================== */
+
+  async function updateBooking(
+    reference: string,
+    newStatus: string,
+  ) {
+    try {
+      await api({
+        action: "update_booking",
+        reference,
+        status: newStatus,
+      });
+
+      setToast(
+        "Rendez-vous mis à jour.",
+      );
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Erreur.",
+      );
+    }
+  }
+
+  async function deleteBooking(
+    reference: string,
+  ) {
+    const confirmed =
+      window.confirm(
+        "Supprimer définitivement ce rendez-vous ?\n\nCette action est irréversible.",
+      );
+
+    if (!confirmed) return;
+
+    try {
+      await api({
+        action: "delete_booking",
+        reference,
+      });
+
+      setToast(
+        "Rendez-vous supprimé.",
+      );
+    } catch (error) {
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Erreur.",
+      );
+    }
+  }
+
+  /* ==============================================================
+     RENDER
+  ============================================================== */
+
   return (
-    <div className="min-h-screen bg-[#f4f4f1] text-[#080808]">
+    <div className="vplus-admin min-h-screen bg-[#f4f4f1] text-[#080808]">
+      <AdminButtonStyles />
+
+      {/* HEADER */}
+
       <header className="sticky top-0 z-30 border-b border-black/10 bg-[#f4f4f1]/95 backdrop-blur">
         <div className="flex h-16 items-center justify-between px-5 lg:px-8">
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={() =>
                 setMobile(true)
               }
-              className="rounded-full border border-black/10 p-2 lg:hidden"
+              className="admin-white-button inline-flex items-center justify-center rounded-full border border-black/10 p-2 lg:hidden"
             >
               <Menu size={18} />
             </button>
 
             <div>
-              <div className="text-[10px] font-extrabold uppercase tracking-[.25em] text-black/35">
+              <div className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-black/35">
                 Vitrine+
               </div>
 
@@ -726,18 +860,19 @@ export default function AdminDashboard() {
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => {
                 load();
                 loadBlocks();
               }}
-              className="hidden rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold sm:block"
+              className="admin-white-button hidden rounded-full border border-black/10 px-4 py-2 text-xs font-bold sm:inline-flex"
             >
               Actualiser
             </button>
 
             <a
               href="/grand-plus-admin.php?logout=1"
-              className="rounded-full border border-black/10 bg-white p-2"
+              className="admin-white-button inline-flex rounded-full border border-black/10 p-2"
             >
               <LogOut size={16} />
             </a>
@@ -746,6 +881,8 @@ export default function AdminDashboard() {
       </header>
 
       <div className="flex">
+        {/* SIDEBAR */}
+
         <aside
           className={`${
             mobile
@@ -755,15 +892,16 @@ export default function AdminDashboard() {
         >
           <div className="flex h-full flex-col p-4">
             <div className="mb-6 flex items-center justify-between px-3 pt-2">
-              <span className="text-xs font-extrabold uppercase tracking-[.25em] text-white/40">
+              <span className="text-xs font-extrabold uppercase tracking-[0.25em] text-white/40">
                 V+ Admin
               </span>
 
               <button
+                type="button"
                 onClick={() =>
                   setMobile(false)
                 }
-                className="lg:hidden"
+                className="text-white lg:hidden"
               >
                 <X size={18} />
               </button>
@@ -778,18 +916,19 @@ export default function AdminDashboard() {
                 ]) => (
                   <button
                     key={key}
+                    type="button"
                     onClick={() =>
                       navigate(key)
                     }
                     className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${
                       section === key
-                        ? "bg-[#c8a45d] text-black"
-                        : "text-white/65 hover:bg-white/5 hover:text-white"
+                        ? "admin-sidebar-button-active"
+                        : "admin-sidebar-button hover:bg-white/5 hover:text-white"
                     }`}
                   >
                     <Icon size={17} />
 
-                    {label}
+                    <span>{label}</span>
 
                     {key ===
                       "calendar" &&
@@ -808,8 +947,10 @@ export default function AdminDashboard() {
               )}
             </nav>
 
-            <div className="mt-auto rounded-2xl border border-white/10 bg-white/[.04] p-4 text-xs text-white/45">
-              Les données sont lues directement depuis les fichiers réels du site.
+            <div className="mt-auto rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-xs text-white/45">
+              Les données sont lues
+              directement depuis les
+              fichiers réels du site.
 
               <br />
 
@@ -825,24 +966,24 @@ export default function AdminDashboard() {
           </div>
         </aside>
 
+        {/* MAIN */}
+
         <main className="min-w-0 flex-1 p-5 lg:p-8">
           {loading ? (
-            <div className="flex min-h-[50vh] items-center justify-center">
+            <div className="flex min-h-[60vh] items-center justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-[#c8a45d]" />
             </div>
           ) : section ===
             "dashboard" ? (
             <Dashboard
               data={data}
-              upcoming={upcoming}
-              onOpen={setSelected}
               onNavigate={navigate}
+              onOpen={setSelected}
             />
           ) : section ===
             "prospects" ? (
             <Prospects
-              data={data}
-              filtered={filtered}
+              prospects={filtered}
               query={query}
               setQuery={setQuery}
               source={source}
@@ -857,7 +998,7 @@ export default function AdminDashboard() {
           ) : section ===
             "pipeline" ? (
             <Pipeline
-              data={data}
+              prospects={data.prospects}
               onOpen={setSelected}
               onMove={async (
                 id,
@@ -877,7 +1018,8 @@ export default function AdminDashboard() {
                   );
                 } catch (error) {
                   setToast(
-                    error instanceof Error
+                    error instanceof
+                      Error
                       ? error.message
                       : "Erreur.",
                   );
@@ -888,21 +1030,8 @@ export default function AdminDashboard() {
             "calendar" ? (
             <Calendar
               bookings={upcoming}
-              onOpen={(booking) => {
-                const prospect =
-                  data.prospects.find(
-                    (item) =>
-                      item.booking_reference ===
-                      booking.reference,
-                  );
-
-                if (prospect) {
-                  setSelected(
-                    prospect,
-                  );
-                }
-              }}
-              onRefresh={load}
+              onStatus={updateBooking}
+              onDelete={deleteBooking}
             />
           ) : section ===
             "availability" ? (
@@ -918,8 +1047,90 @@ export default function AdminDashboard() {
               setEnd={setEnd}
               reason={reason}
               setReason={setReason}
-              onAdd={addBlock}
-              onDelete={deleteBlock}
+              onAdd={async () => {
+                if (!blockDate) {
+                  setToast(
+                    "Choisissez une date.",
+                  );
+                  return;
+                }
+
+                if (
+                  !allDay &&
+                  start >= end
+                ) {
+                  setToast(
+                    "L'heure de début doit être avant l'heure de fin.",
+                  );
+                  return;
+                }
+
+                try {
+                  await availability(
+                    {
+                      action:
+                        "add_block",
+                      date: blockDate,
+                      all_day: allDay,
+                      start_time:
+                        allDay
+                          ? null
+                          : start,
+                      end_time:
+                        allDay
+                          ? null
+                          : end,
+                      reason:
+                        reason.trim() ||
+                        "Indisponible",
+                    },
+                  );
+
+                  setBlockDate("");
+
+                  setToast(
+                    "Indisponibilité ajoutée.",
+                  );
+                } catch (error) {
+                  setToast(
+                    error instanceof
+                      Error
+                      ? error.message
+                      : "Erreur.",
+                  );
+                }
+              }}
+              onDelete={async (id) => {
+                const confirmed =
+                  window.confirm(
+                    "Supprimer cette indisponibilité ?",
+                  );
+
+                if (!confirmed) {
+                  return;
+                }
+
+                try {
+                  await availability(
+                    {
+                      action:
+                        "delete_block",
+                      id,
+                    },
+                  );
+
+                  setToast(
+                    "Indisponibilité supprimée.",
+                  );
+                } catch (error) {
+                  setToast(
+                    error instanceof
+                      Error
+                      ? error.message
+                      : "Erreur.",
+                  );
+                }
+              }}
             />
           ) : section ===
             "grand-plus" ? (
@@ -932,7 +1143,9 @@ export default function AdminDashboard() {
         </main>
       </div>
 
-      {selected ? (
+      {/* FICHE PROSPECT */}
+
+      {selected && (
         <ProspectModal
           prospect={selected}
           onClose={() =>
@@ -942,10 +1155,15 @@ export default function AdminDashboard() {
           onInteraction={
             addInteraction
           }
+          onDelete={
+            deleteProspect
+          }
         />
-      ) : null}
+      )}
 
-      {newOpen ? (
+      {/* NOUVEAU PROSPECT */}
+
+      {newOpen && (
         <NewProspect
           onClose={() =>
             setNewOpen(false)
@@ -953,45 +1171,59 @@ export default function AdminDashboard() {
           api={api}
           onCreated={() => {
             setNewOpen(false);
-            setSection("prospects");
             setToast(
               "Prospect créé.",
             );
           }}
         />
-      ) : null}
+      )}
 
-      {toast ? (
-        <div className="fixed bottom-5 right-5 z-[100] max-w-sm rounded-2xl bg-[#080808] px-5 py-4 text-sm font-bold text-white shadow-2xl">
+      {/* TOAST */}
+
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-2xl bg-[#080808] px-5 py-4 text-sm font-bold text-white shadow-2xl">
           {toast}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
 
+/* ================================================================
+   DASHBOARD
+================================================================ */
+
 function Dashboard({
   data,
-  upcoming,
-  onOpen,
   onNavigate,
+  onOpen,
 }: {
   data: Data;
-  upcoming: Booking[];
-  onOpen: (prospect: Prospect) => void;
   onNavigate: (section: string) => void;
+  onOpen: (prospect: Prospect) => void;
 }) {
-  const recent = data.prospects.slice(
-    0,
-    6,
-  );
+  const urgent =
+    data.prospects
+      .filter(
+        (prospect) =>
+          prospect.next_action_at &&
+          !["won", "lost"].includes(
+            prospect.status,
+          ),
+      )
+      .sort((a, b) =>
+        a.next_action_at.localeCompare(
+          b.next_action_at,
+        ),
+      )
+      .slice(0, 6);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <Title
         eyebrow="Vue d'ensemble"
-        title="Pilotez votre activité."
-        text="Votre activité commerciale, vos prospects et vos rendez-vous au même endroit."
+        title="Pilotez Vitrine+ depuis un seul endroit."
+        text="Prospects, rendez-vous, pipeline et Grand+ sont réunis ici."
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -1004,148 +1236,192 @@ function Dashboard({
         />
 
         <Metric
-          icon={Target}
-          label="Nouveaux"
-          value={String(
-            data.stats.new ?? 0,
-          )}
-        />
-
-        <Metric
           icon={CalendarDays}
-          label="Rendez-vous"
+          label="RDV à venir"
           value={String(
-            data.stats.upcoming_bookings ??
-              0,
+            data.stats
+              .upcoming_bookings ?? 0,
           )}
         />
 
         <Metric
           icon={CircleDollarSign}
-          label="CA potentiel"
+          label="CA signé"
           value={euro(
-            data.stats.potential_revenue ??
-              0,
+            data.stats
+              .signed_revenue ?? 0,
+          )}
+        />
+
+        <Metric
+          icon={TrendingUp}
+          label="Potentiel"
+          value={euro(
+            data.stats
+              .potential_revenue ?? 0,
           )}
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_.6fr]">
-        <Panel
-          title="Prospects récents"
-          action={
-            <button
-              onClick={() =>
-                onNavigate("prospects")
-              }
-              className="text-xs font-extrabold text-[#a17e32]"
-            >
-              Voir tout
-            </button>
-          }
-        >
-          <div className="divide-y divide-black/10">
-            {recent.map(
-              (prospect) => (
-                <button
-                  key={prospect.id}
-                  onClick={() =>
-                    onOpen(prospect)
-                  }
-                  className="flex w-full items-center justify-between gap-4 py-4 text-left"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-extrabold">
-                      {prospect.name ||
-                        "Prospect"}
-                    </div>
-
-                    <div className="mt-1 truncate text-xs text-black/40">
-                      {prospect.company ||
-                        prospect.email ||
-                        "—"}
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-3">
-                    <Badge
-                      status={
-                        prospect.status
-                      }
-                    />
-                    <ChevronRight
-                      size={16}
-                      className="text-black/25"
-                    />
-                  </div>
-                </button>
-              ),
-            )}
-
-            {recent.length === 0 ? (
-              <Empty text="Aucun prospect." />
-            ) : null}
-          </div>
-        </Panel>
-
+      <div className="grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
         <Panel
           title="Prochains rendez-vous"
           action={
             <button
+              type="button"
               onClick={() =>
                 onNavigate("calendar")
               }
-              className="text-xs font-extrabold text-[#a17e32]"
+              className="admin-white-button inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-extrabold"
             >
-              Agenda
+              Tout voir
+              <ChevronRight size={14} />
             </button>
           }
         >
-          <div className="space-y-3">
-            {upcoming
-              .slice(0, 5)
+          <div className="divide-y divide-black/10">
+            {data.bookings
+              .filter(
+                (booking) =>
+                  booking.status !==
+                  "cancelled",
+              )
+              .slice(0, 6)
               .map((booking) => (
                 <div
                   key={
                     booking.reference
                   }
-                  className="rounded-2xl border border-black/10 p-4"
+                  className="flex items-center justify-between gap-4 py-4"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <b>
-                      {booking.name ||
-                        "Client"}
-                    </b>
+                  <div>
+                    <div className="font-extrabold">
+                      {booking.name}
 
-                    <span className="text-xs font-bold text-[#a17e32]">
-                      {booking.time}
-                    </span>
+                      {booking.company
+                        ? ` · ${booking.company}`
+                        : ""}
+                    </div>
+
+                    <div className="mt-1 text-xs text-black/45">
+                      {frDate(
+                        booking.date,
+                      )}{" "}
+                      à{" "}
+                      {booking.time}{" "}
+                      ·{" "}
+                      {
+                        booking.reference
+                      }
+                    </div>
                   </div>
 
-                  <div className="mt-1 text-xs text-black/45">
-                    {frDate(
-                      booking.date,
-                    )}{" "}
-                    ·{" "}
-                    {booking.company ||
-                      "—"}
-                  </div>
+                  <StatusBadge
+                    status={
+                      booking.status ===
+                      "confirmed"
+                        ? "meeting"
+                        : "lost"
+                    }
+                  />
                 </div>
               ))}
 
-            {upcoming.length === 0 ? (
-              <Empty text="Aucun rendez-vous à venir." />
-            ) : null}
+            {data.bookings.length ===
+              0 && (
+              <Empty text="Aucun rendez-vous enregistré." />
+            )}
+          </div>
+        </Panel>
+
+        <Panel title="Pipeline">
+          <div className="space-y-3">
+            {STATUSES.map(
+              (pipelineStatus) => (
+                <div
+                  key={
+                    pipelineStatus
+                  }
+                  className="flex items-center gap-3"
+                >
+                  <span className="w-24 text-xs font-bold">
+                    {
+                      STATUS_LABEL[
+                        pipelineStatus
+                      ]
+                    }
+                  </span>
+
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-black/5">
+                    <div
+                      className="h-full rounded-full bg-[#c8a45d]"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          (data.pipeline[
+                            pipelineStatus
+                          ] ?? 0) * 20,
+                        )}%`,
+                      }}
+                    />
+                  </div>
+
+                  <b className="w-5 text-right text-xs">
+                    {data.pipeline[
+                      pipelineStatus
+                    ] ?? 0}
+                  </b>
+                </div>
+              ),
+            )}
           </div>
         </Panel>
       </div>
+
+      <Panel title="Actions commerciales">
+        <div className="grid gap-3 sm:grid-cols-3">
+          {urgent.map((prospect) => (
+            <button
+              key={prospect.id}
+              type="button"
+              onClick={() =>
+                onOpen(prospect)
+              }
+              className="admin-white-button rounded-2xl border border-black/10 p-4 text-left hover:border-[#c8a45d]"
+            >
+              <div className="font-extrabold">
+                {prospect.name ||
+                  "Sans nom"}
+              </div>
+
+              <div className="mt-1 text-xs text-black/45">
+                {prospect.next_action ||
+                  "Action à définir"}
+              </div>
+
+              <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-black/35">
+                {frDate(
+                  prospect.next_action_at,
+                )}
+              </div>
+            </button>
+          ))}
+
+          {urgent.length === 0 && (
+            <Empty text="Aucune relance urgente." />
+          )}
+        </div>
+      </Panel>
     </div>
   );
 }
 
+/* ================================================================
+   PROSPECTS
+================================================================ */
+
 function Prospects({
-  data,
-  filtered,
+  prospects,
   query,
   setQuery,
   source,
@@ -1155,8 +1431,7 @@ function Prospects({
   onOpen,
   onNew,
 }: {
-  data: Data;
-  filtered: Prospect[];
+  prospects: Prospect[];
   query: string;
   setQuery: (value: string) => void;
   source: string;
@@ -1166,200 +1441,178 @@ function Prospects({
   onOpen: (prospect: Prospect) => void;
   onNew: () => void;
 }) {
-  const sourceOptions =
-    Object.keys(data.sources);
-
   return (
     <div className="space-y-6">
       <Title
         eyebrow="CRM"
         title="Prospects"
-        text="Tous vos contacts commerciaux issus du site et ajoutés manuellement."
+        text="Toutes les sources commerciales dans une même liste."
         action={
           <button
+            type="button"
             onClick={onNew}
-            className="inline-flex items-center gap-2 rounded-full bg-[#080808] px-5 py-3 text-sm font-extrabold text-white"
+            className="admin-dark-button inline-flex items-center rounded-full px-5 py-3 text-xs font-extrabold"
           >
-            <Plus size={16} />
+            <Plus
+              size={15}
+              className="mr-2"
+            />
             Nouveau prospect
           </button>
         }
       />
 
-      <Panel title="Recherche et filtres">
-        <div className="grid gap-3 lg:grid-cols-[1fr_200px_200px]">
-          <div className="relative">
-            <Search
-              size={16}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-black/30"
-            />
+      <div className="grid gap-2 md:grid-cols-[1fr_180px_180px]">
+        <div className="relative">
+          <Search
+            size={17}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-black/30"
+          />
 
-            <input
-              value={query}
-              onChange={(event) =>
-                setQuery(
-                  event.target.value,
-                )
+          <input
+            value={query}
+            onChange={(event) =>
+              setQuery(
+                event.target.value,
+              )
+            }
+            placeholder="Rechercher…"
+            className="w-full rounded-2xl border border-black/10 bg-white px-11 py-3.5 text-sm text-[#080808] outline-none focus:border-[#c8a45d]"
+          />
+        </div>
+
+        <select
+          value={source}
+          onChange={(event) =>
+            setSource(
+              event.target.value,
+            )
+          }
+          className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-[#080808]"
+        >
+          <option value="all">
+            Toutes les sources
+          </option>
+
+          {Object.entries(
+            SOURCE_LABEL,
+          ).map(([key, label]) => (
+            <option
+              key={key}
+              value={key}
+            >
+              {label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={status}
+          onChange={(event) =>
+            setStatus(
+              event.target.value,
+            )
+          }
+          className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-[#080808]"
+        >
+          <option value="all">
+            Tous les statuts
+          </option>
+
+          {STATUSES.map(
+            (item) => (
+              <option
+                key={item}
+                value={item}
+              >
+                {STATUS_LABEL[item]}
+              </option>
+            ),
+          )}
+        </select>
+      </div>
+
+      <div className="overflow-hidden rounded-[1.5rem] border border-black/10 bg-white">
+        <div className="hidden grid-cols-[1.4fr_1fr_1fr_140px] gap-4 border-b border-black/10 bg-black/[0.02] px-5 py-3 text-[10px] font-extrabold uppercase tracking-wider text-black/35 md:grid">
+          <span>Prospect</span>
+          <span>Contact</span>
+          <span>Source</span>
+          <span>Statut</span>
+        </div>
+
+        {prospects.map(
+          (prospect) => (
+            <button
+              key={prospect.id}
+              type="button"
+              onClick={() =>
+                onOpen(prospect)
               }
-              placeholder="Nom, entreprise, e-mail, téléphone..."
-              className="w-full rounded-xl border border-black/10 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-[#c8a45d]"
-            />
-          </div>
+              className="admin-white-button grid w-full gap-2 border-b border-black/10 px-5 py-4 text-left hover:bg-black/[0.02] md:grid-cols-[1.4fr_1fr_1fr_140px] md:items-center"
+            >
+              <div>
+                <div className="font-extrabold">
+                  {prospect.name ||
+                    "Sans nom"}
+                </div>
 
-          <select
-            value={source}
-            onChange={(event) =>
-              setSource(
-                event.target.value,
-              )
-            }
-            className="rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none"
-          >
-            <option value="all">
-              Toutes les sources
-            </option>
+                <div className="text-xs text-black/45">
+                  {prospect.company ||
+                    "Entreprise non renseignée"}
+                </div>
+              </div>
 
-            {sourceOptions.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {SOURCE_LABEL[item] ??
-                    item}
-                </option>
-              ),
-            )}
-          </select>
+              <div className="text-xs text-black/60">
+                {prospect.email ||
+                  prospect.phone ||
+                  "—"}
+              </div>
 
-          <select
-            value={status}
-            onChange={(event) =>
-              setStatus(
-                event.target.value,
-              )
-            }
-            className="rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none"
-          >
-            <option value="all">
-              Tous les statuts
-            </option>
+              <div>
+                <span className="text-xs font-bold">
+                  {
+                    SOURCE_LABEL[
+                      prospect.source
+                    ]
+                  }
+                </span>
 
-            {STATUSES.map(
-              (item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {STATUS_LABEL[item]}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
-      </Panel>
-
-      <Panel
-        title={`${filtered.length} prospect${
-          filtered.length > 1
-            ? "s"
-            : ""
-        }`}
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px]">
-            <thead>
-              <tr className="border-b border-black/10 text-left text-[10px] font-extrabold uppercase tracking-[.12em] text-black/35">
-                <th className="pb-3 pr-4">
-                  Prospect
-                </th>
-                <th className="pb-3 pr-4">
-                  Source
-                </th>
-                <th className="pb-3 pr-4">
-                  Statut
-                </th>
-                <th className="pb-3 pr-4">
-                  Valeur
-                </th>
-                <th className="pb-3">
-                  Créé
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filtered.map(
-                (prospect) => (
-                  <tr
-                    key={prospect.id}
-                    onClick={() =>
-                      onOpen(prospect)
+                {prospect.booking_reference && (
+                  <div className="mt-1 text-[10px] text-black/35">
+                    {
+                      prospect.booking_reference
                     }
-                    className="cursor-pointer border-b border-black/5 transition hover:bg-black/[.025]"
-                  >
-                    <td className="py-4 pr-4">
-                      <div className="font-extrabold">
-                        {prospect.name ||
-                          "Sans nom"}
-                      </div>
+                  </div>
+                )}
+              </div>
 
-                      <div className="mt-1 text-xs text-black/40">
-                        {prospect.company ||
-                          prospect.email ||
-                          prospect.phone ||
-                          "—"}
-                      </div>
-                    </td>
+              <StatusBadge
+                status={
+                  prospect.status
+                }
+              />
+            </button>
+          ),
+        )}
 
-                    <td className="py-4 pr-4 text-xs font-bold">
-                      {SOURCE_LABEL[
-                        prospect.source
-                      ] ??
-                        prospect.source}
-                    </td>
-
-                    <td className="py-4 pr-4">
-                      <Badge
-                        status={
-                          prospect.status
-                        }
-                      />
-                    </td>
-
-                    <td className="py-4 pr-4 text-sm font-extrabold">
-                      {euro(
-                        prospect.estimated_value ??
-                          0,
-                      )}
-                    </td>
-
-                    <td className="py-4 text-xs text-black/45">
-                      {frDate(
-                        prospect.created_at,
-                      )}
-                    </td>
-                  </tr>
-                ),
-              )}
-            </tbody>
-          </table>
-
-          {filtered.length === 0 ? (
-            <Empty text="Aucun prospect ne correspond à votre recherche." />
-          ) : null}
-        </div>
-      </Panel>
+        {prospects.length === 0 && (
+          <Empty text="Aucun prospect ne correspond aux filtres." />
+        )}
+      </div>
     </div>
   );
 }
 
+/* ================================================================
+   PIPELINE
+================================================================ */
+
 function Pipeline({
-  data,
+  prospects,
   onOpen,
   onMove,
 }: {
-  data: Data;
+  prospects: Prospect[];
   onOpen: (prospect: Prospect) => void;
   onMove: (
     id: string,
@@ -1369,74 +1622,77 @@ function Pipeline({
   return (
     <div className="space-y-6">
       <Title
-        eyebrow="Pipeline"
-        title="Suivez chaque opportunité."
-        text="Déplacez vos prospects d'une étape commerciale à l'autre."
+        eyebrow="Commercial"
+        title="Pipeline"
+        text="Déplacez chaque opportunité jusqu'à la signature."
       />
 
-      <div className="grid gap-4 xl:grid-cols-4 2xl:grid-cols-8">
+      <div className="flex gap-4 overflow-x-auto pb-3">
         {STATUSES.map(
-          (pipelineStatus) => {
-            const prospects =
-              data.prospects.filter(
-                (prospect) =>
-                  prospect.status ===
-                  pipelineStatus,
-              );
+          (pipelineStatus) => (
+            <div
+              key={
+                pipelineStatus
+              }
+              className="min-w-[270px] flex-1 rounded-[1.5rem] border border-black/10 bg-white p-3"
+            >
+              <div className="flex items-center justify-between px-2 py-2">
+                <b>
+                  {
+                    STATUS_LABEL[
+                      pipelineStatus
+                    ]
+                  }
+                </b>
 
-            return (
-              <div
-                key={pipelineStatus}
-                className="min-h-[320px] rounded-[1.5rem] border border-black/10 bg-white p-4"
-              >
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="text-xs font-extrabold">
-                    {
-                      STATUS_LABEL[
-                        pipelineStatus
-                      ]
-                    }
-                  </span>
+                <span className="rounded-full bg-black/5 px-2 py-1 text-xs">
+                  {
+                    prospects.filter(
+                      (prospect) =>
+                        prospect.status ===
+                        pipelineStatus,
+                    ).length
+                  }
+                </span>
+              </div>
 
-                  <span className="rounded-full bg-black/5 px-2 py-1 text-[10px] font-bold">
-                    {
-                      prospects.length
-                    }
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  {prospects.map(
+              <div className="space-y-2">
+                {prospects
+                  .filter(
+                    (prospect) =>
+                      prospect.status ===
+                      pipelineStatus,
+                  )
+                  .map(
                     (prospect) => (
                       <div
                         key={
                           prospect.id
                         }
-                        className="rounded-xl border border-black/10 p-3"
+                        className="rounded-2xl border border-black/10 p-4"
                       >
                         <button
+                          type="button"
                           onClick={() =>
                             onOpen(
                               prospect,
                             )
                           }
-                          className="w-full text-left"
+                          className="admin-white-button w-full rounded-xl p-1 text-left"
                         >
-                          <div className="font-bold">
+                          <b>
                             {prospect.name ||
-                              "Prospect"}
-                          </div>
+                              "Sans nom"}
+                          </b>
 
-                          <div className="mt-1 truncate text-[11px] text-black/40">
+                          <div className="mt-1 text-xs text-black/45">
                             {prospect.company ||
-                              prospect.email ||
                               "—"}
                           </div>
 
-                          <div className="mt-3 text-xs font-extrabold">
+                          <div className="mt-3 font-extrabold">
                             {euro(
-                              prospect.estimated_value ??
-                                0,
+                              prospect.estimated_value,
                             )}
                           </div>
                         </button>
@@ -1445,22 +1701,22 @@ function Pipeline({
                           value={
                             prospect.status
                           }
-                          onChange={(event) =>
+                          onChange={(
+                            event,
+                          ) =>
                             onMove(
                               prospect.id,
                               event.target
                                 .value,
                             )
                           }
-                          className="mt-3 w-full rounded-lg border border-black/10 bg-white px-2 py-2 text-[11px]"
+                          className="mt-3 w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-[#080808]"
                         >
                           {STATUSES.map(
                             (item) => (
                               <option
                                 key={item}
-                                value={
-                                  item
-                                }
+                                value={item}
                               >
                                 {
                                   STATUS_LABEL[
@@ -1474,135 +1730,180 @@ function Pipeline({
                       </div>
                     ),
                   )}
-
-                  {prospects.length ===
-                  0 ? (
-                    <div className="py-8 text-center text-[11px] text-black/25">
-                      Vide
-                    </div>
-                  ) : null}
-                </div>
               </div>
-            );
-          },
+            </div>
+          ),
         )}
       </div>
     </div>
   );
 }
 
+/* ================================================================
+   CALENDRIER / RENDEZ-VOUS
+================================================================ */
+
 function Calendar({
   bookings,
-  onOpen,
-  onRefresh,
+  onStatus,
+  onDelete,
 }: {
   bookings: Booking[];
-  onOpen: (booking: Booking) => void;
-  onRefresh: () => void;
+  onStatus: (
+    reference: string,
+    status: string,
+  ) => Promise<void>;
+  onDelete: (
+    reference: string,
+  ) => Promise<void>;
 }) {
   return (
     <div className="space-y-6">
       <Title
         eyebrow="Agenda"
         title="Rendez-vous"
-        text="Les rendez-vous réellement enregistrés par le système de réservation."
-        action={
-          <button
-            onClick={onRefresh}
-            className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-bold"
-          >
-            Actualiser
-          </button>
-        }
+        text="Cette vue est alimentée directement par bookings.json, la même source utilisée par le formulaire public."
       />
 
-      <Panel
-        title={`${bookings.length} rendez-vous`}
-      >
-        <div className="space-y-3">
-          {bookings.map(
-            (booking) => (
-              <button
-                key={
-                  booking.reference
-                }
-                onClick={() =>
-                  onOpen(booking)
-                }
-                className="flex w-full flex-col gap-4 rounded-2xl border border-black/10 p-5 text-left transition hover:border-[#c8a45d] sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#080808] text-white">
-                    <CalendarDays
-                      size={20}
-                    />
+      <div className="space-y-3">
+        {bookings.map(
+          (booking) => (
+            <div
+              key={
+                booking.reference
+              }
+              className="rounded-[1.5rem] border border-black/10 bg-white p-5"
+            >
+              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                <div className="flex gap-4">
+                  <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-[#080808] text-white">
+                    <span className="text-[10px] font-bold uppercase">
+                      {new Date(
+                        `${booking.date}T12:00:00`,
+                      ).toLocaleDateString(
+                        "fr-FR",
+                        {
+                          weekday:
+                            "short",
+                        },
+                      )}
+                    </span>
+
+                    <b>
+                      {new Date(
+                        `${booking.date}T12:00:00`,
+                      ).getDate()}
+                    </b>
                   </div>
 
                   <div>
                     <div className="font-extrabold">
-                      {booking.name ||
-                        "Client"}
+                      {
+                        booking.name
+                      }
+
+                      {booking.company
+                        ? ` · ${booking.company}`
+                        : ""}
                     </div>
 
-                    <div className="mt-1 text-sm text-black/45">
-                      {booking.company ||
-                        "—"}
+                    <div className="mt-1 text-sm text-black/55">
+                      {frDate(
+                        booking.date,
+                      )}{" "}
+                      ·{" "}
+                      <b>
+                        {
+                          booking.time
+                        }
+                      </b>{" "}
+                      ·{" "}
+                      {
+                        booking.reference
+                      }
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-black/45">
-                      <span>
-                        {frDate(
-                          booking.date,
-                        )}
-                      </span>
+                    <div className="mt-2 text-xs text-black/45">
+                      {
+                        booking.phone
+                      }
 
-                      <span>
-                        {booking.time}
-                      </span>
-
-                      {booking.phone ? (
-                        <span>
-                          {
-                            booking.phone
-                          }
-                        </span>
-                      ) : null}
+                      {booking.email
+                        ? ` · ${booking.email}`
+                        : ""}
                     </div>
+
+                    {booking.reason && (
+                      <div className="mt-2 text-sm text-black/65">
+                        {
+                          booking.reason
+                        }
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`rounded-full px-3 py-1 text-[10px] font-extrabold uppercase ${
-                      booking.status ===
-                      "cancelled"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-emerald-100 text-emerald-700"
-                    }`}
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={
+                      booking.status
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      onStatus(
+                        booking.reference,
+                        event.target
+                          .value,
+                      )
+                    }
+                    className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold text-[#080808]"
                   >
-                    {booking.status ===
-                    "cancelled"
-                      ? "Annulé"
-                      : "Confirmé"}
-                  </span>
+                    <option value="confirmed">
+                      Confirmé
+                    </option>
 
-                  <ChevronRight
-                    size={16}
-                    className="text-black/25"
-                  />
+                    <option value="cancelled">
+                      Annulé
+                    </option>
+
+                    <option value="done">
+                      Terminé
+                    </option>
+
+                    <option value="no_show">
+                      Absent
+                    </option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onDelete(
+                        booking.reference,
+                      )
+                    }
+                    className="admin-danger-button rounded-full border border-red-200 px-4 py-2 text-xs font-bold"
+                  >
+                    Supprimer
+                  </button>
                 </div>
-              </button>
-            ),
-          )}
+              </div>
+            </div>
+          ),
+        )}
 
-          {bookings.length === 0 ? (
-            <Empty text="Aucun rendez-vous." />
-          ) : null}
-        </div>
-      </Panel>
+        {bookings.length === 0 && (
+          <Empty text="Aucun rendez-vous enregistré." />
+        )}
+      </div>
     </div>
   );
 }
+
+/* ================================================================
+   DISPONIBILITÉS
+================================================================ */
 
 function Availability({
   blocks,
@@ -1619,7 +1920,7 @@ function Availability({
   onAdd,
   onDelete,
 }: {
-  blocks: Block[];
+  blocks: AvailabilityBlock[];
   date: string;
   setDate: (value: string) => void;
   allDay: boolean;
@@ -1631,25 +1932,28 @@ function Availability({
   reason: string;
   setReason: (value: string) => void;
   onAdd: () => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
+  onDelete: (
+    id: string,
+  ) => Promise<void>;
 }) {
   const sortedBlocks =
-    [...blocks].sort((a, b) =>
-      `${a.date}${a.start_time ?? ""}`.localeCompare(
-        `${b.date}${b.start_time ?? ""}`,
-      ),
+    [...blocks].sort(
+      (a, b) =>
+        `${a.date}${a.start_time ?? ""}`.localeCompare(
+          `${b.date}${b.start_time ?? ""}`,
+        ),
     );
 
   return (
     <div className="space-y-6">
       <Title
-        eyebrow="Disponibilités"
-        title="Bloquez votre agenda."
-        text="Rendez indisponible une journée complète ou seulement une plage horaire. Les créneaux disparaîtront automatiquement du site public."
+        eyebrow="Agenda"
+        title="Disponibilités"
+        text="Bloquez une journée ou une plage horaire. Le formulaire public respecte immédiatement ces blocages."
       />
 
       <Panel title="Ajouter une indisponibilité">
-        <div className="grid gap-3 lg:grid-cols-[180px_180px_150px_150px_1fr_auto]">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <input
             type="date"
             value={date}
@@ -1658,33 +1962,36 @@ function Availability({
                 event.target.value,
               )
             }
-            className="rounded-xl border border-black/10 bg-white px-4 py-3 text-sm"
+            className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
           />
 
-          <label className="flex items-center gap-2 rounded-xl border border-black/10 bg-white px-4 py-3 text-sm font-bold">
+          <label className="flex items-center gap-2 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold text-[#080808]">
             <input
               type="checkbox"
               checked={allDay}
               onChange={(event) =>
                 setAllDay(
-                  event.target.checked,
+                  event.target
+                    .checked,
                 )
               }
             />
+
             Journée entière
           </label>
 
-          {!allDay ? (
+          {!allDay && (
             <>
               <input
                 type="time"
                 value={start}
                 onChange={(event) =>
                   setStart(
-                    event.target.value,
+                    event.target
+                      .value,
                   )
                 }
-                className="rounded-xl border border-black/10 bg-white px-4 py-3 text-sm"
+                className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
               />
 
               <input
@@ -1692,13 +1999,14 @@ function Availability({
                 value={end}
                 onChange={(event) =>
                   setEnd(
-                    event.target.value,
+                    event.target
+                      .value,
                   )
                 }
-                className="rounded-xl border border-black/10 bg-white px-4 py-3 text-sm"
+                className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
               />
             </>
-          ) : null}
+          )}
 
           <input
             value={reason}
@@ -1708,12 +2016,13 @@ function Availability({
               )
             }
             placeholder="Motif"
-            className="rounded-xl border border-black/10 bg-white px-4 py-3 text-sm"
+            className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
           />
 
           <button
+            type="button"
             onClick={onAdd}
-            className="rounded-full bg-[#080808] px-5 py-3 text-sm font-extrabold text-white"
+            className="admin-dark-button rounded-full px-5 py-3 text-sm font-extrabold"
           >
             Bloquer
           </button>
@@ -1721,7 +2030,7 @@ function Availability({
       </Panel>
 
       <Panel title="Blocages actuels">
-        <div className="space-y-3">
+        <div className="space-y-2">
           {sortedBlocks.map(
             (block) => (
               <div
@@ -1729,28 +2038,29 @@ function Availability({
                 className="flex flex-col justify-between gap-3 rounded-2xl border border-black/10 p-4 sm:flex-row sm:items-center"
               >
                 <div>
-                  <div className="font-extrabold">
+                  <b>
                     {frDate(
                       block.date,
                     )}
-                  </div>
+                  </b>
 
                   <div className="mt-1 text-xs text-black/45">
                     {block.all_day
                       ? "Journée entière"
-                      : `${block.start_time} → ${block.end_time}`}{" "}
-                    ·{" "}
+                      : `${block.start_time} → ${block.end_time}`}
+                    {" · "}
                     {block.reason}
                   </div>
                 </div>
 
                 <button
+                  type="button"
                   onClick={() =>
                     onDelete(
                       block.id,
                     )
                   }
-                  className="rounded-full border border-red-200 px-4 py-2 text-xs font-bold text-red-600"
+                  className="admin-danger-button rounded-full border border-red-200 px-4 py-2 text-xs font-bold"
                 >
                   Supprimer
                 </button>
@@ -1758,27 +2068,30 @@ function Availability({
             ),
           )}
 
-          {sortedBlocks.length ===
-          0 ? (
+          {blocks.length === 0 && (
             <Empty text="Aucune indisponibilité." />
-          ) : null}
+          )}
         </div>
       </Panel>
     </div>
   );
 }
 
+/* ================================================================
+   GRAND+
+================================================================ */
+
 function GrandPlus({
   data,
 }: {
-  data: Grand[];
+  data: GrandPlusParticipant[];
 }) {
   return (
     <div className="space-y-6">
       <Title
         eyebrow="Grand+"
         title="Participants"
-        text="Les participations réelles enregistrées par le formulaire Grand+."
+        text="Les participations enregistrées par le formulaire Grand+ sont visibles ici."
       />
 
       <Panel
@@ -1801,6 +2114,7 @@ function GrandPlus({
                 <div className="font-extrabold">
                   {participant.name ||
                     "Sans nom"}
+
                   {participant.company
                     ? ` · ${participant.company}`
                     : ""}
@@ -1808,11 +2122,11 @@ function GrandPlus({
 
                 <div className="mt-1 text-xs text-black/45">
                   {participant.email ||
-                    "—"}{" "}
-                  ·{" "}
+                    "—"}
+                  {" · "}
                   {participant.phone ||
-                    "—"}{" "}
-                  ·{" "}
+                    "—"}
+                  {" · "}
                   {participant.month_label ||
                     participant.month_key ||
                     "—"}
@@ -1821,14 +2135,18 @@ function GrandPlus({
             ),
           )}
 
-          {data.length === 0 ? (
+          {data.length === 0 && (
             <Empty text="Aucune participation." />
-          ) : null}
+          )}
         </div>
       </Panel>
     </div>
   );
 }
+
+/* ================================================================
+   STATS
+================================================================ */
 
 function Stats({
   data,
@@ -1836,16 +2154,9 @@ function Stats({
   data: Data;
 }) {
   const sources =
-    Object.entries(data.sources);
-
-  const wonRate = data.stats
-    .prospects
-    ? Math.round(
-        ((data.stats.won ?? 0) /
-          data.stats.prospects) *
-          100,
-      )
-    : 0;
+    Object.entries(
+      data.sources,
+    );
 
   return (
     <div className="space-y-6">
@@ -1868,8 +2179,8 @@ function Stats({
           icon={Target}
           label="Qualifiés"
           value={String(
-            data.stats.qualified ??
-              0,
+            data.stats
+              .qualified ?? 0,
           )}
         />
 
@@ -1877,7 +2188,8 @@ function Stats({
           icon={CalendarDays}
           label="RDV confirmés"
           value={String(
-            data.stats.confirmed_bookings ??
+            data.stats
+              .confirmed_bookings ??
               0,
           )}
         />
@@ -1885,39 +2197,18 @@ function Stats({
         <Metric
           icon={TrendingUp}
           label="Taux gagné"
-          value={`${wonRate}%`}
+          value={`${
+            data.stats.prospects
+              ? Math.round(
+                  ((data.stats.won ??
+                    0) /
+                    data.stats.prospects) *
+                    100,
+                )
+              : 0
+          }%`}
         />
       </div>
-
-      <Panel title="Chiffre d'affaires">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl bg-[#080808] p-6 text-white">
-            <div className="text-xs text-white/40">
-              CA signé
-            </div>
-
-            <div className="mt-2 text-3xl font-extrabold">
-              {euro(
-                data.stats.signed_revenue ??
-                  0,
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-black/10 p-6">
-            <div className="text-xs text-black/40">
-              CA potentiel
-            </div>
-
-            <div className="mt-2 text-3xl font-extrabold">
-              {euro(
-                data.stats.potential_revenue ??
-                  0,
-              )}
-            </div>
-          </div>
-        </div>
-      </Panel>
 
       <Panel title="Sources">
         <div className="space-y-4">
@@ -1936,30 +2227,37 @@ function Stats({
               </div>
             ),
           )}
-
-          {sources.length === 0 ? (
-            <Empty text="Aucune donnée." />
-          ) : null}
         </div>
       </Panel>
     </div>
   );
 }
 
+/* ================================================================
+   FICHE PROSPECT
+================================================================ */
+
 function ProspectModal({
   prospect,
   onClose,
   onSave,
   onInteraction,
+  onDelete,
 }: {
   prospect: Prospect;
   onClose: () => void;
   onSave: (
-    payload: Record<string, unknown>,
+    payload: Record<
+      string,
+      unknown
+    >,
   ) => Promise<void>;
   onInteraction: (
     text: string,
     type: string,
+  ) => Promise<void>;
+  onDelete: (
+    id: string,
   ) => Promise<void>;
 }) {
   const [form, setForm] =
@@ -1994,7 +2292,7 @@ function ProspectModal({
       <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-[2rem] bg-[#f4f4f1] p-6 shadow-2xl sm:p-8">
         <div className="flex items-start justify-between">
           <div>
-            <div className="text-[10px] font-extrabold uppercase tracking-[.25em] text-black/35">
+            <div className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-black/35">
               Fiche prospect
             </div>
 
@@ -2012,140 +2310,92 @@ function ProspectModal({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
+            className="admin-white-button rounded-full p-2"
           >
             <X />
           </button>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <InputField
-            label="Nom"
-            value={form.name}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                name: value,
-              })
-            }
-          />
+          {[
+            ["name", "Nom"],
+            [
+              "company",
+              "Entreprise",
+            ],
+            ["email", "E-mail"],
+            [
+              "phone",
+              "Téléphone",
+            ],
+            [
+              "website",
+              "Site internet",
+            ],
+            ["offer", "Offre"],
+            [
+              "estimated_value",
+              "Valeur",
+            ],
+            [
+              "recurring_value",
+              "Récurrent",
+            ],
+            [
+              "next_action",
+              "Prochaine action",
+            ],
+            [
+              "next_action_at",
+              "Date de relance",
+            ],
+          ].map(
+            ([key, label]) => (
+              <label
+                key={key}
+                className="text-xs font-bold text-[#080808]"
+              >
+                <span className="mb-2 block text-black/45">
+                  {label}
+                </span>
 
-          <InputField
-            label="Entreprise"
-            value={form.company}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                company: value,
-              })
-            }
-          />
+                <input
+                  type={
+                    key.includes(
+                      "value",
+                    )
+                      ? "number"
+                      : key.includes(
+                            "at",
+                          )
+                        ? "date"
+                        : "text"
+                  }
+                  value={
+                    (
+                      form as Record<
+                        string,
+                        string
+                      >
+                    )[key]
+                  }
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      [key]:
+                        event.target
+                          .value,
+                    })
+                  }
+                  className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808] outline-none focus:border-[#c8a45d]"
+                />
+              </label>
+            ),
+          )}
 
-          <InputField
-            label="E-mail"
-            value={form.email}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                email: value,
-              })
-            }
-            inputMode="email"
-          />
-
-          <InputField
-            label="Téléphone"
-            value={form.phone}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                phone: value,
-              })
-            }
-            inputMode="tel"
-          />
-
-          <InputField
-            label="Site internet"
-            value={form.website}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                website: value,
-              })
-            }
-          />
-
-          <InputField
-            label="Offre"
-            value={form.offer}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                offer: value,
-              })
-            }
-          />
-
-          <InputField
-            label="Valeur"
-            value={
-              form.estimated_value
-            }
-            onChange={(value) =>
-              setForm({
-                ...form,
-                estimated_value:
-                  value,
-              })
-            }
-            type="number"
-          />
-
-          <InputField
-            label="Récurrent"
-            value={
-              form.recurring_value
-            }
-            onChange={(value) =>
-              setForm({
-                ...form,
-                recurring_value:
-                  value,
-              })
-            }
-            type="number"
-          />
-
-          <InputField
-            label="Prochaine action"
-            value={
-              form.next_action
-            }
-            onChange={(value) =>
-              setForm({
-                ...form,
-                next_action: value,
-              })
-            }
-          />
-
-          <InputField
-            label="Date de relance"
-            value={
-              form.next_action_at
-            }
-            onChange={(value) =>
-              setForm({
-                ...form,
-                next_action_at:
-                  value,
-              })
-            }
-            type="date"
-          />
-
-          <label className="text-xs font-bold">
+          <label className="text-xs font-bold text-[#080808]">
             <span className="mb-2 block text-black/45">
               Statut
             </span>
@@ -2156,10 +2406,11 @@ function ProspectModal({
                 setForm({
                   ...form,
                   status:
-                    event.target.value,
+                    event.target
+                      .value,
                 })
               }
-              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 outline-none"
+              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808]"
             >
               {STATUSES.map(
                 (item) => (
@@ -2178,7 +2429,7 @@ function ProspectModal({
             </select>
           </label>
 
-          <label className="text-xs font-bold sm:col-span-2">
+          <label className="text-xs font-bold text-[#080808] sm:col-span-2">
             <span className="mb-2 block text-black/45">
               Notes
             </span>
@@ -2189,58 +2440,42 @@ function ProspectModal({
                 setForm({
                   ...form,
                   notes:
-                    event.target.value,
+                    event.target
+                      .value,
                 })
               }
               rows={4}
-              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 outline-none"
+              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808] outline-none focus:border-[#c8a45d]"
             />
           </label>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
-          {prospect.phone ? (
+          {prospect.phone && (
             <a
               href={`tel:${prospect.phone}`}
-              className="rounded-full bg-[#080808] px-4 py-2 text-xs font-bold text-white"
+              className="admin-dark-button inline-flex items-center rounded-full px-4 py-2 text-xs font-bold"
             >
               <Phone
                 size={14}
-                className="mr-2 inline"
+                className="mr-2"
               />
               Appeler
             </a>
-          ) : null}
+          )}
 
-          {prospect.email ? (
+          {prospect.email && (
             <a
               href={`mailto:${prospect.email}`}
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold"
+              className="admin-white-button inline-flex items-center rounded-full border border-black/10 px-4 py-2 text-xs font-bold"
             >
               <Mail
                 size={14}
-                className="mr-2 inline"
+                className="mr-2"
               />
               E-mail
             </a>
-          ) : null}
-
-          {prospect.website ? (
-            <a
-              href={
-                prospect.website.startsWith(
-                  "http",
-                )
-                  ? prospect.website
-                  : `https://${prospect.website}`
-              }
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold"
-            >
-              Site internet
-            </a>
-          ) : null}
+          )}
         </div>
 
         <div className="mt-7 border-t border-black/10 pt-6">
@@ -2253,14 +2488,16 @@ function ProspectModal({
               value={interaction}
               onChange={(event) =>
                 setInteraction(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
-              placeholder="Note, appel, message..."
-              className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-4 py-3 outline-none"
+              placeholder="Note, appel, message…"
+              className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808]"
             />
 
             <button
+              type="button"
               onClick={async () => {
                 if (
                   !interaction.trim()
@@ -2275,24 +2512,38 @@ function ProspectModal({
 
                 setInteraction("");
               }}
-              className="rounded-full bg-[#c8a45d] px-5 py-3 text-xs font-extrabold"
+              className="admin-gold-button rounded-full px-5 py-3 text-xs font-extrabold"
             >
               Ajouter
             </button>
           </div>
         </div>
 
-        <div className="mt-7 flex justify-end gap-2">
+        <div className="mt-7 flex flex-wrap justify-end gap-2">
           <button
+            type="button"
+            onClick={() =>
+              onDelete(
+                prospect.id,
+              )
+            }
+            className="admin-danger-button rounded-full border border-red-200 px-5 py-3 text-xs font-bold"
+          >
+            Supprimer
+          </button>
+
+          <button
+            type="button"
             onClick={onClose}
-            className="rounded-full border border-black/10 bg-white px-5 py-3 text-xs font-bold"
+            className="admin-white-button rounded-full border border-black/10 px-5 py-3 text-xs font-bold"
           >
             Fermer
           </button>
 
           <button
-            onClick={async () => {
-              await onSave({
+            type="button"
+            onClick={() =>
+              onSave({
                 ...form,
                 estimated_value:
                   Number(
@@ -2302,9 +2553,9 @@ function ProspectModal({
                   Number(
                     form.recurring_value,
                   ),
-              });
-            }}
-            className="rounded-full bg-[#080808] px-5 py-3 text-xs font-extrabold text-white"
+              })
+            }
+            className="admin-dark-button rounded-full px-5 py-3 text-xs font-extrabold"
           >
             Enregistrer
           </button>
@@ -2314,6 +2565,10 @@ function ProspectModal({
   );
 }
 
+/* ================================================================
+   NOUVEAU PROSPECT
+================================================================ */
+
 function NewProspect({
   onClose,
   onCreated,
@@ -2322,8 +2577,11 @@ function NewProspect({
   onClose: () => void;
   onCreated: () => void;
   api: (
-    payload: Record<string, unknown>,
-  ) => Promise<any>;
+    payload: Record<
+      string,
+      unknown
+    >,
+  ) => Promise<unknown>;
 }) {
   const [form, setForm] =
     useState({
@@ -2338,128 +2596,81 @@ function NewProspect({
   const [busy, setBusy] =
     useState(false);
 
-  const [error, setError] =
-    useState("");
-
-  async function create() {
-    if (!form.name.trim()) {
-      setError(
-        "Le nom du prospect est obligatoire.",
-      );
-      return;
-    }
-
-    setError("");
-    setBusy(true);
-
-    try {
-      await api({
-        action: "create_prospect",
-        name: form.name.trim(),
-        company:
-          form.company.trim(),
-        email:
-          form.email.trim(),
-        phone:
-          form.phone.trim(),
-        website:
-          form.website.trim(),
-        notes:
-          form.notes.trim(),
-      });
-
-      onCreated();
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Impossible de créer le prospect.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Overlay>
       <div className="w-full max-w-xl rounded-[2rem] bg-[#f4f4f1] p-7 shadow-2xl">
-        <div className="flex justify-between">
-          <div>
-            <div className="text-[10px] font-extrabold uppercase tracking-[.25em] text-black/35">
-              CRM
-            </div>
-
-            <h2 className="mt-2 text-2xl font-extrabold">
-              Nouveau prospect
-            </h2>
-          </div>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-extrabold">
+            Nouveau prospect
+          </h2>
 
           <button
+            type="button"
             onClick={onClose}
+            className="admin-white-button rounded-full p-2"
           >
             <X />
           </button>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <InputField
-            label="Nom"
-            value={form.name}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                name: value,
-              })
-            }
-          />
+          {[
+            ["name", "Nom"],
+            [
+              "company",
+              "Entreprise",
+            ],
+            ["email", "E-mail"],
+            [
+              "phone",
+              "Téléphone",
+            ],
+            [
+              "website",
+              "Site internet",
+            ],
+          ].map(
+            ([key, label]) => (
+              <label
+                key={key}
+                className="text-xs font-bold text-[#080808]"
+              >
+                <span className="mb-2 block text-black/45">
+                  {label}
+                </span>
 
-          <InputField
-            label="Entreprise"
-            value={form.company}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                company: value,
-              })
-            }
-          />
+                <input
+                  type="text"
+                  inputMode={
+                    key === "email"
+                      ? "email"
+                      : key === "phone"
+                        ? "tel"
+                        : undefined
+                  }
+                  value={
+                    (
+                      form as Record<
+                        string,
+                        string
+                      >
+                    )[key]
+                  }
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      [key]:
+                        event.target
+                          .value,
+                    })
+                  }
+                  className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808] outline-none focus:border-[#c8a45d]"
+                />
+              </label>
+            ),
+          )}
 
-          <InputField
-            label="E-mail"
-            value={form.email}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                email: value,
-              })
-            }
-            inputMode="email"
-          />
-
-          <InputField
-            label="Téléphone"
-            value={form.phone}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                phone: value,
-              })
-            }
-            inputMode="tel"
-          />
-
-          <InputField
-            label="Site internet"
-            value={form.website}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                website: value,
-              })
-            }
-          />
-
-          <label className="text-xs font-bold sm:col-span-2">
+          <label className="text-xs font-bold text-[#080808] sm:col-span-2">
             <span className="mb-2 block text-black/45">
               Notes
             </span>
@@ -2470,36 +2681,51 @@ function NewProspect({
                 setForm({
                   ...form,
                   notes:
-                    event.target.value,
+                    event.target
+                      .value,
                 })
               }
               rows={4}
-              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 outline-none"
+              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808]"
             />
           </label>
         </div>
 
-        {error ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
-            {error}
-          </div>
-        ) : null}
-
         <div className="mt-6 flex justify-end gap-2">
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-full border border-black/10 bg-white px-5 py-3 text-xs font-bold"
+            className="admin-white-button rounded-full border border-black/10 px-5 py-3 text-xs font-bold"
           >
             Annuler
           </button>
 
           <button
+            type="button"
             disabled={busy}
-            onClick={create}
-            className="rounded-full bg-[#080808] px-5 py-3 text-xs font-extrabold text-white disabled:opacity-40"
+            onClick={async () => {
+              if (!form.name.trim()) {
+                return;
+              }
+
+              setBusy(true);
+
+              try {
+                await api({
+                  action:
+                    "create_prospect",
+                  ...form,
+                });
+
+                onCreated();
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="admin-dark-button rounded-full px-5 py-3 text-xs font-extrabold disabled:opacity-40"
           >
             {busy
-              ? "Création..."
+              ? "Création…"
               : "Créer le prospect"}
           </button>
         </div>
@@ -2508,44 +2734,9 @@ function NewProspect({
   );
 }
 
-function InputField({
-  label,
-  value,
-  onChange,
-  type = "text",
-  inputMode,
-}: {
-  label: string;
-  value: string;
-  onChange: (
-    value: string,
-  ) => void;
-  type?: string;
-  inputMode?:
-    | "email"
-    | "tel"
-    | "text";
-}) {
-  return (
-    <label className="text-xs font-bold">
-      <span className="mb-2 block text-black/45">
-        {label}
-      </span>
-
-      <input
-        type={type}
-        inputMode={inputMode}
-        value={value}
-        onChange={(event) =>
-          onChange(
-            event.target.value,
-          )
-        }
-        className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 outline-none focus:border-[#c8a45d]"
-      />
-    </label>
-  );
-}
+/* ================================================================
+   COMPOSANTS UI
+================================================================ */
 
 function Title({
   eyebrow,
@@ -2556,12 +2747,12 @@ function Title({
   eyebrow: string;
   title: string;
   text: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
       <div>
-        <div className="text-[10px] font-extrabold uppercase tracking-[.25em] text-[#a17e32]">
+        <div className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-[#a17e32]">
           {eyebrow}
         </div>
 
@@ -2584,10 +2775,7 @@ function Metric({
   label,
   value,
 }: {
-  icon: React.ComponentType<{
-    size?: number;
-    className?: string;
-  }>;
+  icon: typeof Users;
   label: string;
   value: string;
 }) {
@@ -2615,8 +2803,8 @@ function Panel({
   children,
 }: {
   title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="rounded-[1.5rem] border border-black/10 bg-white p-5">
@@ -2648,7 +2836,7 @@ function Empty({
 function Overlay({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
