@@ -528,34 +528,19 @@ function extract_gemini_text(
 
 function call_gemini(string $prompt): string
 {
-    $host = 'generativelanguage.googleapis.com';
+    $config = load_config();
 
-    /*
-     * TEST 1 — résolution DNS
-     */
-    $dnsStart = microtime(true);
+    $apiKey = config_string($config, 'gemini_api_key');
 
-    $ip = gethostbyname($host);
-
-    $dnsTime = microtime(true) - $dnsStart;
-
-    if ($ip === $host) {
+    if ($apiKey === '') {
         throw new RuntimeException(
-            'TEST RÉSEAU — DNS IMPOSSIBLE : ' .
-            $host .
-            ' ne peut pas être résolu par IONOS.'
+            'TEST GEMINI — clé API absente.'
         );
     }
 
-    /*
-     * TEST 2 — connexion HTTPS simple
-     *
-     * On ne demande PAS encore à Gemini de générer du contenu.
-     * On teste uniquement si IONOS peut établir une connexion HTTPS
-     * avec Google.
-     */
-
-    $url = 'https://' . $host . '/';
+    $url =
+        'https://generativelanguage.googleapis.com/v1beta/models?key=' .
+        rawurlencode($apiKey);
 
     $start = microtime(true);
 
@@ -564,9 +549,9 @@ function call_gemini(string $prompt): string
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
 
-        CURLOPT_HEADER => true,
-
-        CURLOPT_NOBODY => true,
+        CURLOPT_HTTPHEADER => [
+            'Accept: application/json'
+        ],
 
         CURLOPT_CONNECTTIMEOUT => 10,
 
@@ -580,13 +565,12 @@ function call_gemini(string $prompt): string
 
         CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
 
-        CURLOPT_USERAGENT => 'VitrinePlus-Network-Test/1.0'
+        CURLOPT_USERAGENT => 'VitrinePlus-Gemini-Test/1.0'
     ]);
 
     $response = curl_exec($ch);
 
     $curlError = curl_error($ch);
-
     $curlErrno = curl_errno($ch);
 
     $httpCode = (int) curl_getinfo(
@@ -594,9 +578,9 @@ function call_gemini(string $prompt): string
         CURLINFO_HTTP_CODE
     );
 
-    $connectTime = (float) curl_getinfo(
+    $primaryIp = curl_getinfo(
         $ch,
-        CURLINFO_CONNECT_TIME
+        CURLINFO_PRIMARY_IP
     );
 
     $totalTime = (float) curl_getinfo(
@@ -604,354 +588,85 @@ function call_gemini(string $prompt): string
         CURLINFO_TOTAL_TIME
     );
 
-    $primaryIp = curl_getinfo(
-        $ch,
-        CURLINFO_PRIMARY_IP
-    );
-
     curl_close($ch);
 
-    $elapsed = microtime(true) - $start;
-
-    /*
-     * ÉCHEC cURL
-     */
     if ($response === false) {
 
         throw new RuntimeException(
-            'TEST RÉSEAU — ÉCHEC HTTPS' .
-            ' | DNS=' . $ip .
-            ' | DNS_TIME=' . round($dnsTime, 3) . 's' .
-            ' | CURL_ERRNO=' . $curlErrno .
-            ' | CURL_ERROR=' . ($curlError ?: 'aucune') .
-            ' | HTTP=' . $httpCode .
-            ' | PRIMARY_IP=' . ($primaryIp ?: 'aucune') .
-            ' | CONNECT_TIME=' . round($connectTime, 3) . 's' .
-            ' | TOTAL_TIME=' . round($totalTime, 3) . 's' .
-            ' | ELAPSED=' . round($elapsed, 3) . 's'
+            'TEST GEMINI MODELS — cURL #' .
+            $curlErrno .
+            ' — ' .
+            ($curlError ?: 'erreur inconnue') .
+            ' — HTTP ' .
+            $httpCode .
+            ' — IP ' .
+            ($primaryIp ?: 'aucune') .
+            ' — durée ' .
+            round($totalTime, 3) .
+            's'
         );
     }
 
-    /*
-     * CONNEXION RÉUSSIE
-     */
-    throw new RuntimeException(
-        'TEST RÉSEAU — CONNEXION GOOGLE RÉUSSIE' .
-        ' | DNS=' . $ip .
-        ' | DNS_TIME=' . round($dnsTime, 3) . 's' .
-        ' | HTTP=' . $httpCode .
-        ' | PRIMARY_IP=' . ($primaryIp ?: 'aucune') .
-        ' | CONNECT_TIME=' . round($connectTime, 3) . 's' .
-        ' | TOTAL_TIME=' . round($totalTime, 3) . 's'
-    );
-}
+    if ($httpCode < 200 || $httpCode >= 300) {
 
-
-/* =========================================================
- * GENERATION DE CONTENU
- * ========================================================= */
-
-function generate_content(
-    string $type,
-    string $topic,
-    string $objective
-): array {
-    $format =
-        match ($type) {
-            'post' =>
-                'une publication Instagram simple',
-
-            'carousel' =>
-                'un carrousel Instagram de 5 à 7 slides',
-
-            'reel' =>
-                'un Reel Instagram vertical d’environ 20 secondes',
-
-            'story' =>
-                'une Story Instagram verticale, concise et engageante',
-
-            default =>
-                'une publication Instagram',
-        };
-
-    if (
-        $type === 'reel'
-    ) {
-        $prompt = <<<PROMPT
-Tu es le directeur éditorial et social media de Vitrine+, agence digitale française.
-
-PROMESSE DE MARQUE :
-« Votre entreprise. En mieux. »
-
-STYLE :
-Premium, moderne, humain, direct, utile.
-Pas de jargon inutile.
-Pas de ton robotique.
-Pas de formulation générique d’intelligence artificielle.
-Pas de discours commercial agressif.
-
-OBJECTIF :
-{$objective}
-
-SUJET :
-{$topic}
-
-FORMAT :
-{$format}
-
-Tu dois créer un Reel Instagram prêt à être publié.
-
-IMPORTANT :
-
-Le Reel doit être construit autour de EXACTEMENT 5 scènes.
-
-SCÈNE 1 :
-Un hook extrêmement fort qui donne immédiatement envie de regarder la suite.
-
-SCÈNE 2 :
-Erreur ou problème n°1.
-
-SCÈNE 3 :
-Erreur ou problème n°2.
-
-SCÈNE 4 :
-Erreur ou problème n°3 ou conseil concret permettant de corriger le problème.
-
-SCÈNE 5 :
-CTA final court, mémorable et naturel.
-
-Les textes des 5 scènes sont destinés à apparaître directement À L’ÉCRAN.
-
-Ils doivent donc :
-
-- être très courts ;
-- être immédiatement compréhensibles ;
-- pouvoir être lus rapidement ;
-- éviter les longs paragraphes ;
-- être percutants ;
-- rester professionnels ;
-- être cohérents entre eux.
-
-Le CTA doit naturellement rappeler Vitrine+ sans transformer le Reel en publicité agressive.
-
-Pour Vitrine+, tu peux utiliser :
-
-« Votre entreprise. En mieux. »
-
-et :
-
-« vitrineplus.fr »
-
-SCRIPT PARLÉ :
-
-Génère également un script parlé d’environ 20 secondes.
-
-Le script doit suivre les 5 scènes.
-
-Il doit être naturel à l’oral.
-
-Il ne doit pas simplement répéter mot pour mot les textes affichés à l’écran.
-
-LÉGENDE :
-
-Génère une légende Instagram complète.
-
-Elle doit :
-
-- commencer par une accroche ;
-- apporter une vraie valeur ;
-- reprendre naturellement le sujet ;
-- donner envie de commenter, enregistrer ou partager ;
-- terminer par un CTA pertinent ;
-- utiliser peu de hashtags.
-
-TITRE :
-
-Génère un titre court et accrocheur.
-
-RÈGLE ABSOLUE :
-
-Pour le champ slides, retourne EXACTEMENT 5 éléments.
-
-Retourne uniquement le JSON demandé.
-PROMPT;
-    } else {
-        $prompt = <<<PROMPT
-Tu es le directeur éditorial et social media de Vitrine+, agence digitale française.
-
-Promesse de marque :
-« Votre entreprise. En mieux. »
-
-Ton :
-premium, moderne, humain, direct, utile, jamais robotique, jamais agressif commercialement.
-
-Objectif :
-{$objective}
-
-Sujet :
-{$topic}
-
-Format :
-{$format}
-
-Crée un contenu prêt à être utilisé sur Instagram.
-
-Règles générales :
-
-- La légende doit être naturelle en français.
-- Commence par une accroche forte.
-- Évite les banalités.
-- Évite les formulations génériques d’IA.
-- Termine par un appel à l’action pertinent.
-- Utilise les hashtags avec parcimonie.
-- Pour un carrousel, génère 5 à 7 textes de slides courts et structurés.
-- Pour post/story, slides peut rester vide.
-- Génère également un titre court et accrocheur.
-
-Retourne uniquement le JSON demandé.
-PROMPT;
-    }
-
-    $raw =
-        call_gemini(
-            $prompt
-        );
-
-    $raw =
-        preg_replace(
-            '/^```(?:json)?\s*/i',
-            '',
-            $raw
-        ) ?? $raw;
-
-    $raw =
-        preg_replace(
-            '/\s*```$/',
-            '',
-            $raw
-        ) ?? $raw;
-
-    $decoded =
-        json_decode(
-            trim($raw),
-            true
-        );
-
-    if (
-        !is_array(
-            $decoded
-        )
-    ) {
         throw new RuntimeException(
-            'L’IA a retourné un format inattendu.'
+            'TEST GEMINI MODELS — HTTP ' .
+            $httpCode .
+            ' — réponse : ' .
+            substr($response, 0, 3000)
         );
     }
 
-    $slides = [];
+    $decoded = json_decode($response, true);
 
-    foreach (
-        (
-            $decoded['slides']
-            ?? []
-        ) as $slide
-    ) {
-        $slide =
-            trim(
-                (string) $slide
-            );
+    if (!is_array($decoded)) {
 
-        if (
-            $slide !== ''
-        ) {
-            $slides[] =
-                $slide;
-        }
+        throw new RuntimeException(
+            'TEST GEMINI MODELS — JSON invalide : ' .
+            substr($response, 0, 3000)
+        );
     }
 
+    $models = [];
+
     if (
-        $type === 'reel'
+        isset($decoded['models']) &&
+        is_array($decoded['models'])
     ) {
-        $slides =
-            array_slice(
-                $slides,
-                0,
-                5
-            );
 
-        if (
-            count($slides) <
-            5
-        ) {
-            $fallbackSlides = [
-                'Ton site fait peut-être fuir tes clients.',
-                'Erreur n°1 : un site trop lent.',
-                'Erreur n°2 : une offre difficile à comprendre.',
-                'Erreur n°3 : aucun appel à l’action.',
-                'Ton site mérite mieux. Vitrine+.',
-            ];
+        foreach ($decoded['models'] as $model) {
 
-            foreach (
-                $fallbackSlides as $index =>
-                    $fallback
-            ) {
-                if (
-                    !isset(
-                        $slides[$index]
-                    ) ||
-                    trim(
-                        $slides[$index]
-                    ) === ''
-                ) {
-                    $slides[$index] =
-                        $fallback;
-                }
+            if (!is_array($model)) {
+                continue;
+            }
+
+            $name = $model['name'] ?? '';
+
+            if ($name !== '') {
+                $models[] = $name;
             }
         }
     }
 
-    return [
-        'id' =>
-            make_id(),
+    if (count($models) === 0) {
 
-        'type' =>
-            $type,
+        throw new RuntimeException(
+            'TEST GEMINI MODELS — Google répond, mais aucun modèle trouvé. ' .
+            'Réponse : ' .
+            substr($response, 0, 3000)
+        );
+    }
 
-        'topic' =>
-            $topic,
-
-        'objective' =>
-            $objective,
-
-        'caption' =>
-            trim(
-                (string) (
-                    $decoded[
-                        'caption'
-                    ] ?? ''
-                )
-            ),
-
-        'slides' =>
-            $slides,
-
-        'script' =>
-            trim(
-                (string) (
-                    $decoded[
-                        'script'
-                    ] ?? ''
-                )
-            ),
-
-        'title' =>
-            trim(
-                (string) (
-                    $decoded[
-                        'title'
-                    ] ?? ''
-                )
-            ),
-    ];
+    throw new RuntimeException(
+        'TEST GEMINI MODELS — SUCCÈS ! ' .
+        count($models) .
+        ' modèles disponibles. ' .
+        'Premiers modèles : ' .
+        implode(', ', array_slice($models, 0, 20)) .
+        ' — durée ' .
+        round($totalTime, 3) .
+        's'
+    );
 }
 
 
