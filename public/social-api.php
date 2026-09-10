@@ -559,26 +559,18 @@ function call_gemini(
             'gemini_model'
         );
 
-    $allowedModels = [
-        'gemini-3.6-flash',
-        'gemini-3.5-flash-lite',
-    ];
-
-    $models = $allowedModels;
-
-    if (
-        $configured !== '' &&
-        in_array($configured, $allowedModels, true)
-    ) {
-        $models = array_values(
+    $models =
+        array_values(
             array_unique(
-                [
-                    $configured,
-                    ...$allowedModels,
-                ]
+                array_filter(
+                    [
+                        $configured,
+                        'gemini-2.5-flash',
+                        'gemini-2.5-flash-lite',
+                    ]
+                )
             )
         );
-    }
 
     $errors = [];
 
@@ -1654,156 +1646,321 @@ function download_remote_file(
 
 
 /**
- * Crée une vidéo verticale MP4 à partir
- * d'un visuel.
+ * Génère une vraie vidéo verticale avec Google Veo.
  *
- * La vidéo dure 12 secondes.
- * L'image reçoit un léger zoom.
- * Aucun service vidéo payant n'est utilisé.
+ * Le texte n'est PAS incrusté dans la vidéo :
+ * Veo crée directement les images animées et l'audio
+ * en rapport avec le sujet du Reel.
  */
-function generate_reel_mp4(
-    string $imageUrl,
-    string $script
+function generate_veo_video(
+    string $topic,
+    string $objective,
+    string $script = ''
 ): string {
+    // Veo est une génération asynchrone et peut prendre plusieurs dizaines de secondes.
+    @set_time_limit(240);
+
     ensure_dirs();
 
-    $ffmpeg =
-        find_ffmpeg();
+    $config = load_config();
+    $apiKey = config_string($config, 'gemini_api_key');
+
+    if ($apiKey === '') {
+        throw new RuntimeException(
+            'La clé Gemini n’est pas configurée dans vitrine-mail-config.php.'
+        );
+    }
+
+    $model = config_string($config, 'veo_model');
+    if ($model === '') {
+        $model = 'veo-3.1-fast-generate-preview';
+    }
+
+    $prompt = <<<PROMPT
+Create a professional Instagram Reel in vertical 9:16 format about this subject:
+
+SUBJECT:
+{$topic}
+
+OBJECTIVE:
+{$objective}
+
+SCRIPT / EDITORIAL CONTEXT:
+{$script}
+
+Create an engaging, premium, realistic social-media video directly related to the subject.
+
+Important creative direction:
+- The video must visually illustrate the subject instead of displaying the script as text.
+- Do NOT create a presentation made of text cards.
+- Do NOT put subtitles, captions, titles, logos, URLs or large written text on screen.
+- Show real-looking scenes, objects, environments, people or business situations that naturally illustrate the subject.
+- Use dynamic camera movement, natural motion and professional lighting.
+- Make the result look like a professionally filmed Instagram Reel for a French digital agency.
+- The first seconds must contain a strong visual hook.
+- Keep the visual story coherent from beginning to end.
+- No watermark added by the prompt.
+- Vertical 9:16 composition suitable for Instagram Reels.
+- Generate natural ambient sound and/or subtle sound design when appropriate.
+- Do not make the video about Vitrine+ itself unless the subject explicitly asks for it.
+PROMPT;
+
+    $payload = [
+        'instances' => [
+            [
+                'prompt' => $prompt,
+            ],
+        ],
+        'parameters' => [
+            'aspectRatio' => '9:16',
+            'resolution' => '720p',
+            'numberOfVideos' => 1,
+        ],
+    ];
+
+    $json = json_encode(
+        $payload,
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    );
+
+    if ($json === false) {
+        throw new RuntimeException(
+            'Impossible d’encoder la requête vidéo.'
+        );
+    }
+
+    $url =
+        'https://generativelanguage.googleapis.com/v1beta/models/' .
+        rawurlencode($model) .
+        ':predictLongRunning';
+
+    $ch = curl_init($url);
+
+    if ($ch === false) {
+        throw new RuntimeException(
+            'Impossible d’initialiser cURL pour Veo.'
+        );
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 5,
+        CURLOPT_POST => true,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'x-goog-api-key: ' . $apiKey,
+        ],
+        CURLOPT_POSTFIELDS => $json,
+        CURLOPT_USERAGENT => 'VitrinePlus-SocialStudio/4.0',
+    ]);
+
+    $body = curl_exec($ch);
+    $curlError = curl_error($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($body === false) {
+        throw new RuntimeException(
+            'Erreur réseau pendant la génération Veo : ' .
+            ($curlError !== '' ? $curlError : 'échec cURL.')
+        );
+    }
+
+    $response = json_decode($body, true);
+
+    if (!is_array($response)) {
+        throw new RuntimeException(
+            'Veo a retourné une réponse invalide.'
+        );
+    }
+
+    if ($httpCode < 200 || $httpCode >= 300) {
+        $error = $response['error'] ?? [];
+        $message = (string) (
+            $error['message'] ?? 'Erreur inconnue de génération vidéo.'
+        );
+        $status = (string) ($error['status'] ?? '');
+
+        throw new RuntimeException(
+            'Veo [' . $httpCode . '] : ' .
+            $message .
+            ($status !== '' ? ' | ' . $status : '')
+        );
+    }
+
+    $operationName = trim(
+        (string) ($response['name'] ?? '')
+    );
+
+    if ($operationName === '') {
+        throw new RuntimeException(
+            'Veo n’a pas retourné d’opération de génération.'
+        );
+    }
+
+    /*
+     * Veo est asynchrone. On attend la fin de l'opération.
+     * 36 tentatives x 5 secondes = 3 minutes maximum.
+     */
+    $operationUrl =
+        'https://generativelanguage.googleapis.com/v1beta/' .
+        ltrim($operationName, '/');
+
+    $operation = null;
+
+    for ($attempt = 0; $attempt < 36; $attempt++) {
+        sleep(5);
+
+        $poll = curl_init($operationUrl);
+
+        if ($poll === false) {
+            throw new RuntimeException(
+                'Impossible de vérifier l’état de la génération Veo.'
+            );
+        }
+
+        curl_setopt_array($poll, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 5,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/json',
+                'x-goog-api-key: ' . $apiKey,
+            ],
+            CURLOPT_USERAGENT => 'VitrinePlus-SocialStudio/4.0',
+        ]);
+
+        $pollBody = curl_exec($poll);
+        $pollError = curl_error($poll);
+        $pollCode = (int) curl_getinfo($poll, CURLINFO_HTTP_CODE);
+        curl_close($poll);
+
+        if ($pollBody === false) {
+            throw new RuntimeException(
+                'Erreur pendant le suivi de Veo : ' .
+                ($pollError !== '' ? $pollError : 'échec cURL.')
+            );
+        }
+
+        $operation = json_decode($pollBody, true);
+
+        if (!is_array($operation)) {
+            throw new RuntimeException(
+                'Veo a retourné un état d’opération invalide.'
+            );
+        }
+
+        if ($pollCode < 200 || $pollCode >= 300) {
+            $error = $operation['error'] ?? [];
+            throw new RuntimeException(
+                'Veo [' . $pollCode . '] : ' .
+                (string) ($error['message'] ?? 'Impossible de suivre la génération.')
+            );
+        }
+
+        if (!empty($operation['done'])) {
+            break;
+        }
+    }
+
+    if (!is_array($operation) || empty($operation['done'])) {
+        throw new RuntimeException(
+            'La génération vidéo Veo prend trop de temps. Réessaie dans quelques instants.'
+        );
+    }
+
+    if (isset($operation['error']) && is_array($operation['error'])) {
+        throw new RuntimeException(
+            'Veo : ' .
+            (string) ($operation['error']['message'] ?? 'La génération vidéo a échoué.')
+        );
+    }
+
+    $videoUri = trim(
+        (string) (
+            $operation['response']['generateVideoResponse']['generatedSamples'][0]['video']['uri']
+            ?? ''
+        )
+    );
+
+    if ($videoUri === '') {
+        $videoUri = trim(
+            (string) (
+                $operation['response']['generatedVideos'][0]['video']['uri']
+                ?? ''
+            )
+        );
+    }
+
+    if ($videoUri === '') {
+        throw new RuntimeException(
+            'Veo a terminé la génération mais n’a fourni aucune vidéo.'
+        );
+    }
+
+    $filename = make_id('reel') . '.mp4';
+    $destination = SOCIAL_MEDIA_DIR . '/' . $filename;
+
+    $download = curl_init($videoUri);
+
+    if ($download === false) {
+        throw new RuntimeException(
+            'Impossible d’initialiser le téléchargement de la vidéo Veo.'
+        );
+    }
+
+    $fp = fopen($destination, 'wb');
+
+    if ($fp === false) {
+        curl_close($download);
+        throw new RuntimeException(
+            'Impossible de créer le fichier vidéo.'
+        );
+    }
+
+    curl_setopt_array($download, [
+        CURLOPT_FILE => $fp,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 5,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_TIMEOUT => 180,
+        CURLOPT_HTTPHEADER => [
+            'x-goog-api-key: ' . $apiKey,
+            'Accept: video/mp4,application/octet-stream,*/*',
+        ],
+        CURLOPT_USERAGENT => 'VitrinePlus-SocialStudio/4.0',
+    ]);
+
+    $downloadResult = curl_exec($download);
+    $downloadError = curl_error($download);
+    $downloadCode = (int) curl_getinfo($download, CURLINFO_HTTP_CODE);
+    curl_close($download);
+    fclose($fp);
 
     if (
-        $ffmpeg === null
+        $downloadResult === false ||
+        $downloadCode < 200 ||
+        $downloadCode >= 300 ||
+        !is_file($destination) ||
+        filesize($destination) <= 0
     ) {
+        @unlink($destination);
+
         throw new RuntimeException(
-            'FFmpeg n’est pas disponible sur cet hébergement. Le script et le visuel ont bien été générés, mais la vidéo MP4 ne peut pas encore être assemblée automatiquement.'
+            'Impossible de télécharger la vidéo générée par Veo.' .
+            ($downloadError !== '' ? ' ' . $downloadError : '')
         );
     }
 
-    $tempImage =
-        SOCIAL_MEDIA_DIR .
-        '/' .
-        make_id(
-            'tmp-image'
-        ) .
-        '.jpg';
-
-    $filename =
-        make_id(
-            'reel'
-        ) .
-        '.mp4';
-
-    $output =
-        SOCIAL_MEDIA_DIR .
-        '/' .
-        $filename;
-
-    try {
-        download_remote_file(
-            $imageUrl,
-            $tempImage
-        );
-
-        /*
-         * Vidéo :
-         * - 1080x1920
-         * - 30 FPS
-         * - 12 secondes
-         * - H.264
-         * - AAC
-         * - mouvement de zoom très léger
-         * - pixel format yuv420p
-         * - faststart pour Instagram
-         */
-        $filter =
-            "scale=1080:1920:force_original_aspect_ratio=increase," .
-            "crop=1080:1920," .
-            "zoompan=" .
-            "z='min(zoom+0.0008,1.04)':" .
-            "x='iw/2-(iw/zoom/2)':" .
-            "y='ih/2-(ih/zoom/2)':" .
-            "d=360:" .
-            "s=1080x1920:" .
-            "fps=30";
-
-        $command =
-            shell_quote(
-                $ffmpeg
-            ) .
-            ' -y' .
-            ' -loop 1' .
-            ' -i ' .
-            shell_quote(
-                $tempImage
-            ) .
-            ' -t 12' .
-            ' -vf ' .
-            shell_quote(
-                $filter
-            ) .
-            ' -an' .
-            ' -c:v libx264' .
-            ' -preset veryfast' .
-            ' -crf 22' .
-            ' -pix_fmt yuv420p' .
-            ' -movflags +faststart' .
-            ' ' .
-            shell_quote(
-                $output
-            ) .
-            ' 2>&1';
-
-        $outputLines = [];
-        $exitCode = 1;
-
-        @exec(
-            $command,
-            $outputLines,
-            $exitCode
-        );
-
-        if (
-            $exitCode !== 0 ||
-            !is_file($output) ||
-            filesize($output) <= 0
-        ) {
-            $details =
-                trim(
-                    implode(
-                        "\n",
-                        array_slice(
-                            $outputLines,
-                            -12
-                        )
-                    )
-                );
-
-            throw new RuntimeException(
-                'FFmpeg n’a pas réussi à créer le Reel.' .
-                (
-                    $details !== ''
-                        ? ' Détail : ' .
-                            $details
-                        : ''
-                )
-            );
-        }
-
-        return public_url(
-            SOCIAL_MEDIA_PUBLIC .
-            '/' .
-            $filename
-        );
-    } finally {
-        if (
-            is_file(
-                $tempImage
-            )
-        ) {
-            @unlink(
-                $tempImage
-            );
-        }
-    }
+    return public_url(
+        SOCIAL_MEDIA_PUBLIC . '/' . $filename
+    );
 }
 
 
@@ -1813,100 +1970,81 @@ function generate_reel_mp4(
 
 function generate_reel(
     string $topic,
-    string $objective
+    string $objective,
+    string $existingScript = ''
 ): array {
-    if (
-        trim($topic) === ''
-    ) {
+    if (trim($topic) === '') {
         throw new RuntimeException(
             'Le sujet du Reel est obligatoire.'
         );
     }
 
-    /*
-     * 1. Gemini crée le contenu.
-     */
-    $content =
-        generate_content(
-            'reel',
-            $topic,
-            $objective
-        );
+    /* 1. Gemini crée le contenu éditorial. */
+    $content = generate_content(
+        'reel',
+        $topic,
+        $objective
+    );
 
-    /*
-     * 2. Génération du visuel vertical.
-     */
-    $visuals =
-        generate_visuals(
-            'reel',
-            $topic,
-            $content['caption'],
-            []
-        );
+    if (trim($existingScript) !== '') {
+        $content['script'] = trim($existingScript);
+    }
 
-    $visualUrl =
-        $visuals[0]
-        ?? '';
+    /* 2. Visuel de couverture/aperçu uniquement. */
+    $visuals = generate_visuals(
+        'reel',
+        $topic,
+        $content['caption'],
+        []
+    );
 
-    if (
-        $visualUrl === ''
-    ) {
+    $visualUrl = $visuals[0] ?? '';
+
+    /* 3. Vraie génération vidéo avec Veo. */
+    $videoUrl = generate_veo_video(
+        $topic,
+        $objective,
+        $content['script']
+    );
+
+    return [
+        'id' => $content['id'],
+        'type' => 'reel',
+        'topic' => $topic,
+        'objective' => $objective,
+        'caption' => $content['caption'],
+        'slides' => [],
+        'script' => $content['script'],
+        'title' => $content['title'],
+        'mediaUrls' => $visualUrl !== '' ? [$visualUrl] : [],
+        'videoUrl' => $videoUrl,
+        'status' => 'draft',
+        'createdAt' => date('c'),
+        'updatedAt' => date('c'),
+    ];
+}
+
+
+/* =========================================================
+ * DIRECT VIDEO GENERATION
+ * ========================================================= */
+
+function generate_reel_video_only(
+    string $topic,
+    string $objective,
+    string $script
+): string {
+    if (trim($topic) === '') {
         throw new RuntimeException(
-            'Impossible de générer le visuel du Reel.'
+            'Le sujet du Reel est obligatoire.'
         );
     }
 
-    /*
-     * 3. Assemblage automatique en MP4.
-     */
-    $videoUrl =
-        generate_reel_mp4(
-            $visualUrl,
-            $content['script']
-        );
-
-    return [
-        'id' =>
-            $content['id'],
-
-        'type' =>
-            'reel',
-
-        'topic' =>
-            $topic,
-
-        'objective' =>
-            $objective,
-
-        'caption' =>
-            $content['caption'],
-
-        'slides' =>
-            [],
-
-        'script' =>
-            $content['script'],
-
-        'title' =>
-            $content['title'],
-
-        'mediaUrls' =>
-            [
-                $visualUrl,
-            ],
-
-        'videoUrl' =>
-            $videoUrl,
-
-        'status' =>
-            'draft',
-
-        'createdAt' =>
-            date('c'),
-
-        'updatedAt' =>
-            date('c'),
-    ];
+    return generate_veo_video(
+        $topic,
+        $objective,
+        $script
+    );
 }
 
 
@@ -3223,10 +3361,20 @@ try {
             );
         }
 
+        $script =
+            trim(
+                (string) (
+                    $input[
+                        'script'
+                    ] ?? ''
+                )
+            );
+
         $content =
             generate_reel(
                 $topic,
-                $objective
+                $objective,
+                $script
             );
 
         respond(
@@ -3246,6 +3394,42 @@ try {
                     'Reel généré automatiquement.',
             ]
         );
+    }
+
+
+    /* -----------------------------------------------------
+     * GENERATE VIDEO ONLY
+     * ----------------------------------------------------- */
+
+    if (
+        $action ===
+        'generate_reel_video'
+    ) {
+        $topic = clean(
+            $input['topic'] ?? ''
+        );
+
+        $objective = clean(
+            $input['objective'] ?? 'Gagner en visibilité'
+        );
+
+        $script = trim(
+            (string) (
+                $input['script'] ?? ''
+            )
+        );
+
+        $videoUrl = generate_reel_video_only(
+            $topic,
+            $objective,
+            $script
+        );
+
+        respond([
+            'success' => true,
+            'videoUrl' => $videoUrl,
+            'message' => 'Vidéo Reel générée automatiquement avec Veo.',
+        ]);
     }
 
 
