@@ -526,147 +526,934 @@ function extract_gemini_text(
 }
 
 
-function call_gemini(string $prompt): string
-{
-    $config = load_config();
+function call_gemini(
+    string $prompt
+): string {
 
-    $apiKey = config_string($config, 'gemini_api_key');
+    $config =
+        load_config();
 
-    if ($apiKey === '') {
-        throw new RuntimeException(
-            'TEST GEMINI — clé API absente.'
+    $apiKey =
+        config_string(
+            $config,
+            'gemini_api_key'
         );
+
+    if (
+        $apiKey === ''
+    ) {
+        throw new RuntimeException(
+            'Gemini : clé API absente.'
+        );
+    }
+
+    /*
+     * On utilise le modèle configuré dans
+     * vitrine-mail-config.php.
+     */
+    $model =
+        config_string(
+            $config,
+            'gemini_model'
+        );
+
+    if (
+        $model === ''
+    ) {
+        $model =
+            'gemini-3.8-flash';
     }
 
     $url =
-        'https://generativelanguage.googleapis.com/v1beta/models?key=' .
-        rawurlencode($apiKey);
+        'https://generativelanguage.googleapis.com/v1beta/models/' .
+        rawurlencode($model) .
+        ':generateContent';
 
-    $start = microtime(true);
-
-    $ch = curl_init($url);
-
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-
-        CURLOPT_HTTPHEADER => [
-            'Accept: application/json'
+    $payload = [
+        'contents' => [
+            [
+                'role' => 'user',
+                'parts' => [
+                    [
+                        'text' =>
+                            $prompt
+                    ]
+                ]
+            ]
         ],
 
-        CURLOPT_CONNECTTIMEOUT => 10,
+        'generationConfig' => [
+            'temperature' =>
+                0.7,
 
-        CURLOPT_TIMEOUT => 15,
+            'responseMimeType' =>
+                'application/json'
+        ]
+    ];
 
-        CURLOPT_SSL_VERIFYPEER => true,
-
-        CURLOPT_SSL_VERIFYHOST => 2,
-
-        CURLOPT_FOLLOWLOCATION => false,
-
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-
-        CURLOPT_USERAGENT => 'VitrinePlus-Gemini-Test/1.0'
-    ]);
-
-    $response = curl_exec($ch);
-
-    $curlError = curl_error($ch);
-    $curlErrno = curl_errno($ch);
-
-    $httpCode = (int) curl_getinfo(
-        $ch,
-        CURLINFO_HTTP_CODE
-    );
-
-    $primaryIp = curl_getinfo(
-        $ch,
-        CURLINFO_PRIMARY_IP
-    );
-
-    $totalTime = (float) curl_getinfo(
-        $ch,
-        CURLINFO_TOTAL_TIME
-    );
-
-    curl_close($ch);
-
-    if ($response === false) {
-
-        throw new RuntimeException(
-            'TEST GEMINI MODELS — cURL #' .
-            $curlErrno .
-            ' — ' .
-            ($curlError ?: 'erreur inconnue') .
-            ' — HTTP ' .
-            $httpCode .
-            ' — IP ' .
-            ($primaryIp ?: 'aucune') .
-            ' — durée ' .
-            round($totalTime, 3) .
-            's'
+    $jsonPayload =
+        json_encode(
+            $payload,
+            JSON_UNESCAPED_UNICODE |
+            JSON_UNESCAPED_SLASHES
         );
-    }
-
-    if ($httpCode < 200 || $httpCode >= 300) {
-
-        throw new RuntimeException(
-            'TEST GEMINI MODELS — HTTP ' .
-            $httpCode .
-            ' — réponse : ' .
-            substr($response, 0, 3000)
-        );
-    }
-
-    $decoded = json_decode($response, true);
-
-    if (!is_array($decoded)) {
-
-        throw new RuntimeException(
-            'TEST GEMINI MODELS — JSON invalide : ' .
-            substr($response, 0, 3000)
-        );
-    }
-
-    $models = [];
 
     if (
-        isset($decoded['models']) &&
-        is_array($decoded['models'])
+        $jsonPayload === false
+    ) {
+        throw new RuntimeException(
+            'Gemini : impossible d’encoder la requête.'
+        );
+    }
+
+    $ch =
+        curl_init(
+            $url
+        );
+
+    if (
+        $ch === false
+    ) {
+        throw new RuntimeException(
+            'Gemini : impossible d’initialiser cURL.'
+        );
+    }
+
+    curl_setopt_array(
+        $ch,
+        [
+            CURLOPT_POST =>
+                true,
+
+            CURLOPT_RETURNTRANSFER =>
+                true,
+
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Accept: application/json',
+                'x-goog-api-key: ' .
+                    $apiKey
+            ],
+
+            CURLOPT_POSTFIELDS =>
+                $jsonPayload,
+
+            /*
+             * On sait maintenant que la connexion
+             * IONOS -> Google fonctionne.
+             *
+             * 30 secondes maximum pour la génération.
+             */
+            CURLOPT_CONNECTTIMEOUT =>
+                8,
+
+            CURLOPT_TIMEOUT =>
+                30,
+
+            CURLOPT_FOLLOWLOCATION =>
+                false,
+
+            CURLOPT_SSL_VERIFYPEER =>
+                true,
+
+            CURLOPT_SSL_VERIFYHOST =>
+                2,
+
+            CURLOPT_IPRESOLVE =>
+                CURL_IPRESOLVE_V4,
+
+            CURLOPT_USERAGENT =>
+                'VitrinePlus-SocialStudio/2.0'
+        ]
+    );
+
+    $response =
+        curl_exec(
+            $ch
+        );
+
+    $curlError =
+        curl_error(
+            $ch
+        );
+
+    $curlErrno =
+        curl_errno(
+            $ch
+        );
+
+    $httpCode =
+        (int) curl_getinfo(
+            $ch,
+            CURLINFO_HTTP_CODE
+        );
+
+    $totalTime =
+        (float) curl_getinfo(
+            $ch,
+            CURLINFO_TOTAL_TIME
+        );
+
+    curl_close(
+        $ch
+    );
+
+    /*
+     * ERREUR CURL
+     */
+    if (
+        $response === false
     ) {
 
-        foreach ($decoded['models'] as $model) {
+        if (
+            $curlErrno ===
+            CURLE_OPERATION_TIMEDOUT
+        ) {
+            throw new RuntimeException(
+                'Gemini : délai dépassé après ' .
+                round(
+                    $totalTime,
+                    2
+                ) .
+                ' secondes. ' .
+                'Google n’a pas renvoyé de réponse.'
+            );
+        }
 
-            if (!is_array($model)) {
-                continue;
-            }
+        throw new RuntimeException(
+            'Gemini : erreur cURL #' .
+            $curlErrno .
+            ' : ' .
+            (
+                $curlError !== ''
+                    ? $curlError
+                    : 'erreur inconnue'
+            )
+        );
+    }
 
-            $name = $model['name'] ?? '';
+    /*
+     * ERREUR HTTP
+     */
+    if (
+        $httpCode < 200 ||
+        $httpCode >= 300
+    ) {
 
-            if ($name !== '') {
-                $models[] = $name;
-            }
+        $decodedError =
+            json_decode(
+                $response,
+                true
+            );
+
+        $message = '';
+
+        if (
+            is_array(
+                $decodedError
+            ) &&
+            isset(
+                $decodedError[
+                    'error'
+                ][
+                    'message'
+                ]
+            )
+        ) {
+            $message =
+                (string)
+                $decodedError[
+                    'error'
+                ][
+                    'message'
+                ];
+        }
+
+        if (
+            $message === ''
+        ) {
+            $message =
+                trim(
+                    $response
+                );
+        }
+
+        throw new RuntimeException(
+            'Gemini HTTP ' .
+            $httpCode .
+            ' : ' .
+            $message
+        );
+    }
+
+    /*
+     * RÉPONSE VIDE
+     */
+    if (
+        trim(
+            $response
+        ) === ''
+    ) {
+        throw new RuntimeException(
+            'Gemini : réponse vide.'
+        );
+    }
+
+    /*
+     * DÉCODAGE
+     */
+    $decoded =
+        json_decode(
+            $response,
+            true
+        );
+
+    if (
+        !is_array(
+            $decoded
+        )
+    ) {
+        throw new RuntimeException(
+            'Gemini : réponse JSON invalide.'
+        );
+    }
+
+    /*
+     * ERREUR GEMINI
+     */
+    if (
+        isset(
+            $decoded['error']
+        )
+    ) {
+
+        $message =
+            $decoded[
+                'error'
+            ][
+                'message'
+            ] ??
+            'Erreur Gemini inconnue.';
+
+        throw new RuntimeException(
+            'Gemini : ' .
+            $message
+        );
+    }
+
+    /*
+     * EXTRACTION DU TEXTE
+     */
+    $text =
+        extract_gemini_text(
+            $decoded
+        );
+
+    if (
+        trim($text) === ''
+    ) {
+
+        throw new RuntimeException(
+            'Gemini : aucune réponse texte reçue.'
+        );
+    }
+
+    return trim(
+        $text
+    );
+}
+
+
+/*
+ * Nettoyage d'une réponse JSON Gemini.
+ */
+function parse_gemini_json(
+    string $text
+): array {
+
+    $text =
+        trim(
+            $text
+        );
+
+    /*
+     * Retire éventuellement les blocs Markdown.
+     */
+    $text =
+        preg_replace(
+            '/^```(?:json)?\s*/i',
+            '',
+            $text
+        );
+
+    $text =
+        preg_replace(
+            '/\s*```$/',
+            '',
+            $text
+        );
+
+    $text =
+        trim(
+            (string) $text
+        );
+
+    $data =
+        json_decode(
+            $text,
+            true
+        );
+
+    if (
+        !is_array(
+            $data
+        )
+    ) {
+
+        /*
+         * Tentative de récupération d'un objet JSON
+         * présent dans une réponse parasite.
+         */
+        $start =
+            strpos(
+                $text,
+                '{'
+            );
+
+        $end =
+            strrpos(
+                $text,
+                '}'
+            );
+
+        if (
+            $start !== false &&
+            $end !== false &&
+            $end > $start
+        ) {
+
+            $candidate =
+                substr(
+                    $text,
+                    $start,
+                    $end - $start + 1
+                );
+
+            $data =
+                json_decode(
+                    $candidate,
+                    true
+                );
         }
     }
 
-    if (count($models) === 0) {
-
+    if (
+        !is_array(
+            $data
+        )
+    ) {
         throw new RuntimeException(
-            'TEST GEMINI MODELS — Google répond, mais aucun modèle trouvé. ' .
-            'Réponse : ' .
-            substr($response, 0, 3000)
+            'Gemini : impossible de lire la réponse JSON.'
         );
     }
 
-    throw new RuntimeException(
-        'TEST GEMINI MODELS — SUCCÈS ! ' .
-        count($models) .
-        ' modèles disponibles. ' .
-        'Premiers modèles : ' .
-        implode(', ', array_slice($models, 0, 20)) .
-        ' — durée ' .
-        round($totalTime, 3) .
-        's'
-    );
+    return $data;
+}
+
+
+/*
+ * Génération du contenu Social Studio.
+ */
+function generate_content(
+    string $type,
+    string $topic,
+    string $objective
+): array {
+
+    $type =
+        clean(
+            $type
+        );
+
+    $topic =
+        clean(
+            $topic
+        );
+
+    $objective =
+        clean(
+            $objective
+        );
+
+    /*
+     * ---------------------------------------------------------
+     * REEL
+     * ---------------------------------------------------------
+     */
+
+    if (
+        $type === 'reel'
+    ) {
+
+        $prompt = <<<PROMPT
+Tu es le directeur éditorial et social media de Vitrine+.
+
+Vitrine+ est une agence digitale française spécialisée notamment dans la création de sites internet.
+
+Promesse de marque :
+"Votre entreprise. En mieux."
+
+Sujet du Reel :
+{$topic}
+
+Objectif :
+{$objective}
+
+Crée un Reel Instagram professionnel, dynamique, naturel et orienté valeur.
+
+IMPORTANT :
+
+Le Reel doit contenir EXACTEMENT 5 scènes.
+
+Scène 1 :
+- Hook très fort
+- Donner envie de regarder la suite
+
+Scène 2 :
+- Première erreur / premier problème
+
+Scène 3 :
+- Deuxième erreur / deuxième problème
+
+Scène 4 :
+- Troisième erreur / solution
+
+Scène 5 :
+- Conclusion
+- CTA naturel vers Vitrine+
+
+Le script complet doit durer environ 20 secondes.
+
+Les textes affichés à l'écran doivent être courts et lisibles sur mobile.
+
+Le contenu doit être utile avant d'être commercial.
+Ne force pas la mention de Vitrine+ dans chaque scène.
+
+Le ton doit être :
+- professionnel
+- moderne
+- direct
+- accessible
+- français naturel
+- sans jargon inutile
+
+Retourne UNIQUEMENT un objet JSON valide.
+
+Format obligatoire :
+
+{
+  "title": "Titre du Reel",
+  "caption": "Légende Instagram complète",
+  "script": "Script complet du Reel",
+  "slides": [
+    "Texte scène 1",
+    "Texte scène 2",
+    "Texte scène 3",
+    "Texte scène 4",
+    "Texte scène 5"
+  ]
+}
+
+Il doit y avoir EXACTEMENT 5 éléments dans slides.
+PROMPT;
+
+        $raw =
+            call_gemini(
+                $prompt
+            );
+
+        $data =
+            parse_gemini_json(
+                $raw
+            );
+
+        $title =
+            clean(
+                $data['title'] ??
+                ''
+            );
+
+        $caption =
+            trim(
+                (string) (
+                    $data['caption'] ??
+                    ''
+                )
+            );
+
+        $script =
+            trim(
+                (string) (
+                    $data['script'] ??
+                    ''
+                )
+            );
+
+        $slides =
+            is_array(
+                $data['slides'] ??
+                null
+            )
+                ? $data['slides']
+                : [];
+
+        $slides =
+            array_values(
+                array_filter(
+                    array_map(
+                        fn($value) =>
+                            trim(
+                                (string) $value
+                            ),
+                        $slides
+                    ),
+                    fn($value) =>
+                        $value !== ''
+                )
+            );
+
+        /*
+         * Sécurité : on garantit 5 scènes.
+         */
+        $fallbackSlides = [
+            'Ton site fait peut-être fuir tes clients.',
+            'Erreur n°1 : un site trop lent.',
+            'Erreur n°2 : une offre difficile à comprendre.',
+            'Erreur n°3 : aucun appel à l’action.',
+            'Ton site mérite mieux. Vitrine+.'
+        ];
+
+        for (
+            $i = count($slides);
+            $i < 5;
+            $i++
+        ) {
+            $slides[] =
+                $fallbackSlides[$i];
+        }
+
+        $slides =
+            array_slice(
+                $slides,
+                0,
+                5
+            );
+
+        if (
+            $title === ''
+        ) {
+            $title =
+                $topic;
+        }
+
+        if (
+            $caption === ''
+        ) {
+            $caption =
+                $topic .
+                "\n\n" .
+                'Et vous, quelle erreur voyez-vous le plus souvent ?' .
+                "\n\n" .
+                '#VitrinePlus #MarketingDigital #SiteInternet #Entrepreneur';
+        }
+
+        if (
+            $script === ''
+        ) {
+            $script =
+                implode(
+                    ' ',
+                    $slides
+                );
+        }
+
+        return [
+            'title' =>
+                $title,
+
+            'topic' =>
+                $topic,
+
+            'objective' =>
+                $objective,
+
+            'caption' =>
+                $caption,
+
+            'script' =>
+                $script,
+
+            'slides' =>
+                $slides,
+
+            'type' =>
+                'reel'
+        ];
+    }
+
+
+    /*
+     * ---------------------------------------------------------
+     * CAROUSEL
+     * ---------------------------------------------------------
+     */
+
+    if (
+        $type === 'carousel'
+    ) {
+
+        $prompt = <<<PROMPT
+Tu es le directeur éditorial et social media de Vitrine+.
+
+Vitrine+ est une agence digitale française spécialisée dans la création de sites internet et l'accompagnement des entreprises dans leur présence en ligne.
+
+Promesse :
+"Votre entreprise. En mieux."
+
+Sujet :
+{$topic}
+
+Objectif :
+{$objective}
+
+Crée un carrousel Instagram professionnel et utile.
+
+Le contenu doit apporter une vraie valeur au lecteur et être facile à transformer en visuels.
+
+Crée entre 5 et 7 slides.
+
+Le ton est :
+- professionnel
+- moderne
+- clair
+- direct
+- accessible
+- français naturel
+
+Retourne uniquement un objet JSON valide :
+
+{
+  "title": "Titre du carrousel",
+  "caption": "Légende Instagram complète",
+  "script": "Résumé éditorial",
+  "slides": [
+    "Slide 1",
+    "Slide 2",
+    "Slide 3",
+    "Slide 4",
+    "Slide 5"
+  ]
+}
+PROMPT;
+
+        $raw =
+            call_gemini(
+                $prompt
+            );
+
+        $data =
+            parse_gemini_json(
+                $raw
+            );
+
+        $slides =
+            is_array(
+                $data['slides'] ??
+                null
+            )
+                ? $data['slides']
+                : [];
+
+        $slides =
+            array_values(
+                array_filter(
+                    array_map(
+                        fn($value) =>
+                            trim(
+                                (string) $value
+                            ),
+                        $slides
+                    ),
+                    fn($value) =>
+                        $value !== ''
+                )
+            );
+
+        if (
+            count($slides) < 2
+        ) {
+            $slides = [
+                $topic,
+                'Voici les points essentiels à retenir.'
+            ];
+        }
+
+        return [
+            'title' =>
+                clean(
+                    $data['title'] ??
+                    $topic
+                ),
+
+            'topic' =>
+                $topic,
+
+            'objective' =>
+                $objective,
+
+            'caption' =>
+                trim(
+                    (string) (
+                        $data['caption'] ??
+                        ''
+                    )
+                ),
+
+            'script' =>
+                trim(
+                    (string) (
+                        $data['script'] ??
+                        ''
+                    )
+                ),
+
+            'slides' =>
+                array_slice(
+                    $slides,
+                    0,
+                    10
+                ),
+
+            'type' =>
+                'carousel'
+        ];
+    }
+
+
+    /*
+     * ---------------------------------------------------------
+     * POST / STORY
+     * ---------------------------------------------------------
+     */
+
+    $formatName =
+        $type === 'story'
+            ? 'Story Instagram'
+            : 'Post Instagram';
+
+    $prompt = <<<PROMPT
+Tu es le directeur éditorial et social media de Vitrine+.
+
+Vitrine+ est une agence digitale française qui accompagne les entreprises dans leur présence en ligne.
+
+Promesse :
+"Votre entreprise. En mieux."
+
+Format :
+{$formatName}
+
+Sujet :
+{$topic}
+
+Objectif :
+{$objective}
+
+Crée un contenu Instagram professionnel, utile et engageant.
+
+Le contenu doit être naturel, moderne, clair et orienté vers la valeur pour l'audience.
+
+Ne sois pas excessivement commercial.
+
+Retourne uniquement un objet JSON valide :
+
+{
+  "title": "Titre",
+  "caption": "Légende Instagram complète",
+  "script": "Texte ou script du contenu",
+  "slides": [
+    "Texte principal"
+  ]
+}
+PROMPT;
+
+    $raw =
+        call_gemini(
+            $prompt
+        );
+
+    $data =
+        parse_gemini_json(
+            $raw
+        );
+
+    $slides =
+        is_array(
+            $data['slides'] ??
+            null
+        )
+            ? $data['slides']
+            : [];
+
+    $slides =
+        array_values(
+            array_filter(
+                array_map(
+                    fn($value) =>
+                        trim(
+                            (string) $value
+                        ),
+                    $slides
+                ),
+                fn($value) =>
+                    $value !== ''
+            )
+        );
+
+    return [
+        'title' =>
+            clean(
+                $data['title'] ??
+                $topic
+            ),
+
+        'topic' =>
+            $topic,
+
+        'objective' =>
+            $objective,
+
+        'caption' =>
+            trim(
+                (string) (
+                    $data['caption'] ??
+                    ''
+                )
+            ),
+
+        'script' =>
+            trim(
+                (string) (
+                    $data['script'] ??
+                    ''
+                )
+            ),
+
+        'slides' =>
+            $slides,
+
+        'type' =>
+            $type
+    ];
 }
 
 
