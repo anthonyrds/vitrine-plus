@@ -530,38 +530,26 @@ function call_gemini(
     string $prompt
 ): string {
 
-    $config =
-        load_config();
+    $config = load_config();
 
-    $apiKey =
-        config_string(
-            $config,
-            'gemini_api_key'
-        );
+    $apiKey = config_string(
+        $config,
+        'gemini_api_key'
+    );
 
-    if (
-        $apiKey === ''
-    ) {
+    if ($apiKey === '') {
         throw new RuntimeException(
             'Gemini : clé API absente.'
         );
     }
 
-    /*
-     * On utilise le modèle configuré dans
-     * vitrine-mail-config.php.
-     */
-    $model =
-        config_string(
-            $config,
-            'gemini_model'
-        );
+    $model = config_string(
+        $config,
+        'gemini_model'
+    );
 
-    if (
-        $model === ''
-    ) {
-        $model =
-            'gemini-3.8-flash';
+    if ($model === '') {
+        $model = 'gemini-3.8-flash';
     }
 
     $url =
@@ -569,51 +557,45 @@ function call_gemini(
         rawurlencode($model) .
         ':generateContent';
 
+    /*
+     * Gemini 3.8 Flash :
+     * - thinkingLevel low = latence réduite
+     * - pas de temperature / top_p / top_k
+     */
     $payload = [
         'contents' => [
             [
                 'role' => 'user',
                 'parts' => [
                     [
-                        'text' =>
-                            $prompt
+                        'text' => $prompt
                     ]
                 ]
             ]
         ],
 
         'generationConfig' => [
-            'temperature' =>
-                0.7,
-
-            'responseMimeType' =>
-                'application/json'
+            'thinkingConfig' => [
+                'thinkingLevel' => 'low'
+            ]
         ]
     ];
 
-    $jsonPayload =
-        json_encode(
-            $payload,
-            JSON_UNESCAPED_UNICODE |
-            JSON_UNESCAPED_SLASHES
-        );
+    $jsonPayload = json_encode(
+        $payload,
+        JSON_UNESCAPED_UNICODE |
+        JSON_UNESCAPED_SLASHES
+    );
 
-    if (
-        $jsonPayload === false
-    ) {
+    if ($jsonPayload === false) {
         throw new RuntimeException(
             'Gemini : impossible d’encoder la requête.'
         );
     }
 
-    $ch =
-        curl_init(
-            $url
-        );
+    $ch = curl_init($url);
 
-    if (
-        $ch === false
-    ) {
+    if ($ch === false) {
         throw new RuntimeException(
             'Gemini : impossible d’initialiser cURL.'
         );
@@ -622,101 +604,76 @@ function call_gemini(
     curl_setopt_array(
         $ch,
         [
-            CURLOPT_POST =>
-                true,
+            CURLOPT_POST => true,
 
-            CURLOPT_RETURNTRANSFER =>
-                true,
+            CURLOPT_RETURNTRANSFER => true,
 
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'Accept: application/json',
-                'x-goog-api-key: ' .
-                    $apiKey
+                'x-goog-api-key: ' . $apiKey
             ],
 
-            CURLOPT_POSTFIELDS =>
-                $jsonPayload,
+            CURLOPT_POSTFIELDS => $jsonPayload,
 
             /*
-             * On sait maintenant que la connexion
-             * IONOS -> Google fonctionne.
-             *
-             * 30 secondes maximum pour la génération.
+             * Connexion très courte :
+             * on sait déjà que Google est joignable.
              */
-            CURLOPT_CONNECTTIMEOUT =>
-                8,
+            CURLOPT_CONNECTTIMEOUT => 8,
 
-            CURLOPT_TIMEOUT =>
-                30,
+            /*
+             * 45 secondes pour laisser Gemini
+             * répondre, tout en évitant un blocage infini.
+             */
+            CURLOPT_TIMEOUT => 45,
 
-            CURLOPT_FOLLOWLOCATION =>
-                false,
+            CURLOPT_FOLLOWLOCATION => false,
 
-            CURLOPT_SSL_VERIFYPEER =>
-                true,
+            CURLOPT_SSL_VERIFYPEER => true,
 
-            CURLOPT_SSL_VERIFYHOST =>
-                2,
+            CURLOPT_SSL_VERIFYHOST => 2,
 
-            CURLOPT_IPRESOLVE =>
-                CURL_IPRESOLVE_V4,
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
 
             CURLOPT_USERAGENT =>
                 'VitrinePlus-SocialStudio/2.0'
         ]
     );
 
-    $response =
-        curl_exec(
-            $ch
-        );
+    $response = curl_exec($ch);
 
-    $curlError =
-        curl_error(
-            $ch
-        );
+    $curlError = curl_error($ch);
 
-    $curlErrno =
-        curl_errno(
-            $ch
-        );
+    $curlErrno = curl_errno($ch);
 
-    $httpCode =
-        (int) curl_getinfo(
-            $ch,
-            CURLINFO_HTTP_CODE
-        );
-
-    $totalTime =
-        (float) curl_getinfo(
-            $ch,
-            CURLINFO_TOTAL_TIME
-        );
-
-    curl_close(
-        $ch
+    $httpCode = (int) curl_getinfo(
+        $ch,
+        CURLINFO_HTTP_CODE
     );
 
-    /*
-     * ERREUR CURL
-     */
-    if (
-        $response === false
-    ) {
+    $totalTime = (float) curl_getinfo(
+        $ch,
+        CURLINFO_TOTAL_TIME
+    );
 
-        if (
-            $curlErrno ===
-            CURLE_OPERATION_TIMEDOUT
-        ) {
+    curl_close($ch);
+
+    /*
+     * ---------------------------------------------------------
+     * ERREUR CURL
+     * ---------------------------------------------------------
+     */
+
+    if ($response === false) {
+
+        if ($curlErrno === CURLE_OPERATION_TIMEDOUT) {
+
             throw new RuntimeException(
                 'Gemini : délai dépassé après ' .
-                round(
-                    $totalTime,
-                    2
-                ) .
+                round($totalTime, 2) .
                 ' secondes. ' .
-                'Google n’a pas renvoyé de réponse.'
+                'La requête generateContent n’a pas reçu de réponse.'
             );
         }
 
@@ -733,49 +690,36 @@ function call_gemini(
     }
 
     /*
+     * ---------------------------------------------------------
      * ERREUR HTTP
+     * ---------------------------------------------------------
      */
+
     if (
         $httpCode < 200 ||
         $httpCode >= 300
     ) {
 
-        $decodedError =
-            json_decode(
-                $response,
-                true
-            );
+        $decodedError = json_decode(
+            $response,
+            true
+        );
 
         $message = '';
 
         if (
-            is_array(
-                $decodedError
-            ) &&
+            is_array($decodedError) &&
             isset(
-                $decodedError[
-                    'error'
-                ][
-                    'message'
-                ]
+                $decodedError['error']['message']
             )
         ) {
             $message =
                 (string)
-                $decodedError[
-                    'error'
-                ][
-                    'message'
-                ];
+                $decodedError['error']['message'];
         }
 
-        if (
-            $message === ''
-        ) {
-            $message =
-                trim(
-                    $response
-                );
+        if ($message === '') {
+            $message = trim($response);
         }
 
         throw new RuntimeException(
@@ -787,52 +731,26 @@ function call_gemini(
     }
 
     /*
-     * RÉPONSE VIDE
-     */
-    if (
-        trim(
-            $response
-        ) === ''
-    ) {
-        throw new RuntimeException(
-            'Gemini : réponse vide.'
-        );
-    }
-
-    /*
+     * ---------------------------------------------------------
      * DÉCODAGE
+     * ---------------------------------------------------------
      */
-    $decoded =
-        json_decode(
-            $response,
-            true
-        );
 
-    if (
-        !is_array(
-            $decoded
-        )
-    ) {
+    $decoded = json_decode(
+        $response,
+        true
+    );
+
+    if (!is_array($decoded)) {
         throw new RuntimeException(
             'Gemini : réponse JSON invalide.'
         );
     }
 
-    /*
-     * ERREUR GEMINI
-     */
-    if (
-        isset(
-            $decoded['error']
-        )
-    ) {
+    if (isset($decoded['error'])) {
 
         $message =
-            $decoded[
-                'error'
-            ][
-                'message'
-            ] ??
+            $decoded['error']['message'] ??
             'Erreur Gemini inconnue.';
 
         throw new RuntimeException(
@@ -841,26 +759,23 @@ function call_gemini(
         );
     }
 
-    /*
-     * EXTRACTION DU TEXTE
-     */
-    $text =
-        extract_gemini_text(
-            $decoded
-        );
+    $text = extract_gemini_text(
+        $decoded
+    );
 
-    if (
-        trim($text) === ''
-    ) {
+    if (trim($text) === '') {
 
         throw new RuntimeException(
-            'Gemini : aucune réponse texte reçue.'
+            'Gemini : réponse vide. Réponse brute : ' .
+            substr(
+                $response,
+                0,
+                1000
+            )
         );
     }
 
-    return trim(
-        $text
-    );
+    return trim($text);
 }
 
 
