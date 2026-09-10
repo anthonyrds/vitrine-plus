@@ -2,28 +2,53 @@
 
 declare(strict_types=1);
 
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+/*
+ * =========================================================
+ * VITRINE+ — SOCIAL STUDIO API
+ * =========================================================
+ *
+ * Fonctions :
+ * - génération de contenu Gemini
+ * - génération de visuels
+ * - génération de Reel
+ * - upload de médias
+ * - publication Instagram
+ * - programmation
+ * - bibliothèque de contenus
+ *
+ * IMPORTANT :
+ * aucune API vidéo payante n'est utilisée.
+ */
 
-const BASE_DIR = __DIR__;
-const CONFIG_FILE = BASE_DIR . '/vitrine-mail-config.php';
+/* =========================================================
+ * CONFIGURATION
+ * ========================================================= */
 
-const SOCIAL_DIR = BASE_DIR . '/vitrine-data/social';
-const SOCIAL_FILE = SOCIAL_DIR . '/contents.json';
+header(
+    'Content-Type: application/json; charset=utf-8'
+);
 
-const SOCIAL_MEDIA_DIR = BASE_DIR . '/social-media';
-const SOCIAL_MEDIA_PUBLIC = '/social-media';
+const SOCIAL_DATA_DIR =
+    __DIR__ . '/vitrine-data';
 
-const SOCIAL_PREVIEW_DIR = BASE_DIR . '/social-preview/generated';
-const SOCIAL_PREVIEW_PUBLIC = '/social-preview/generated';
+const SOCIAL_CONTENT_FILE =
+    SOCIAL_DATA_DIR . '/social-contents.json';
+
+const SOCIAL_MEDIA_PUBLIC =
+    '/vitrine-social-media';
+
+const SOCIAL_MEDIA_DIR =
+    __DIR__ . SOCIAL_MEDIA_PUBLIC;
 
 
 /* =========================================================
- * RESPONSE
+ * HELPERS
  * ========================================================= */
 
-function respond(array $data, int $status = 200): never
-{
+function respond(
+    array $data,
+    int $status = 200
+): never {
     http_response_code($status);
 
     echo json_encode(
@@ -36,157 +61,77 @@ function respond(array $data, int $status = 200): never
 }
 
 
-/* =========================================================
- * CONFIG
- * ========================================================= */
-
-function load_config(): array
-{
-    if (!is_file(CONFIG_FILE)) {
-        return [];
-    }
-
-    try {
-        $config = require CONFIG_FILE;
-    } catch (Throwable $e) {
-        return [];
-    }
-
-    return is_array($config)
-        ? $config
-        : [];
-}
-
-
-function config_string(
-    array $config,
-    string $key
+function clean(
+    mixed $value
 ): string {
     return trim(
-        (string) (
-            $config[$key] ?? ''
-        )
+        (string) $value
     );
 }
 
 
-/* =========================================================
- * AUTH
- * ========================================================= */
-
-function require_auth(): void
-{
-    $config = load_config();
-
-    $expectedUser =
-        config_string(
-            $config,
-            'grand_plus_admin_user'
+function make_id(
+    string $prefix = 'content'
+): string {
+    return
+        $prefix .
+        '-' .
+        date('YmdHis') .
+        '-' .
+        bin2hex(
+            random_bytes(5)
         );
+}
 
-    $expectedPassword =
-        (string) (
-            $config[
-                'grand_plus_admin_password'
-            ] ?? ''
-        );
 
+function ensure_dirs(): void {
     if (
-        $expectedUser === '' ||
-        $expectedPassword === ''
-    ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Configuration administrateur absente.',
-            ],
-            500
-        );
-    }
-
-    $user =
-        (string) (
-            $_SERVER['PHP_AUTH_USER'] ?? ''
-        );
-
-    $password =
-        (string) (
-            $_SERVER['PHP_AUTH_PW'] ?? ''
-        );
-
-    if (
-        !hash_equals(
-            $expectedUser,
-            $user
-        ) ||
-        !hash_equals(
-            $expectedPassword,
-            $password
+        !is_dir(
+            SOCIAL_DATA_DIR
         )
     ) {
-        header(
-            'WWW-Authenticate: Basic realm="Vitrine+ Administration"'
+        @mkdir(
+            SOCIAL_DATA_DIR,
+            0755,
+            true
         );
+    }
 
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Authentification administrateur requise.',
-            ],
-            401
+    if (
+        !is_dir(
+            SOCIAL_MEDIA_DIR
+        )
+    ) {
+        @mkdir(
+            SOCIAL_MEDIA_DIR,
+            0755,
+            true
+        );
+    }
+
+    if (
+        !is_file(
+            SOCIAL_CONTENT_FILE
+        )
+    ) {
+        @file_put_contents(
+            SOCIAL_CONTENT_FILE,
+            json_encode(
+                [],
+                JSON_PRETTY_PRINT |
+                JSON_UNESCAPED_UNICODE
+            )
         );
     }
 }
 
 
-/* =========================================================
- * DIRECTORIES
- * ========================================================= */
-
-function ensure_dirs(): void
-{
-    $directories = [
-        SOCIAL_DIR,
-        SOCIAL_MEDIA_DIR,
-        SOCIAL_PREVIEW_DIR,
-    ];
-
-    foreach ($directories as $dir) {
-        if (
-            !is_dir($dir) &&
-            !mkdir(
-                $dir,
-                0755,
-                true
-            ) &&
-            !is_dir($dir)
-        ) {
-            throw new RuntimeException(
-                'Impossible de créer le dossier social : ' .
-                $dir
-            );
-        }
-    }
-}
-
-
-/* =========================================================
- * CONTENT STORAGE
- * ========================================================= */
-
-function read_contents(): array
-{
+function read_contents(): array {
     ensure_dirs();
 
-    if (!is_file(SOCIAL_FILE)) {
-        return [];
-    }
-
     $raw =
-        file_get_contents(
-            SOCIAL_FILE
+        @file_get_contents(
+            SOCIAL_CONTENT_FILE
         );
 
     if (
@@ -202,14 +147,10 @@ function read_contents(): array
             true
         );
 
-    return is_array($data)
-        ? array_values(
-            array_filter(
-                $data,
-                'is_array'
-            )
-        )
-        : [];
+    return
+        is_array($data)
+            ? $data
+            : [];
 }
 
 
@@ -218,51 +159,44 @@ function write_contents(
 ): void {
     ensure_dirs();
 
-    $tmp =
-        SOCIAL_FILE . '.tmp';
-
     $json =
         json_encode(
-            array_values(
-                $contents
-            ),
+            array_values($contents),
+            JSON_PRETTY_PRINT |
             JSON_UNESCAPED_UNICODE |
-            JSON_UNESCAPED_SLASHES |
-            JSON_PRETTY_PRINT
+            JSON_UNESCAPED_SLASHES
         );
 
     if (
-        $json === false ||
-        file_put_contents(
-            $tmp,
-            $json,
-            LOCK_EX
-        ) === false ||
-        !rename(
-            $tmp,
-            SOCIAL_FILE
-        )
+        $json === false
     ) {
         throw new RuntimeException(
-            'Impossible d’enregistrer les contenus sociaux.'
+            'Impossible d’encoder les contenus.'
+        );
+    }
+
+    if (
+        @file_put_contents(
+            SOCIAL_CONTENT_FILE,
+            $json,
+            LOCK_EX
+        ) === false
+    ) {
+        throw new RuntimeException(
+            'Impossible d’enregistrer les contenus.'
         );
     }
 }
 
 
-/* =========================================================
- * REQUEST HELPERS
- * ========================================================= */
-
-function request_json(): array
-{
+function request_json(): array {
     $raw =
         file_get_contents(
             'php://input'
         );
 
     if (
-        !is_string($raw) ||
+        $raw === false ||
         trim($raw) === ''
     ) {
         return [];
@@ -274,85 +208,137 @@ function request_json(): array
             true
         );
 
-    return is_array($data)
-        ? $data
-        : [];
+    return
+        is_array($data)
+            ? $data
+            : [];
 }
 
 
-function clean(mixed $value): string
-{
-    return trim(
-        (string) $value
+/* =========================================================
+ * AUTH
+ * ========================================================= */
+
+function require_auth(): void {
+    $configuredUser = '';
+    $configuredPassword = '';
+
+    $configPath =
+        __DIR__ .
+        '/vitrine-mail-config.php';
+
+    if (
+        is_file(
+            $configPath
+        )
+    ) {
+        $config =
+            require $configPath;
+
+        if (
+            is_array($config)
+        ) {
+            $configuredUser =
+                clean(
+                    $config[
+                        'grand_plus_admin_user'
+                    ] ??
+                    ''
+                );
+
+            $configuredPassword =
+                (string) (
+                    $config[
+                        'grand_plus_admin_password'
+                    ] ??
+                    ''
+                );
+        }
+    }
+
+    $user =
+        $_SERVER[
+            'PHP_AUTH_USER'
+        ] ?? '';
+
+    $password =
+        $_SERVER[
+            'PHP_AUTH_PW'
+        ] ?? '';
+
+    if (
+        $configuredUser === '' ||
+        $configuredPassword === '' ||
+        !hash_equals(
+            $configuredUser,
+            (string) $user
+        ) ||
+        !hash_equals(
+            $configuredPassword,
+            (string) $password
+        )
+    ) {
+        header(
+            'WWW-Authenticate: Basic realm="Vitrine+ Administration"'
+        );
+
+        respond(
+            [
+                'success' =>
+                    false,
+                'message' =>
+                    'Authentification requise.',
+            ],
+            401
+        );
+    }
+}
+
+
+/* =========================================================
+ * CONFIG
+ * ========================================================= */
+
+function load_config(): array {
+    $path =
+        __DIR__ .
+        '/vitrine-mail-config.php';
+
+    if (
+        !is_file($path)
+    ) {
+        throw new RuntimeException(
+            'Le fichier vitrine-mail-config.php est introuvable.'
+        );
+    }
+
+    $config =
+        require $path;
+
+    if (
+        !is_array($config)
+    ) {
+        throw new RuntimeException(
+            'La configuration Vitrine+ est invalide.'
+        );
+    }
+
+    return $config;
+}
+
+
+function config_string(
+    array $config,
+    string $key
+): string {
+    return clean(
+        $config[$key] ?? ''
     );
 }
 
 
 /* =========================================================
- * PUBLIC URL
- * ========================================================= */
-
-function public_base_url(): string
-{
-    $config =
-        load_config();
-
-    $configured =
-        rtrim(
-            config_string(
-                $config,
-                'site_url'
-            ),
-            '/'
-        );
-
-    if ($configured !== '') {
-        return $configured;
-    }
-
-    $host =
-        (string) (
-            $_SERVER['HTTP_HOST']
-            ?? 'vitrineplus.fr'
-        );
-
-    return 'https://' . $host;
-}
-
-
-function public_url(
-    string $path
-): string {
-    return
-        public_base_url() .
-        '/' .
-        ltrim(
-            $path,
-            '/'
-        );
-}
-
-
-/* =========================================================
- * IDS
- * ========================================================= */
-
-function make_id(
-    string $prefix = 'social'
-): string {
-    return
-        $prefix .
-        '-' .
-        date('YmdHis') .
-        '-' .
-        bin2hex(
-            random_bytes(4)
-        );
-}
-
-
-/* =========================================================
- * CURL
+ * HTTP
  * ========================================================= */
 
 function curl_request(
@@ -365,20 +351,44 @@ function curl_request(
     $ch =
         curl_init();
 
-    if ($ch === false) {
+    if (
+        $ch === false
+    ) {
         throw new RuntimeException(
             'Impossible d’initialiser cURL.'
         );
     }
 
     $method =
-        strtoupper(
-            $method
-        );
+        strtoupper($method);
+
+    $finalUrl =
+        $url;
+
+    if (
+        $method === 'GET' &&
+        $fields
+    ) {
+        $finalUrl .=
+            (
+                str_contains(
+                    $finalUrl,
+                    '?'
+                )
+                    ? '&'
+                    : '?'
+            ) .
+            http_build_query(
+                $fields,
+                '',
+                '&',
+                PHP_QUERY_RFC3986
+            );
+    }
 
     $options = [
         CURLOPT_URL =>
-            $url,
+            $finalUrl,
 
         CURLOPT_RETURNTRANSFER =>
             true,
@@ -395,19 +405,25 @@ function curl_request(
         CURLOPT_TIMEOUT =>
             $timeout,
 
-        CURLOPT_CUSTOMREQUEST =>
-            $method,
+        CURLOPT_USERAGENT =>
+            'VitrinePlus-SocialStudio/2.0',
 
         CURLOPT_HTTPHEADER =>
-            $headers,
-
-        CURLOPT_USERAGENT =>
-            'VitrinePlus-SocialStudio/3.0',
+            array_merge(
+                [
+                    'Accept: application/json',
+                ],
+                $headers
+            ),
     ];
 
     if (
         $method === 'POST'
     ) {
+        $options[
+            CURLOPT_POST
+        ] = true;
+
         $options[
             CURLOPT_POSTFIELDS
         ] =
@@ -442,12 +458,9 @@ function curl_request(
         $body === false
     ) {
         throw new RuntimeException(
-            'Erreur réseau : ' .
-            (
-                $curlError !== ''
-                    ? $curlError
-                    : 'échec cURL.'
-            )
+            $curlError !== ''
+                ? $curlError
+                : 'Erreur réseau.'
         );
     }
 
@@ -457,18 +470,14 @@ function curl_request(
             true
         );
 
-    if (!is_array($decoded)) {
-        $decoded = [
-            'raw' => $body,
-        ];
-    }
-
     return [
         'http_code' =>
             $httpCode,
 
         'body' =>
-            $decoded,
+            is_array($decoded)
+                ? $decoded
+                : [],
 
         'raw' =>
             $body,
@@ -483,53 +492,37 @@ function curl_request(
 function extract_gemini_text(
     array $response
 ): string {
-    $parts = [];
+    $parts =
+        $response[
+            'candidates'
+        ][0][
+            'content'
+        ][
+            'parts'
+        ] ?? [];
+
+    if (
+        !is_array($parts)
+    ) {
+        return '';
+    }
+
+    $text = '';
 
     foreach (
-        (
-            $response['candidates']
-            ?? []
-        )
-        as $candidate
+        $parts as $part
     ) {
         if (
-            !is_array(
-                $candidate
+            isset(
+                $part['text']
             )
         ) {
-            continue;
-        }
-
-        foreach (
-            (
-                $candidate[
-                    'content'
-                ]['parts']
-                ?? []
-            )
-            as $part
-        ) {
-            if (
-                is_array($part) &&
-                isset(
-                    $part['text']
-                ) &&
-                is_string(
-                    $part['text']
-                )
-            ) {
-                $parts[] =
-                    $part['text'];
-            }
+            $text .=
+                (string) $part['text'];
         }
     }
 
-    return trim(
-        implode(
-            "\n",
-            $parts
-        )
-    );
+    return trim($text);
 }
 
 
@@ -590,6 +583,7 @@ function call_gemini(
             'contents' => [
                 [
                     'role' => 'user',
+
                     'parts' => [
                         [
                             'text' =>
@@ -708,17 +702,18 @@ function call_gemini(
 
                 CURLOPT_POSTFIELDS =>
                     $json,
-
-                CURLOPT_USERAGENT =>
-                    'VitrinePlus-SocialStudio/3.0',
             ]
         );
 
         $body =
-            curl_exec($ch);
+            curl_exec(
+                $ch
+            );
 
         $curlError =
-            curl_error($ch);
+            curl_error(
+                $ch
+            );
 
         $httpCode =
             (int) curl_getinfo(
@@ -726,7 +721,9 @@ function call_gemini(
                 CURLINFO_HTTP_CODE
             );
 
-        curl_close($ch);
+        curl_close(
+            $ch
+        );
 
         if (
             $body === false
@@ -737,13 +734,45 @@ function call_gemini(
                 (
                     $curlError !== ''
                         ? $curlError
-                        : 'erreur réseau'
+                        : 'erreur cURL inconnue'
                 );
 
             continue;
         }
 
-        $response =
+        if (
+            $httpCode < 200 ||
+            $httpCode >= 300
+        ) {
+            $decodedError =
+                json_decode(
+                    $body,
+                    true
+                );
+
+            $message =
+                $decodedError[
+                    'error'
+                ]['message']
+                ?? trim($body);
+
+            if (
+                $message === ''
+            ) {
+                $message =
+                    'HTTP ' .
+                    $httpCode;
+            }
+
+            $errors[] =
+                $model .
+                ' : ' .
+                $message;
+
+            continue;
+        }
+
+        $decoded =
             json_decode(
                 $body,
                 true
@@ -751,79 +780,58 @@ function call_gemini(
 
         if (
             !is_array(
-                $response
+                $decoded
             )
         ) {
             $errors[] =
                 $model .
-                ' [' .
-                $httpCode .
-                ']: réponse Gemini invalide.';
+                ': réponse JSON invalide.';
 
             continue;
         }
 
-        if (
-            $httpCode >= 200 &&
-            $httpCode < 300
-        ) {
-            $text =
-                extract_gemini_text(
-                    $response
-                );
-
-            if (
-                $text !== ''
-            ) {
-                return $text;
-            }
-
-            $errors[] =
-                $model .
-                ': réponse Gemini vide.';
-
-            continue;
-        }
-
-        $error =
-            $response['error']
+        $parts =
+            $decoded[
+                'candidates'
+            ][0]['content']['parts']
             ?? [];
 
-        $message =
-            (string) (
-                $error['message']
-                ?? 'erreur Gemini inconnue'
-            );
+        $text = '';
 
-        $status =
-            (string) (
-                $error['status']
-                ?? ''
-            );
-
-        $details =
-            $model .
-            ' [' .
-            $httpCode .
-            ']: ' .
-            $message;
-
-        if (
-            $status !== ''
+        foreach (
+            $parts as $part
         ) {
-            $details .=
-                ' | ' .
-                $status;
+            if (
+                isset(
+                    $part['text']
+                )
+            ) {
+                $text .=
+                    (string)
+                    $part['text'];
+            }
         }
 
-        $errors[] =
-            $details;
+        $text =
+            trim(
+                $text
+            );
+
+        if (
+            $text === ''
+        ) {
+            $errors[] =
+                $model .
+                ': Gemini n’a retourné aucun texte.';
+
+            continue;
+        }
+
+        return $text;
     }
 
     throw new RuntimeException(
-        'Gemini est temporairement indisponible sur les modèles gratuits. ' .
-        'Aucune API payante n’a été utilisée. ' .
-        'Détail : ' .
+        'Gemini est indisponible. ' .
         implode(
             ' | ',
             $errors
@@ -833,7 +841,7 @@ function call_gemini(
 
 
 /* =========================================================
- * AI CONTENT GENERATION
+ * GENERATION DE CONTENU
  * ========================================================= */
 
 function generate_content(
@@ -850,7 +858,7 @@ function generate_content(
                 'un carrousel Instagram de 5 à 7 slides',
 
             'reel' =>
-                'un Reel Instagram vertical de 20 à 45 secondes avec hook, script parlé, indications visuelles et CTA',
+                'un Reel Instagram vertical d’environ 20 secondes',
 
             'story' =>
                 'une Story Instagram verticale, concise et engageante',
@@ -859,7 +867,109 @@ function generate_content(
                 'une publication Instagram',
         };
 
-    $prompt = <<<PROMPT
+    if (
+        $type === 'reel'
+    ) {
+        $prompt = <<<PROMPT
+Tu es le directeur éditorial et social media de Vitrine+, agence digitale française.
+
+PROMESSE DE MARQUE :
+« Votre entreprise. En mieux. »
+
+STYLE :
+Premium, moderne, humain, direct, utile.
+Pas de jargon inutile.
+Pas de ton robotique.
+Pas de formulation générique d’intelligence artificielle.
+Pas de discours commercial agressif.
+
+OBJECTIF :
+{$objective}
+
+SUJET :
+{$topic}
+
+FORMAT :
+{$format}
+
+Tu dois créer un Reel Instagram prêt à être publié.
+
+IMPORTANT :
+
+Le Reel doit être construit autour de EXACTEMENT 5 scènes.
+
+SCÈNE 1 :
+Un hook extrêmement fort qui donne immédiatement envie de regarder la suite.
+
+SCÈNE 2 :
+Erreur ou problème n°1.
+
+SCÈNE 3 :
+Erreur ou problème n°2.
+
+SCÈNE 4 :
+Erreur ou problème n°3 ou conseil concret permettant de corriger le problème.
+
+SCÈNE 5 :
+CTA final court, mémorable et naturel.
+
+Les textes des 5 scènes sont destinés à apparaître directement À L’ÉCRAN.
+
+Ils doivent donc :
+
+- être très courts ;
+- être immédiatement compréhensibles ;
+- pouvoir être lus rapidement ;
+- éviter les longs paragraphes ;
+- être percutants ;
+- rester professionnels ;
+- être cohérents entre eux.
+
+Le CTA doit naturellement rappeler Vitrine+ sans transformer le Reel en publicité agressive.
+
+Pour Vitrine+, tu peux utiliser :
+
+« Votre entreprise. En mieux. »
+
+et :
+
+« vitrineplus.fr »
+
+SCRIPT PARLÉ :
+
+Génère également un script parlé d’environ 20 secondes.
+
+Le script doit suivre les 5 scènes.
+
+Il doit être naturel à l’oral.
+
+Il ne doit pas simplement répéter mot pour mot les textes affichés à l’écran.
+
+LÉGENDE :
+
+Génère une légende Instagram complète.
+
+Elle doit :
+
+- commencer par une accroche ;
+- apporter une vraie valeur ;
+- reprendre naturellement le sujet ;
+- donner envie de commenter, enregistrer ou partager ;
+- terminer par un CTA pertinent ;
+- utiliser peu de hashtags.
+
+TITRE :
+
+Génère un titre court et accrocheur.
+
+RÈGLE ABSOLUE :
+
+Pour le champ slides, retourne EXACTEMENT 5 éléments.
+
+Retourne uniquement le JSON demandé.
+PROMPT;
+    } else {
+        $prompt = <<<PROMPT
 Tu es le directeur éditorial et social media de Vitrine+, agence digitale française.
 
 Promesse de marque :
@@ -879,26 +989,21 @@ Format :
 
 Crée un contenu prêt à être utilisé sur Instagram.
 
-Règles :
+Règles générales :
 
 - La légende doit être naturelle en français.
 - Commence par une accroche forte.
 - Évite les banalités.
-- Évite les formulations génériques d'IA.
-- Termine par un appel à l'action pertinent.
+- Évite les formulations génériques d’IA.
+- Termine par un appel à l’action pertinent.
 - Utilise les hashtags avec parcimonie.
 - Pour un carrousel, génère 5 à 7 textes de slides courts et structurés.
-- Pour un Reel, génère un script réellement exploitable pour une vidéo verticale.
-- Pour un Reel, structure le script avec :
-  1. Hook
-  2. Déroulé
-  3. CTA
-- Le script doit être suffisamment court pour environ 20 à 45 secondes.
 - Pour post/story, slides peut rester vide.
 - Génère également un titre court et accrocheur.
 
 Retourne uniquement le JSON demandé.
 PROMPT;
+    }
 
     $raw =
         call_gemini(
@@ -941,8 +1046,7 @@ PROMPT;
         (
             $decoded['slides']
             ?? []
-        )
-        as $slide
+        ) as $slide
     ) {
         $slide =
             trim(
@@ -954,6 +1058,47 @@ PROMPT;
         ) {
             $slides[] =
                 $slide;
+        }
+    }
+
+    if (
+        $type === 'reel'
+    ) {
+        $slides =
+            array_slice(
+                $slides,
+                0,
+                5
+            );
+
+        if (
+            count($slides) <
+            5
+        ) {
+            $fallbackSlides = [
+                'Ton site fait peut-être fuir tes clients.',
+                'Erreur n°1 : un site trop lent.',
+                'Erreur n°2 : une offre difficile à comprendre.',
+                'Erreur n°3 : aucun appel à l’action.',
+                'Ton site mérite mieux. Vitrine+.',
+            ];
+
+            foreach (
+                $fallbackSlides as $index =>
+                    $fallback
+            ) {
+                if (
+                    !isset(
+                        $slides[$index]
+                    ) ||
+                    trim(
+                        $slides[$index]
+                    ) === ''
+                ) {
+                    $slides[$index] =
+                        $fallback;
+                }
+            }
         }
     }
 
@@ -1004,602 +1149,148 @@ PROMPT;
 
 
 /* =========================================================
- * IMAGE GENERATION
+ * VISUELS
  * ========================================================= */
 
-function font_path(): ?string
-{
-    $candidates = [
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-        '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
-        '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
-    ];
-
-    foreach (
-        $candidates as $path
-    ) {
-        if (
-            is_file($path)
-        ) {
-            return $path;
-        }
-    }
-
-    return null;
-}
-
-
-function draw_wrapped_text(
-    $image,
-    string $text,
-    int $x,
-    int $y,
-    int $maxWidth,
-    int $fontSize,
-    $color,
-    ?string $font
-): int {
-    if (
-        $font &&
-        function_exists(
-            'imagettftext'
-        )
-    ) {
-        $words =
-            preg_split(
-                '/\s+/u',
-                trim($text)
-            ) ?: [];
-
-        $lines = [];
-        $line = '';
-
-        foreach (
-            $words as $word
-        ) {
-            $candidate =
-                trim(
-                    $line .
-                    ' ' .
-                    $word
-                );
-
-            $box =
-                imagettfbbox(
-                    $fontSize,
-                    0,
-                    $font,
-                    $candidate
-                );
-
-            $width =
-                abs(
-                    $box[2] -
-                    $box[0]
-                );
-
-            if (
-                $line !== '' &&
-                $width >
-                    $maxWidth
-            ) {
-                $lines[] =
-                    $line;
-
-                $line =
-                    $word;
-            } else {
-                $line =
-                    $candidate;
-            }
-        }
-
-        if (
-            $line !== ''
-        ) {
-            $lines[] =
-                $line;
-        }
-
-        foreach (
-            $lines as $current
-        ) {
-            imagettftext(
-                $image,
-                $fontSize,
-                0,
-                $x,
-                $y,
-                $color,
-                $font,
-                $current
-            );
-
-            $y +=
-                (int) (
-                    $fontSize *
-                    1.45
-                );
-        }
-
-        return $y;
-    }
-
-    $lines =
-        wordwrap(
-            $text,
-            35,
-            "\n",
-            true
-        );
-
-    foreach (
-        explode(
-            "\n",
-            $lines
-        ) as $current
-    ) {
-        imagestring(
-            $image,
-            5,
-            $x,
-            $y,
-            $current,
-            $color
-        );
-
-        $y += 22;
-    }
-
-    return $y;
-}
-
-
-function generate_image_file(
-    string $text,
+function generate_visual_prompt(
     string $type,
-    string $suffix = ''
+    string $topic,
+    string $caption,
+    string $slide = ''
 ): string {
+    $ratio =
+        $type === 'post' ||
+        $type === 'carousel'
+            ? '1:1'
+            : '9:16';
+
+    return <<<PROMPT
+Créer un visuel social media premium pour Vitrine+.
+
+Marque :
+Vitrine+
+
+Promesse :
+« Votre entreprise. En mieux. »
+
+Sujet :
+{$topic}
+
+Contexte :
+{$caption}
+
+{$slide}
+
+Format :
+{$ratio}
+
+Direction artistique :
+- luxe discret ;
+- noir profond ;
+- touches dorées ;
+- esthétique agence digitale premium ;
+- composition très professionnelle ;
+- lumière cinématographique ;
+- profondeur ;
+- aucun logo d’une autre marque ;
+- aucun watermark ;
+- aucun texte illisible ;
+- rendu photoréaliste ou éditorial haut de gamme ;
+- visuel conçu pour arrêter le scroll.
+PROMPT;
+}
+
+
+function generate_visual_file(
+    string $prompt
+): string {
+    /*
+     * Le serveur ne dépend pas ici d'une API
+     * d'image payante.
+     *
+     * Si une URL d'image est fournie par une
+     * configuration externe compatible, elle peut
+     * être utilisée.
+     */
+
+    $config =
+        load_config();
+
+    $configuredUrl =
+        config_string(
+            $config,
+            'gemini_visual_url'
+        );
+
     if (
-        !function_exists(
-            'imagecreatetruecolor'
-        )
+        $configuredUrl === ''
     ) {
         throw new RuntimeException(
-            'PHP GD n’est pas disponible sur l’hébergement.'
+            'La génération automatique d’images n’est pas configurée. Tu peux importer un visuel depuis Social Studio.'
         );
     }
+
+    $separator =
+        str_contains(
+            $configuredUrl,
+            '?'
+        )
+            ? '&'
+            : '?';
+
+    $url =
+        $configuredUrl .
+        $separator .
+        'prompt=' .
+        rawurlencode(
+            $prompt
+        );
 
     ensure_dirs();
-
-    $vertical =
-        $type === 'story' ||
-        $type === 'reel';
-
-    $width = 1080;
-    $height =
-        $vertical
-            ? 1920
-            : 1080;
-
-    $image =
-        imagecreatetruecolor(
-            $width,
-            $height
-        );
-
-    if (
-        $image === false
-    ) {
-        throw new RuntimeException(
-            'Impossible de créer le visuel.'
-        );
-    }
-
-    $bg =
-        imagecolorallocate(
-            $image,
-            9,
-            9,
-            9
-        );
-
-    $gold =
-        imagecolorallocate(
-            $image,
-            200,
-            164,
-            93
-        );
-
-    $white =
-        imagecolorallocate(
-            $image,
-            248,
-            248,
-            248
-        );
-
-    $muted =
-        imagecolorallocate(
-            $image,
-            160,
-            160,
-            160
-        );
-
-    imagefill(
-        $image,
-        0,
-        0,
-        $bg
-    );
-
-    imagefilledrectangle(
-        $image,
-        70,
-        70,
-        1010,
-        76,
-        $gold
-    );
-
-    imagefilledellipse(
-        $image,
-        $width - 135,
-        115,
-        90,
-        90,
-        $gold
-    );
-
-    $font =
-        font_path();
-
-    $small =
-        $font
-            ? 26
-            : 5;
-
-    $large =
-        $font
-            ? (
-                $vertical
-                    ? 56
-                    : 52
-            )
-            : 5;
-
-    $y =
-        $vertical
-            ? 300
-            : 210;
-
-    if ($font) {
-        imagettftext(
-            $image,
-            $small,
-            0,
-            80,
-            160,
-            $gold,
-            $font,
-            'VITRINE+'
-        );
-    } else {
-        imagestring(
-            $image,
-            5,
-            80,
-            145,
-            'VITRINE+',
-            $gold
-        );
-    }
-
-    $clean =
-        trim(
-            preg_replace(
-                '/\s+/u',
-                ' ',
-                $text
-            ) ?? $text
-        );
-
-    draw_wrapped_text(
-        $image,
-        $clean,
-        80,
-        $y,
-        900,
-        $large,
-        $white,
-        $font
-    );
-
-    $footerY =
-        $height - 170;
-
-    if ($font) {
-        imagettftext(
-            $image,
-            24,
-            0,
-            80,
-            $footerY,
-            $muted,
-            $font,
-            'Votre entreprise. En mieux.'
-        );
-
-        imagettftext(
-            $image,
-            22,
-            0,
-            80,
-            $footerY + 42,
-            $gold,
-            $font,
-            'vitrineplus.fr'
-        );
-    } else {
-        imagestring(
-            $image,
-            4,
-            80,
-            $footerY,
-            'Votre entreprise. En mieux.',
-            $muted
-        );
-
-        imagestring(
-            $image,
-            4,
-            80,
-            $footerY + 28,
-            'vitrineplus.fr',
-            $gold
-        );
-    }
 
     $filename =
         make_id(
             'visual'
         ) .
-        (
-            $suffix !== ''
-                ? '-' . $suffix
-                : ''
-        ) .
         '.jpg';
 
     $path =
-        SOCIAL_PREVIEW_DIR .
+        SOCIAL_MEDIA_DIR .
         '/' .
         $filename;
 
-    if (
-        !imagejpeg(
-            $image,
-            $path,
-            92
-        )
-    ) {
-        imagedestroy(
-            $image
-        );
-
-        throw new RuntimeException(
-            'Impossible d’enregistrer le visuel.'
-        );
-    }
-
-    imagedestroy(
-        $image
-    );
-
-    return public_url(
-        SOCIAL_PREVIEW_PUBLIC .
-        '/' .
-        $filename
-    );
-}
-
-
-function generate_visuals(
-    string $type,
-    string $topic,
-    string $caption,
-    array $slides = []
-): array {
-    if (
-        $type === 'carousel'
-    ) {
-        $items =
-            array_values(
-                array_filter(
-                    array_map(
-                        fn($v) =>
-                            (string) $v,
-                        $slides
-                    ),
-                    fn($v) =>
-                        trim($v) !== ''
-                )
-            );
-
-        if (
-            count($items) < 2
-        ) {
-            $items = [
-                $topic,
-                $caption,
-            ];
-        }
-
-        $items =
-            array_slice(
-                $items,
-                0,
-                10
-            );
-
-        $urls = [];
-
-        foreach (
-            $items as $i => $item
-        ) {
-            $urls[] =
-                generate_image_file(
-                    $item,
-                    'post',
-                    (string) (
-                        $i + 1
-                    )
-                );
-        }
-
-        return $urls;
-    }
-
-    return [
-        generate_image_file(
-            $topic !== ''
-                ? $topic
-                : $caption,
-            $type
-        ),
-    ];
-}
-
-
-/* =========================================================
- * FFMPEG
- * ========================================================= */
-
-function find_ffmpeg(): ?string
-{
-    $candidates = [
-        '/usr/bin/ffmpeg',
-        '/usr/local/bin/ffmpeg',
-        '/opt/bin/ffmpeg',
-        'ffmpeg',
-    ];
-
-    foreach (
-        $candidates as $candidate
-    ) {
-        if (
-            $candidate !==
-            'ffmpeg'
-        ) {
-            if (
-                is_file(
-                    $candidate
-                ) &&
-                is_executable(
-                    $candidate
-                )
-            ) {
-                return $candidate;
-            }
-
-            continue;
-        }
-
-        $output = [];
-        $code = 1;
-
-        @exec(
-            'command -v ffmpeg 2>/dev/null',
-            $output,
-            $code
-        );
-
-        if (
-            $code === 0 &&
-            !empty($output[0])
-        ) {
-            return trim(
-                $output[0]
-            );
-        }
-    }
-
-    return null;
-}
-
-
-function shell_quote(
-    string $value
-): string {
-    return escapeshellarg(
-        $value
-    );
-}
-
-
-/**
- * Télécharge un fichier distant vers
- * un fichier temporaire local.
- */
-function download_remote_file(
-    string $url,
-    string $destination
-): void {
-    $fp =
-        fopen(
-            $destination,
-            'wb'
-        );
-
-    if (
-        $fp === false
-    ) {
-        throw new RuntimeException(
-            'Impossible de créer le fichier temporaire.'
-        );
-    }
-
     $ch =
-        curl_init(
-            $url
-        );
+        curl_init();
 
     if (
         $ch === false
     ) {
-        fclose($fp);
-
         throw new RuntimeException(
-            'Impossible d’initialiser cURL pour le téléchargement.'
+            'Impossible d’initialiser cURL.'
         );
     }
 
     curl_setopt_array(
         $ch,
         [
-            CURLOPT_FILE =>
-                $fp,
+            CURLOPT_URL =>
+                $url,
+
+            CURLOPT_RETURNTRANSFER =>
+                true,
 
             CURLOPT_FOLLOWLOCATION =>
                 true,
-
-            CURLOPT_MAXREDIRS =>
-                5,
 
             CURLOPT_CONNECTTIMEOUT =>
                 15,
 
             CURLOPT_TIMEOUT =>
-                120,
-
-            CURLOPT_USERAGENT =>
-                'VitrinePlus-SocialStudio/3.0',
+                90,
         ]
     );
 
-    $success =
+    $body =
         curl_exec($ch);
 
     $error =
@@ -1613,296 +1304,131 @@ function download_remote_file(
 
     curl_close($ch);
 
-    fclose($fp);
-
     if (
-        $success === false ||
+        $body === false ||
         $httpCode < 200 ||
         $httpCode >= 300
     ) {
-        @unlink(
-            $destination
-        );
-
         throw new RuntimeException(
-            'Impossible de télécharger le visuel pour créer le Reel.' .
+            'Impossible de récupérer le visuel.' .
             (
                 $error !== ''
-                    ? ' ' . $error
+                    ? ' ' .
+                        $error
                     : ''
             )
         );
     }
 
     if (
-        !is_file($destination) ||
-        filesize($destination) <= 0
+        @file_put_contents(
+            $path,
+            $body
+        ) === false
     ) {
-        @unlink(
-            $destination
-        );
-
         throw new RuntimeException(
-            'Le visuel téléchargé est vide.'
+            'Impossible d’enregistrer le visuel.'
         );
     }
+
+    return public_url(
+        SOCIAL_MEDIA_PUBLIC .
+        '/' .
+        $filename
+    );
 }
 
 
-/**
- * Crée une vidéo verticale MP4 à partir
- * d'un visuel.
- *
- * La vidéo dure 12 secondes.
- * L'image reçoit un léger zoom.
- * Aucun service vidéo payant n'est utilisé.
- */
-function generate_reel_mp4(
-    string $imageUrl,
-    string $script
-): string {
-    ensure_dirs();
-
-    $ffmpeg =
-        find_ffmpeg();
+function generate_visuals(
+    string $type,
+    string $topic,
+    string $caption,
+    array $slides = []
+): array {
+    /*
+     * Si la génération d'image n'est pas configurée,
+     * on retourne une erreur claire plutôt qu'un faux
+     * succès.
+     */
 
     if (
-        $ffmpeg === null
+        $type === 'carousel'
     ) {
-        throw new RuntimeException(
-            'FFmpeg n’est pas disponible sur cet hébergement. Le script et le visuel ont bien été générés, mais la vidéo MP4 ne peut pas encore être assemblée automatiquement.'
-        );
-    }
+        $urls = [];
 
-    $tempImage =
-        SOCIAL_MEDIA_DIR .
-        '/' .
-        make_id(
-            'tmp-image'
-        ) .
-        '.jpg';
-
-    $filename =
-        make_id(
-            'reel'
-        ) .
-        '.mp4';
-
-    $output =
-        SOCIAL_MEDIA_DIR .
-        '/' .
-        $filename;
-
-    try {
-        download_remote_file(
-            $imageUrl,
-            $tempImage
-        );
-
-        /*
-         * Vidéo :
-         * - 1080x1920
-         * - 30 FPS
-         * - 12 secondes
-         * - H.264
-         * - AAC
-         * - mouvement de zoom très léger
-         * - pixel format yuv420p
-         * - faststart pour Instagram
-         */
-        $filter =
-            "scale=1080:1920:force_original_aspect_ratio=increase," .
-            "crop=1080:1920," .
-            "zoompan=" .
-            "z='min(zoom+0.0008,1.04)':" .
-            "x='iw/2-(iw/zoom/2)':" .
-            "y='ih/2-(ih/zoom/2)':" .
-            "d=360:" .
-            "s=1080x1920:" .
-            "fps=30";
-
-        $command =
-            shell_quote(
-                $ffmpeg
-            ) .
-            ' -y' .
-            ' -loop 1' .
-            ' -i ' .
-            shell_quote(
-                $tempImage
-            ) .
-            ' -t 12' .
-            ' -vf ' .
-            shell_quote(
-                $filter
-            ) .
-            ' -an' .
-            ' -c:v libx264' .
-            ' -preset veryfast' .
-            ' -crf 22' .
-            ' -pix_fmt yuv420p' .
-            ' -movflags +faststart' .
-            ' ' .
-            shell_quote(
-                $output
-            ) .
-            ' 2>&1';
-
-        $outputLines = [];
-        $exitCode = 1;
-
-        @exec(
-            $command,
-            $outputLines,
-            $exitCode
-        );
-
-        if (
-            $exitCode !== 0 ||
-            !is_file($output) ||
-            filesize($output) <= 0
+        foreach (
+            array_slice(
+                $slides,
+                0,
+                10
+            ) as $index =>
+            $slide
         ) {
-            $details =
-                trim(
-                    implode(
-                        "\n",
-                        array_slice(
-                            $outputLines,
-                            -12
-                        )
+            $urls[] =
+                generate_visual_file(
+                    generate_visual_prompt(
+                        $type,
+                        $topic,
+                        $caption,
+                        'Slide ' .
+                        ($index + 1) .
+                        " :\n" .
+                        $slide
                     )
                 );
-
-            throw new RuntimeException(
-                'FFmpeg n’a pas réussi à créer le Reel.' .
-                (
-                    $details !== ''
-                        ? ' Détail : ' .
-                            $details
-                        : ''
-                )
-            );
         }
 
-        return public_url(
-            SOCIAL_MEDIA_PUBLIC .
-            '/' .
-            $filename
-        );
-    } finally {
-        if (
-            is_file(
-                $tempImage
-            )
-        ) {
-            @unlink(
-                $tempImage
-            );
-        }
+        return $urls;
     }
+
+    return [
+        generate_visual_file(
+            generate_visual_prompt(
+                $type,
+                $topic,
+                $caption
+            )
+        ),
+    ];
 }
 
 
 /* =========================================================
- * AUTOMATIC REEL GENERATION
+ * URL PUBLIQUE
  * ========================================================= */
 
-function generate_reel(
-    string $topic,
-    string $objective
-): array {
-    if (
-        trim($topic) === ''
-    ) {
-        throw new RuntimeException(
-            'Le sujet du Reel est obligatoire.'
+function public_url(
+    string $path
+): string {
+    $scheme =
+        (
+            (
+                $_SERVER[
+                    'HTTPS'
+                ] ?? ''
+            ) !== '' &&
+            $_SERVER[
+                'HTTPS'
+            ] !== 'off'
+        )
+            ? 'https'
+            : 'http';
+
+    $host =
+        $_SERVER[
+            'HTTP_HOST'
+        ] ??
+        'vitrineplus.fr';
+
+    return
+        $scheme .
+        '://' .
+        $host .
+        '/' .
+        ltrim(
+            $path,
+            '/'
         );
-    }
-
-    /*
-     * 1. Gemini crée le contenu.
-     */
-    $content =
-        generate_content(
-            'reel',
-            $topic,
-            $objective
-        );
-
-    /*
-     * 2. Génération du visuel vertical.
-     */
-    $visuals =
-        generate_visuals(
-            'reel',
-            $topic,
-            $content['caption'],
-            []
-        );
-
-    $visualUrl =
-        $visuals[0]
-        ?? '';
-
-    if (
-        $visualUrl === ''
-    ) {
-        throw new RuntimeException(
-            'Impossible de générer le visuel du Reel.'
-        );
-    }
-
-    /*
-     * 3. Assemblage automatique en MP4.
-     */
-    $videoUrl =
-        generate_reel_mp4(
-            $visualUrl,
-            $content['script']
-        );
-
-    return [
-        'id' =>
-            $content['id'],
-
-        'type' =>
-            'reel',
-
-        'topic' =>
-            $topic,
-
-        'objective' =>
-            $objective,
-
-        'caption' =>
-            $content['caption'],
-
-        'slides' =>
-            [],
-
-        'script' =>
-            $content['script'],
-
-        'title' =>
-            $content['title'],
-
-        'mediaUrls' =>
-            [
-                $visualUrl,
-            ],
-
-        'videoUrl' =>
-            $videoUrl,
-
-        'status' =>
-            'draft',
-
-        'createdAt' =>
-            date('c'),
-
-        'updatedAt' =>
-            date('c'),
-    ];
 }
 
 
@@ -1925,7 +1451,8 @@ function instagram_api_version(
             'v'
         )
             ? $version
-            : 'v' . $version;
+            : 'v' .
+                $version;
 }
 
 
@@ -1966,27 +1493,21 @@ function instagram_account(
         );
 
     if (
-        $result['http_code'] < 200 ||
-        $result['http_code'] >= 300 ||
+        $result[
+            'http_code'
+        ] < 200 ||
+        $result[
+            'http_code'
+        ] >= 300 ||
         empty(
             $result[
                 'body'
             ]['id']
         )
     ) {
-        $error =
-            $result[
-                'body'
-            ]['error']
-            ?? [];
-
         throw new RuntimeException(
-            'Instagram : ' .
-            (
-                $error[
-                    'message'
-                ]
-                ??
+            meta_error(
+                $result,
                 'Impossible de récupérer le compte Instagram.'
             )
         );
@@ -2022,8 +1543,9 @@ function meta_error(
         ?? [];
 
     $details =
-        $error['message']
-        ??
+        $error[
+            'message'
+        ] ??
         $fallback;
 
     foreach (
@@ -2040,7 +1562,8 @@ function meta_error(
             'fbtrace_id' =>
                 'FBTrace ID',
         ]
-        as $key => $label
+        as $key =>
+        $label
     ) {
         if (
             !empty(
@@ -2086,8 +1609,12 @@ function create_instagram_container(
         );
 
     if (
-        $result['http_code'] < 200 ||
-        $result['http_code'] >= 300 ||
+        $result[
+            'http_code'
+        ] < 200 ||
+        $result[
+            'http_code'
+        ] >= 300 ||
         empty(
             $result[
                 'body'
@@ -2145,11 +1672,7 @@ function wait_for_container(
 
         $result =
             curl_request(
-                $url,
-                'GET',
-                [],
-                [],
-                30
+                $url
             );
 
         $last =
@@ -2246,8 +1769,12 @@ function publish_container(
         );
 
     if (
-        $result['http_code'] < 200 ||
-        $result['http_code'] >= 300 ||
+        $result[
+            'http_code'
+        ] < 200 ||
+        $result[
+            'http_code'
+        ] >= 300 ||
         empty(
             $result[
                 'body'
@@ -2271,7 +1798,7 @@ function publish_container(
 
 
 /* =========================================================
- * INSTAGRAM PUBLISH
+ * PUBLICATION INSTAGRAM
  * ========================================================= */
 
 function publish_instagram(
@@ -2309,8 +1836,9 @@ function publish_instagram(
 
     $type =
         (string) (
-            $content['type']
-            ?? 'post'
+            $content[
+                'type'
+            ] ?? 'post'
         );
 
     $caption =
@@ -2359,38 +1887,19 @@ function publish_instagram(
 
 
     /* -----------------------------------------------------
-     * POST / STORY
+     * POST
      * ----------------------------------------------------- */
 
     if (
-        $type === 'post' ||
-        $type === 'story'
+        $type ===
+        'post'
     ) {
-        if (!$images) {
+        if (
+            !$images
+        ) {
             throw new RuntimeException(
                 'Aucun visuel public n’a été fourni.'
             );
-        }
-
-        $fields = [
-            'image_url' =>
-                $images[0],
-
-            'caption' =>
-                $caption,
-
-            'access_token' =>
-                $token,
-        ];
-
-        if (
-            $type ===
-            'story'
-        ) {
-            $fields[
-                'media_type'
-            ] =
-                'STORIES';
         }
 
         $container =
@@ -2398,7 +1907,80 @@ function publish_instagram(
                 $accountId,
                 $version,
                 $token,
-                $fields
+                [
+                    'image_url' =>
+                        $images[0],
+
+                    'caption' =>
+                        $caption,
+
+                    'access_token' =>
+                        $token,
+                ]
+            );
+
+        $status =
+            wait_for_container(
+                $container,
+                $token,
+                $version
+            );
+
+        $mediaId =
+            publish_container(
+                $accountId,
+                $version,
+                $token,
+                $container
+            );
+
+        return [
+            'account' =>
+                $account,
+
+            'container_id' =>
+                $container,
+
+            'container_status' =>
+                $status,
+
+            'media_id' =>
+                $mediaId,
+        ];
+    }
+
+
+    /* -----------------------------------------------------
+     * STORY
+     * ----------------------------------------------------- */
+
+    if (
+        $type ===
+        'story'
+    ) {
+        if (
+            !$images
+        ) {
+            throw new RuntimeException(
+                'Aucun visuel public n’a été fourni.'
+            );
+        }
+
+        $container =
+            create_instagram_container(
+                $accountId,
+                $version,
+                $token,
+                [
+                    'image_url' =>
+                        $images[0],
+
+                    'media_type' =>
+                        'STORIES',
+
+                    'access_token' =>
+                        $token,
+                ]
             );
 
         $status =
@@ -2448,16 +2030,12 @@ function publish_instagram(
             );
         }
 
-        if (
-            count($images) > 10
-        ) {
-            $images =
-                array_slice(
-                    $images,
-                    0,
-                    10
-                );
-        }
+        $images =
+            array_slice(
+                $images,
+                0,
+                10
+            );
 
         $children = [];
 
@@ -2632,8 +2210,9 @@ function save_uploaded_media(
 ): array {
     if (
         (
-            $file['error']
-            ??
+            $file[
+                'error'
+            ] ??
             UPLOAD_ERR_NO_FILE
         )
         !==
@@ -2666,8 +2245,7 @@ function save_uploaded_media(
         (string) (
             $file[
                 'type'
-            ]
-            ??
+            ] ??
             'application/octet-stream'
         );
 
@@ -2683,6 +2261,9 @@ function save_uploaded_media(
 
         'video/quicktime' =>
             'mov',
+
+        'video/webm' =>
+            'webm',
     ];
 
     if (
@@ -2731,7 +2312,7 @@ function save_uploaded_media(
         )
     ) {
         throw new RuntimeException(
-            'Format non supporté. Utilise JPG pour les images ou MP4/MOV pour les vidéos.'
+            'Format non supporté. Utilise JPG, MP4 ou MOV.'
         );
     }
 
@@ -2808,8 +2389,9 @@ function update_content_status(
             (
                 string
             ) (
-                $content['id']
-                ?? ''
+                $content[
+                    'id'
+                ] ?? ''
             )
             ===
             $id
@@ -2848,8 +2430,7 @@ function update_content_status(
  * SCHEDULER
  * ========================================================= */
 
-function process_scheduled(): array
-{
+function process_scheduled(): array {
     $now =
         time();
 
@@ -3008,7 +2589,8 @@ $action =
     clean(
         $input[
             'action'
-        ] ?? 'list'
+        ] ??
+        'list'
     );
 
 
@@ -3095,7 +2677,7 @@ if (
 try {
 
     /* -----------------------------------------------------
-     * GENERATE CONTENT
+     * GENERATE
      * ----------------------------------------------------- */
 
     if (
@@ -3106,14 +2688,16 @@ try {
             clean(
                 $input[
                     'type'
-                ] ?? 'post'
+                ] ??
+                'post'
             );
 
         $topic =
             clean(
                 $input[
                     'topic'
-                ] ?? ''
+                ] ??
+                ''
             );
 
         $objective =
@@ -3181,71 +2765,6 @@ try {
 
 
     /* -----------------------------------------------------
-     * GENERATE REEL COMPLET
-     * ----------------------------------------------------- */
-
-    if (
-        $action ===
-        'generate_reel'
-    ) {
-        $topic =
-            clean(
-                $input[
-                    'topic'
-                ] ?? ''
-            );
-
-        $objective =
-            clean(
-                $input[
-                    'objective'
-                ]
-                ??
-                'Gagner en visibilité'
-            );
-
-        if (
-            $topic === ''
-        ) {
-            respond(
-                [
-                    'success' =>
-                        false,
-
-                    'message' =>
-                        'Le sujet du Reel est obligatoire.',
-                ],
-                422
-            );
-        }
-
-        $content =
-            generate_reel(
-                $topic,
-                $objective
-            );
-
-        respond(
-            [
-                'success' =>
-                    true,
-
-                'content' =>
-                    $content,
-
-                'videoUrl' =>
-                    $content[
-                        'videoUrl'
-                    ],
-
-                'message' =>
-                    'Reel généré automatiquement.',
-            ]
-        );
-    }
-
-
-    /* -----------------------------------------------------
      * GENERATE VISUAL
      * ----------------------------------------------------- */
 
@@ -3257,21 +2776,24 @@ try {
             clean(
                 $input[
                     'type'
-                ] ?? 'post'
+                ] ??
+                'post'
             );
 
         $topic =
             clean(
                 $input[
                     'topic'
-                ] ?? ''
+                ] ??
+                ''
             );
 
         $caption =
             clean(
                 $input[
                     'caption'
-                ] ?? ''
+                ] ??
+                ''
             );
 
         $slides =
@@ -3376,21 +2898,24 @@ try {
                 clean(
                     $content[
                         'type'
-                    ] ?? 'post'
+                    ] ??
+                    'post'
                 ),
 
             'topic' =>
                 clean(
                     $content[
                         'topic'
-                    ] ?? ''
+                    ] ??
+                    ''
                 ),
 
             'objective' =>
                 clean(
                     $content[
                         'objective'
-                    ] ?? ''
+                    ] ??
+                    ''
                 ),
 
             'caption' =>
@@ -3462,7 +2987,8 @@ try {
                         'createdAt'
                     ] ?? ''
                 )
-                    ?: date('c'),
+                ?:
+                date('c'),
 
             'updatedAt' =>
                 date('c'),
@@ -3575,7 +3101,9 @@ try {
             array_values(
                 array_filter(
                     read_contents(),
-                    fn($item) =>
+                    fn(
+                        $item
+                    ) =>
                         (
                             string
                         ) (
