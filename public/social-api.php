@@ -529,314 +529,204 @@ function extract_gemini_text(
 function call_gemini(
     string $prompt
 ): string {
-    $config =
-        load_config();
 
-    $apiKey =
-        config_string(
-            $config,
-            'gemini_api_key'
-        );
+    $config = load_config();
 
-    if (
-        $apiKey === ''
-    ) {
+    $apiKey = config_string(
+        $config,
+        'gemini_api_key'
+    );
+
+    if ($apiKey === '') {
         throw new RuntimeException(
             'La clé Gemini n’est pas configurée dans vitrine-mail-config.php.'
         );
     }
 
-    $configured =
-        config_string(
-            $config,
-            'gemini_model'
-        );
+    $model = config_string(
+        $config,
+        'gemini_model'
+    );
 
-    $models =
-        array_values(
-            array_unique(
-                array_filter(
-                    [
-                        $configured,
-                        'gemini-3.8-flash',
-                        'gemini-3.7-flash',
-                        'gemini-3.6-flash',
-                        'gemini-3.5-flash',
-                        'gemini-3.1-flash-lite',
-                        'gemini-2.5-flash-lite',
-                    ]
-                )
-            )
-        );
-
-    $errors = [];
-
-    foreach (
-        $models as $model
-    ) {
-        $url =
-            'https://generativelanguage.googleapis.com/v1beta/models/' .
-            rawurlencode($model) .
-            ':generateContent';
-
-        $payload = [
-            'contents' => [
-                [
-                    'role' => 'user',
-
-                    'parts' => [
-                        [
-                            'text' =>
-                                $prompt,
-                        ],
-                    ],
-                ],
-            ],
-
-            'generationConfig' => [
-                'temperature' =>
-                    0.8,
-
-                'responseMimeType' =>
-                    'application/json',
-
-                'responseSchema' => [
-                    'type' =>
-                        'OBJECT',
-
-                    'properties' => [
-                        'caption' => [
-                            'type' =>
-                                'STRING',
-                        ],
-
-                        'slides' => [
-                            'type' =>
-                                'ARRAY',
-
-                            'items' => [
-                                'type' =>
-                                    'STRING',
-                            ],
-                        ],
-
-                        'script' => [
-                            'type' =>
-                                'STRING',
-                        ],
-
-                        'title' => [
-                            'type' =>
-                                'STRING',
-                        ],
-                    ],
-
-                    'required' => [
-                        'caption',
-                        'slides',
-                        'script',
-                    ],
-                ],
-            ],
-        ];
-
-        $json =
-            json_encode(
-                $payload,
-                JSON_UNESCAPED_UNICODE |
-                JSON_UNESCAPED_SLASHES
-            );
-
-        if (
-            $json === false
-        ) {
-            $errors[] =
-                $model .
-                ': impossible d’encoder la requête JSON.';
-
-            continue;
-        }
-
-        $ch =
-            curl_init(
-                $url
-            );
-
-        if (
-            $ch === false
-        ) {
-            $errors[] =
-                $model .
-                ': impossible d’initialiser cURL.';
-
-            continue;
-        }
-
-        curl_setopt_array(
-            $ch,
-            [
-                CURLOPT_RETURNTRANSFER =>
-                    true,
-
-                CURLOPT_FOLLOWLOCATION =>
-                    true,
-
-                CURLOPT_MAXREDIRS =>
-                    5,
-
-                CURLOPT_POST =>
-                    true,
-
-                CURLOPT_CONNECTTIMEOUT =>
-                    15,
-
-                CURLOPT_TIMEOUT =>
-                    90,
-
-                CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
-                    'Accept: application/json',
-                    'x-goog-api-key: ' .
-                        $apiKey,
-                ],
-
-                CURLOPT_POSTFIELDS =>
-                    $json,
-            ]
-        );
-
-        $body =
-            curl_exec(
-                $ch
-            );
-
-        $curlError =
-            curl_error(
-                $ch
-            );
-
-        $httpCode =
-            (int) curl_getinfo(
-                $ch,
-                CURLINFO_HTTP_CODE
-            );
-
-        curl_close(
-            $ch
-        );
-
-        if (
-            $body === false
-        ) {
-            $errors[] =
-                $model .
-                ': ' .
-                (
-                    $curlError !== ''
-                        ? $curlError
-                        : 'erreur cURL inconnue'
-                );
-
-            continue;
-        }
-
-        if (
-            $httpCode < 200 ||
-            $httpCode >= 300
-        ) {
-            $decodedError =
-                json_decode(
-                    $body,
-                    true
-                );
-
-            $message =
-                $decodedError[
-                    'error'
-                ]['message']
-                ?? trim($body);
-
-            if (
-                $message === ''
-            ) {
-                $message =
-                    'HTTP ' .
-                    $httpCode;
-            }
-
-            $errors[] =
-                $model .
-                ' : ' .
-                $message;
-
-            continue;
-        }
-
-        $decoded =
-            json_decode(
-                $body,
-                true
-            );
-
-        if (
-            !is_array(
-                $decoded
-            )
-        ) {
-            $errors[] =
-                $model .
-                ': réponse JSON invalide.';
-
-            continue;
-        }
-
-        $parts =
-            $decoded[
-                'candidates'
-            ][0]['content']['parts']
-            ?? [];
-
-        $text = '';
-
-        foreach (
-            $parts as $part
-        ) {
-            if (
-                isset(
-                    $part['text']
-                )
-            ) {
-                $text .=
-                    (string)
-                    $part['text'];
-            }
-        }
-
-        $text =
-            trim(
-                $text
-            );
-
-        if (
-            $text === ''
-        ) {
-            $errors[] =
-                $model .
-                ': Gemini n’a retourné aucun texte.';
-
-            continue;
-        }
-
-        return $text;
+    if ($model === '') {
+        $model = 'gemini-3.8-flash';
     }
 
-    throw new RuntimeException(
-        'Gemini est indisponible. ' .
-        implode(
-            ' | ',
-            $errors
-        )
+    $url =
+        'https://generativelanguage.googleapis.com/v1beta/models/' .
+        rawurlencode($model) .
+        ':generateContent';
+
+    $payload = [
+        'contents' => [
+            [
+                'role' => 'user',
+                'parts' => [
+                    [
+                        'text' => $prompt,
+                    ],
+                ],
+            ],
+        ],
+        'generationConfig' => [
+            'temperature' => 0.8,
+            'responseMimeType' => 'application/json',
+            'responseSchema' => [
+                'type' => 'OBJECT',
+                'properties' => [
+                    'caption' => [
+                        'type' => 'STRING',
+                    ],
+                    'slides' => [
+                        'type' => 'ARRAY',
+                        'items' => [
+                            'type' => 'STRING',
+                        ],
+                    ],
+                    'script' => [
+                        'type' => 'STRING',
+                    ],
+                    'title' => [
+                        'type' => 'STRING',
+                    ],
+                ],
+                'required' => [
+                    'caption',
+                    'slides',
+                    'script',
+                    'title',
+                ],
+            ],
+        ],
+    ];
+
+    $json = json_encode(
+        $payload,
+        JSON_UNESCAPED_UNICODE |
+        JSON_UNESCAPED_SLASHES
     );
+
+    if ($json === false) {
+        throw new RuntimeException(
+            'Impossible d’encoder la requête Gemini.'
+        );
+    }
+
+    $ch = curl_init($url);
+
+    if ($ch === false) {
+        throw new RuntimeException(
+            'Impossible d’initialiser cURL pour Gemini.'
+        );
+    }
+
+    curl_setopt_array(
+        $ch,
+        [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_POST => true,
+
+            CURLOPT_CONNECTTIMEOUT => 10,
+
+            // Important sur IONOS :
+            // on ne laisse pas PHP attendre 90 secondes.
+            CURLOPT_TIMEOUT => 35,
+
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Accept: application/json',
+                'x-goog-api-key: ' . $apiKey,
+            ],
+
+            CURLOPT_POSTFIELDS => $json,
+        ]
+    );
+
+    $body = curl_exec($ch);
+
+    $curlError = curl_error($ch);
+
+    $httpCode = (int) curl_getinfo(
+        $ch,
+        CURLINFO_HTTP_CODE
+    );
+
+    curl_close($ch);
+
+    if ($body === false) {
+        throw new RuntimeException(
+            'Gemini : erreur cURL : ' .
+            (
+                $curlError !== ''
+                    ? $curlError
+                    : 'erreur inconnue'
+            )
+        );
+    }
+
+    if ($httpCode < 200 || $httpCode >= 300) {
+
+        $decodedError = json_decode(
+            $body,
+            true
+        );
+
+        $message =
+            $decodedError['error']['message']
+            ?? trim($body);
+
+        if ($message === '') {
+            $message =
+                'HTTP ' .
+                $httpCode;
+        }
+
+        throw new RuntimeException(
+            'Gemini (' .
+            $model .
+            ') : ' .
+            $message
+        );
+    }
+
+    $decoded = json_decode(
+        $body,
+        true
+    );
+
+    if (!is_array($decoded)) {
+        throw new RuntimeException(
+            'Gemini : réponse JSON invalide.'
+        );
+    }
+
+    $parts =
+        $decoded['candidates'][0]['content']['parts']
+        ?? [];
+
+    $text = '';
+
+    foreach ($parts as $part) {
+
+        if (
+            isset($part['text'])
+        ) {
+            $text .=
+                (string) $part['text'];
+        }
+    }
+
+    $text = trim($text);
+
+    if ($text === '') {
+        throw new RuntimeException(
+            'Gemini n’a retourné aucun texte.'
+        );
+    }
+
+    return $text;
 }
 
 
@@ -1152,228 +1042,135 @@ PROMPT;
  * VISUELS
  * ========================================================= */
 
-function generate_visual_prompt(
-    string $type,
-    string $topic,
-    string $caption,
-    string $slide = ''
-): string {
-    $ratio =
-        $type === 'post' ||
-        $type === 'carousel'
-            ? '1:1'
-            : '9:16';
-
-    return <<<PROMPT
-Créer un visuel social media premium pour Vitrine+.
-
-Marque :
-Vitrine+
-
-Promesse :
-« Votre entreprise. En mieux. »
-
-Sujet :
-{$topic}
-
-Contexte :
-{$caption}
-
-{$slide}
-
-Format :
-{$ratio}
-
-Direction artistique :
-- luxe discret ;
-- noir profond ;
-- touches dorées ;
-- esthétique agence digitale premium ;
-- composition très professionnelle ;
-- lumière cinématographique ;
-- profondeur ;
-- aucun logo d’une autre marque ;
-- aucun watermark ;
-- aucun texte illisible ;
-- rendu photoréaliste ou éditorial haut de gamme ;
-- visuel conçu pour arrêter le scroll.
-PROMPT;
-}
-
-
-function generate_visual_file(
-    string $prompt
-): string {
-    /*
-     * Le serveur ne dépend pas ici d'une API
-     * d'image payante.
-     *
-     * Si une URL d'image est fournie par une
-     * configuration externe compatible, elle peut
-     * être utilisée.
-     */
-
-    $config =
-        load_config();
-
-    $configuredUrl =
-        config_string(
-            $config,
-            'gemini_visual_url'
-        );
-
-    if (
-        $configuredUrl === ''
-    ) {
-        throw new RuntimeException(
-            'La génération automatique d’images n’est pas configurée. Tu peux importer un visuel depuis Social Studio.'
-        );
-    }
-
-    $separator =
-        str_contains(
-            $configuredUrl,
-            '?'
-        )
-            ? '&'
-            : '?';
-
-    $url =
-        $configuredUrl .
-        $separator .
-        'prompt=' .
-        rawurlencode(
-            $prompt
-        );
-
-    ensure_dirs();
-
-    $filename =
-        make_id(
-            'visual'
-        ) .
-        '.jpg';
-
-    $path =
-        SOCIAL_MEDIA_DIR .
-        '/' .
-        $filename;
-
-    $ch =
-        curl_init();
-
-    if (
-        $ch === false
-    ) {
-        throw new RuntimeException(
-            'Impossible d’initialiser cURL.'
-        );
-    }
-
-    curl_setopt_array(
-        $ch,
-        [
-            CURLOPT_URL =>
-                $url,
-
-            CURLOPT_RETURNTRANSFER =>
-                true,
-
-            CURLOPT_FOLLOWLOCATION =>
-                true,
-
-            CURLOPT_CONNECTTIMEOUT =>
-                15,
-
-            CURLOPT_TIMEOUT =>
-                90,
-        ]
-    );
-
-    $body =
-        curl_exec($ch);
-
-    $error =
-        curl_error($ch);
-
-    $httpCode =
-        (int) curl_getinfo(
-            $ch,
-            CURLINFO_HTTP_CODE
-        );
-
-    curl_close($ch);
-
-    if (
-        $body === false ||
-        $httpCode < 200 ||
-        $httpCode >= 300
-    ) {
-        throw new RuntimeException(
-            'Impossible de récupérer le visuel.' .
-            (
-                $error !== ''
-                    ? ' ' .
-                        $error
-                    : ''
-            )
-        );
-    }
-
-    if (
-        @file_put_contents(
-            $path,
-            $body
-        ) === false
-    ) {
-        throw new RuntimeException(
-            'Impossible d’enregistrer le visuel.'
-        );
-    }
-
-    return public_url(
-        SOCIAL_MEDIA_PUBLIC .
-        '/' .
-        $filename
-    );
-}
-
-
 function generate_visuals(
     string $type,
     string $topic,
     string $caption,
     array $slides = []
 ): array {
-    /*
-     * Si la génération d'image n'est pas configurée,
-     * on retourne une erreur claire plutôt qu'un faux
-     * succès.
-     */
+    if (
+        $type === 'reel'
+    ) {
+        $items =
+            array_values(
+                array_filter(
+                    array_map(
+                        fn($value) =>
+                            trim(
+                                (string)
+                                $value
+                            ),
+                        $slides
+                    ),
+                    fn($value) =>
+                        $value !== ''
+                )
+            );
+
+        if (
+            count($items) === 0
+        ) {
+            $items = [
+                'Ton site fait peut-être fuir tes clients.',
+                'Erreur n°1 : un site trop lent.',
+                'Erreur n°2 : une offre difficile à comprendre.',
+                'Erreur n°3 : aucun appel à l’action.',
+                'Ton site mérite mieux. Vitrine+.',
+            ];
+        }
+
+        $fallbackSlides = [
+            'Ton site fait peut-être fuir tes clients.',
+            'Erreur n°1 : un site trop lent.',
+            'Erreur n°2 : une offre difficile à comprendre.',
+            'Erreur n°3 : aucun appel à l’action.',
+            'Ton site mérite mieux. Vitrine+.',
+        ];
+
+        for (
+            $i = count($items);
+            $i < 5;
+            $i++
+        ) {
+            $items[] =
+                $fallbackSlides[$i];
+        }
+
+        $items =
+            array_slice(
+                $items,
+                0,
+                5
+            );
+
+        $urls = [];
+
+        foreach (
+            $items as $i => $item
+        ) {
+            $urls[] =
+                generate_image_file(
+                    $item,
+                    'reel',
+                    'scene-' .
+                        (string) (
+                            $i + 1
+                        )
+                );
+        }
+
+        return $urls;
+    }
 
     if (
         $type === 'carousel'
     ) {
+        $items =
+            array_values(
+                array_filter(
+                    array_map(
+                        fn($value) =>
+                            trim(
+                                (string)
+                                $value
+                            ),
+                        $slides
+                    ),
+                    fn($value) =>
+                        trim(
+                            (string)
+                            $value
+                        ) !== ''
+                )
+            );
+
+        if (
+            count($items) < 2
+        ) {
+            $items = [
+                $topic,
+                $caption,
+            ];
+        }
+
+        $items =
+            array_slice(
+                $items,
+                0,
+                10
+            );
+
         $urls = [];
 
         foreach (
-            array_slice(
-                $slides,
-                0,
-                10
-            ) as $index =>
-            $slide
+            $items as $i => $item
         ) {
             $urls[] =
-                generate_visual_file(
-                    generate_visual_prompt(
-                        $type,
-                        $topic,
-                        $caption,
-                        'Slide ' .
-                        ($index + 1) .
-                        " :\n" .
-                        $slide
+                generate_image_file(
+                    $item,
+                    'post',
+                    (string) (
+                        $i + 1
                     )
                 );
         }
@@ -1382,12 +1179,11 @@ function generate_visuals(
     }
 
     return [
-        generate_visual_file(
-            generate_visual_prompt(
-                $type,
-                $topic,
-                $caption
-            )
+        generate_image_file(
+            $topic !== ''
+                ? $topic
+                : $caption,
+            $type
         ),
     ];
 }
