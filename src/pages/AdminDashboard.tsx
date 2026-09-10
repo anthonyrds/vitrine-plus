@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import SocialStudio from "../components/SocialStudio"
+
 
 import {
   Activity,
@@ -9,6 +11,7 @@ import {
   CircleDollarSign,
   Clock3,
   Gift,
+  Instagram,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -666,6 +669,11 @@ export default function AdminDashboard() {
       Clock3,
     ],
     [
+    "social",
+    "Réseaux sociaux",
+    Instagram,
+  ],
+    [
       "grand-plus",
       "Grand+",
       Gift,
@@ -1132,6 +1140,14 @@ export default function AdminDashboard() {
                 }
               }}
             />
+
+            ) : section ===
+  "social" ? (
+  <SocialStudio
+    onToast={(message) => {
+      setToast(message);
+    }}
+  />
           ) : section ===
             "grand-plus" ? (
             <GrandPlus
