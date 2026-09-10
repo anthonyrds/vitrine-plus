@@ -528,63 +528,65 @@ function extract_gemini_text(
 
 function call_gemini(string $prompt): string
 {
-    $config = load_config();
+    $host = 'generativelanguage.googleapis.com';
 
-    $apiKey = config_string($config, 'gemini_api_key');
+    /*
+     * TEST 1 — résolution DNS
+     */
+    $dnsStart = microtime(true);
 
-    if ($apiKey === '') {
-        throw new RuntimeException('Clé API Gemini absente.');
+    $ip = gethostbyname($host);
+
+    $dnsTime = microtime(true) - $dnsStart;
+
+    if ($ip === $host) {
+        throw new RuntimeException(
+            'TEST RÉSEAU — DNS IMPOSSIBLE : ' .
+            $host .
+            ' ne peut pas être résolu par IONOS.'
+        );
     }
 
     /*
-     * Test direct de l'API Gemini.
-     * On utilise l'endpoint officiel generateContent.
+     * TEST 2 — connexion HTTPS simple
+     *
+     * On ne demande PAS encore à Gemini de générer du contenu.
+     * On teste uniquement si IONOS peut établir une connexion HTTPS
+     * avec Google.
      */
 
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
+    $url = 'https://' . $host . '/';
 
-    $payload = [
-        'contents' => [
-            [
-                'parts' => [
-                    [
-                        'text' => 'Réponds uniquement par : OK'
-                    ]
-                ]
-            ]
-        ]
-    ];
-
-    $json = json_encode(
-        $payload,
-        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-    );
+    $start = microtime(true);
 
     $ch = curl_init($url);
 
     curl_setopt_array($ch, [
-        CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
 
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'x-goog-api-key: ' . $apiKey
-        ],
+        CURLOPT_HEADER => true,
 
-        CURLOPT_POSTFIELDS => $json,
+        CURLOPT_NOBODY => true,
 
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 20,
+
+        CURLOPT_TIMEOUT => 15,
 
         CURLOPT_SSL_VERIFYPEER => true,
+
         CURLOPT_SSL_VERIFYHOST => 2,
 
-        CURLOPT_FOLLOWLOCATION => false
+        CURLOPT_FOLLOWLOCATION => false,
+
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+
+        CURLOPT_USERAGENT => 'VitrinePlus-Network-Test/1.0'
     ]);
 
     $response = curl_exec($ch);
 
     $curlError = curl_error($ch);
+
     $curlErrno = curl_errno($ch);
 
     $httpCode = (int) curl_getinfo(
@@ -592,58 +594,55 @@ function call_gemini(string $prompt): string
         CURLINFO_HTTP_CODE
     );
 
-    $totalTime = curl_getinfo(
+    $connectTime = (float) curl_getinfo(
+        $ch,
+        CURLINFO_CONNECT_TIME
+    );
+
+    $totalTime = (float) curl_getinfo(
         $ch,
         CURLINFO_TOTAL_TIME
     );
 
+    $primaryIp = curl_getinfo(
+        $ch,
+        CURLINFO_PRIMARY_IP
+    );
+
     curl_close($ch);
 
+    $elapsed = microtime(true) - $start;
+
+    /*
+     * ÉCHEC cURL
+     */
     if ($response === false) {
 
         throw new RuntimeException(
-            'TEST GEMINI — cURL #' .
-            $curlErrno .
-            ' — ' .
-            ($curlError ?: 'Erreur inconnue') .
-            ' — HTTP ' .
-            $httpCode .
-            ' — durée ' .
-            round((float) $totalTime, 2) .
-            's'
+            'TEST RÉSEAU — ÉCHEC HTTPS' .
+            ' | DNS=' . $ip .
+            ' | DNS_TIME=' . round($dnsTime, 3) . 's' .
+            ' | CURL_ERRNO=' . $curlErrno .
+            ' | CURL_ERROR=' . ($curlError ?: 'aucune') .
+            ' | HTTP=' . $httpCode .
+            ' | PRIMARY_IP=' . ($primaryIp ?: 'aucune') .
+            ' | CONNECT_TIME=' . round($connectTime, 3) . 's' .
+            ' | TOTAL_TIME=' . round($totalTime, 3) . 's' .
+            ' | ELAPSED=' . round($elapsed, 3) . 's'
         );
     }
 
-    if ($httpCode < 200 || $httpCode >= 300) {
-
-        throw new RuntimeException(
-            'TEST GEMINI — HTTP ' .
-            $httpCode .
-            ' — réponse : ' .
-            substr($response, 0, 2000)
-        );
-    }
-
-    $decoded = json_decode($response, true);
-
-    if (!is_array($decoded)) {
-
-        throw new RuntimeException(
-            'TEST GEMINI — réponse JSON invalide : ' .
-            substr($response, 0, 2000)
-        );
-    }
-
-    if (
-        isset($decoded['candidates'][0]['content']['parts'][0]['text'])
-    ) {
-
-        return $decoded['candidates'][0]['content']['parts'][0]['text'];
-    }
-
+    /*
+     * CONNEXION RÉUSSIE
+     */
     throw new RuntimeException(
-        'TEST GEMINI — réponse reçue mais aucun texte trouvé : ' .
-        substr($response, 0, 3000)
+        'TEST RÉSEAU — CONNEXION GOOGLE RÉUSSIE' .
+        ' | DNS=' . $ip .
+        ' | DNS_TIME=' . round($dnsTime, 3) . 's' .
+        ' | HTTP=' . $httpCode .
+        ' | PRIMARY_IP=' . ($primaryIp ?: 'aucune') .
+        ' | CONNECT_TIME=' . round($connectTime, 3) . 's' .
+        ' | TOTAL_TIME=' . round($totalTime, 3) . 's'
     );
 }
 
