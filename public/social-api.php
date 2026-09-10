@@ -424,17 +424,14 @@ function extract_gemini_text(
     );
 }
 
-function call_gemini(
-    string $prompt
-): string {
-    $config =
-        load_config();
+function call_gemini(string $prompt): string
+{
+    $config = load_config();
 
-    $apiKey =
-        config_string(
-            $config,
-            'gemini_api_key'
-        );
+    $apiKey = config_string(
+        $config,
+        'gemini_api_key'
+    );
 
     if ($apiKey === '') {
         throw new RuntimeException(
@@ -442,40 +439,29 @@ function call_gemini(
         );
     }
 
-    $configuredModel =
-        config_string(
-            $config,
-            'gemini_model'
-        );
-
-    $models = [];
-
-    if ($configuredModel !== '') {
-        $models[] =
-            $configuredModel;
-    }
-
-    $models = array_merge(
-        $models,
-        [
-            'gemini-3.8-flash',
-            'gemini-3.7-flash',
-            'gemini-3.6-flash',
-            'gemini-3.5-flash',
-            'gemini-3.1-flash-lite',
-            'gemini-2.5-flash-lite',
-        ]
+    $configuredModel = config_string(
+        $config,
+        'gemini_model'
     );
 
-    $models =
-        array_values(
-            array_unique($models)
-        );
+    $models = array_values(
+        array_unique(
+            array_filter([
+                $configuredModel,
+                'gemini-3.8-flash',
+                'gemini-3.7-flash',
+                'gemini-3.6-flash',
+                'gemini-3.5-flash',
+                'gemini-3.1-flash-lite',
+                'gemini-2.5-flash-lite',
+            ])
+        )
+    );
 
-    $lastError =
-        'Gemini n’a retourné aucune réponse.';
+    $errors = [];
 
     foreach ($models as $model) {
+
         $url =
             'https://generativelanguage.googleapis.com/v1beta/models/' .
             rawurlencode($model) .
@@ -484,6 +470,7 @@ function call_gemini(
         $payload = [
             'contents' => [
                 [
+                    'role' => 'user',
                     'parts' => [
                         [
                             'text' => $prompt,
@@ -493,8 +480,7 @@ function call_gemini(
             ],
             'generationConfig' => [
                 'temperature' => 0.8,
-                'responseMimeType' =>
-                    'application/json',
+                'responseMimeType' => 'application/json',
                 'responseSchema' => [
                     'type' => 'OBJECT',
                     'properties' => [
@@ -510,75 +496,168 @@ function call_gemini(
                         'script' => [
                             'type' => 'STRING',
                         ],
+                        'title' => [
+                            'type' => 'STRING',
+                        ],
                     ],
                     'required' => [
                         'caption',
+                        'slides',
+                        'script',
+                        'title',
                     ],
                 ],
             ],
         ];
 
-        $json =
-            json_encode(
-                $payload,
-                JSON_UNESCAPED_UNICODE |
-                JSON_UNESCAPED_SLASHES
-            );
+        $json = json_encode(
+            $payload,
+            JSON_UNESCAPED_UNICODE |
+            JSON_UNESCAPED_SLASHES
+        );
 
         if ($json === false) {
-            throw new RuntimeException(
-                'Impossible de préparer la requête Gemini.'
-            );
+            $errors[] =
+                $model .
+                ': impossible d’encoder la requête JSON.';
+
+            continue;
         }
 
-        $result =
-            http_request(
-                $url,
-                'POST',
-                [],
-                [
+        $ch = curl_init();
+
+        if ($ch === false) {
+            $errors[] =
+                $model .
+                ': impossible d’initialiser cURL.';
+
+            continue;
+        }
+
+        curl_setopt_array(
+            $ch,
+            [
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_TIMEOUT => 90,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => [
                     'Content-Type: application/json',
+                    'Accept: application/json',
                     'x-goog-api-key: ' . $apiKey,
                 ],
-                90
+                CURLOPT_POSTFIELDS => $json,
+                CURLOPT_USERAGENT =>
+                    'VitrinePlus-SocialStudio/2.0',
+            ]
+        );
+
+        $body = curl_exec($ch);
+
+        $curlError =
+            curl_error($ch);
+
+        $httpCode =
+            (int) curl_getinfo(
+                $ch,
+                CURLINFO_HTTP_CODE
             );
+
+        curl_close($ch);
+
+        if ($body === false) {
+            $errors[] =
+                $model .
+                ': ' .
+                (
+                    $curlError !== ''
+                        ? $curlError
+                        : 'erreur réseau'
+                );
+
+            continue;
+        }
+
+        $response =
+            json_decode(
+                $body,
+                true
+            );
+
+        if (!is_array($response)) {
+            $errors[] =
+                $model .
+                ' [' .
+                $httpCode .
+                ']: réponse Gemini invalide.';
+
+            continue;
+        }
 
         if (
-            $result['http_code'] < 200 ||
-            $result['http_code'] >= 300
+            $httpCode >= 200 &&
+            $httpCode < 300
         ) {
-            $message =
-                $result['body']['error']['message']
-                ?? 'Erreur Gemini inconnue.';
+            $text =
+                extract_gemini_text(
+                    $response
+                );
 
-            $lastError =
-                'Gemini (' .
+            if ($text !== '') {
+                return $text;
+            }
+
+            $errors[] =
                 $model .
-                ') : ' .
-                $message;
+                ': réponse Gemini vide.';
 
             continue;
         }
 
-        $text =
-            extract_gemini_text(
-                $result['body']
+        $error =
+            $response['error']
+            ?? [];
+
+        $message =
+            (string) (
+                $error['message']
+                ?? 'erreur Gemini inconnue'
             );
 
-        if ($text === '') {
-            $lastError =
-                'Gemini (' .
-                $model .
-                ') n’a retourné aucun texte.';
+        $status =
+            (string) (
+                $error['status']
+                ?? ''
+            );
 
-            continue;
+        $details =
+            $model .
+            ' [' .
+            $httpCode .
+            ']: ' .
+            $message;
+
+        if ($status !== '') {
+            $details .=
+                ' | ' .
+                $status;
         }
 
-        return $text;
+        $errors[] =
+            $details;
     }
 
     throw new RuntimeException(
-        $lastError
+        'Gemini est temporairement indisponible sur les modèles gratuits. ' .
+        'Aucune API payante n’a été utilisée. ' .
+        'Détail : ' .
+        implode(
+            ' | ',
+            $errors
+        )
     );
 }
 
