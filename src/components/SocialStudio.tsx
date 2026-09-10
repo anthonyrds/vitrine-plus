@@ -30,6 +30,7 @@ type SocialContent = {
   caption: string
   slides?: string[]
   script?: string
+  mediaUrl?: string
   scheduledAt?: string
   status: "draft" | "scheduled" | "published"
   createdAt: string
@@ -132,12 +133,14 @@ export default function SocialStudio({
   const [slides, setSlides] = useState<string[]>([])
   const [script, setScript] = useState("")
 
+  const [mediaUrl, setMediaUrl] = useState("")
   const [scheduledAt, setScheduledAt] = useState("")
 
   const [loading, setLoading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loadingLibrary, setLoadingLibrary] = useState(false)
+  const [generatingVisual, setGeneratingVisual] = useState(false)
 
   const [error, setError] = useState("")
 
@@ -223,6 +226,7 @@ export default function SocialStudio({
     setCaption("")
     setSlides([])
     setScript("")
+    setMediaUrl("")
     setScheduledAt("")
     setError("")
   }
@@ -233,8 +237,13 @@ export default function SocialStudio({
     setTopic(content.topic || "")
     setObjective(content.objective || "Gagner en visibilité")
     setCaption(content.caption || "")
-    setSlides(Array.isArray(content.slides) ? content.slides : [])
+    setSlides(
+      Array.isArray(content.slides)
+        ? content.slides
+        : [],
+    )
     setScript(content.script || "")
+    setMediaUrl(content.mediaUrl || "")
     setScheduledAt(content.scheduledAt || "")
     setError("")
 
@@ -267,15 +276,22 @@ export default function SocialStudio({
       }
 
       setSelected(null)
+
       setCaption(generated.caption || "")
+
       setSlides(
         Array.isArray(generated.slides)
           ? generated.slides
           : [],
       )
+
       setScript(generated.script || "")
 
-      notify("Contenu généré avec succès.")
+      if (generated.mediaUrl) {
+        setMediaUrl(generated.mediaUrl)
+      }
+
+      notify("Contenu généré avec l’IA.")
     } catch (err) {
       const message =
         err instanceof Error
@@ -289,6 +305,46 @@ export default function SocialStudio({
     }
   }
 
+  async function generateVisual() {
+    if (!topic.trim() && !caption.trim()) {
+      notify(
+        "Indique d'abord un sujet ou génère une légende.",
+      )
+      return
+    }
+
+    try {
+      setGeneratingVisual(true)
+      setError("")
+
+      const data = await apiRequest("generate_visual", {
+        type,
+        topic,
+        caption,
+      })
+
+      if (!data.url) {
+        throw new Error(
+          "Le serveur n'a retourné aucune URL de visuel.",
+        )
+      }
+
+      setMediaUrl(data.url)
+
+      notify("Visuel Vitrine+ généré.")
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Impossible de générer le visuel."
+
+      setError(message)
+      notify(message)
+    } finally {
+      setGeneratingVisual(false)
+    }
+  }
+
   async function saveContent() {
     if (!caption.trim()) {
       notify("La légende est vide.")
@@ -299,16 +355,23 @@ export default function SocialStudio({
       setSaving(true)
       setError("")
 
-      const data = await apiRequest("save", {
-        id: selected?.id || undefined,
+      const content = {
+        id: selected?.id,
         type,
         topic,
         objective,
         caption,
         slides,
         script,
-        scheduledAt: scheduledAt || undefined,
-        status: scheduledAt ? "scheduled" : "draft",
+        mediaUrl,
+      }
+
+      const data = await apiRequest("save", {
+        content,
+        status: scheduledAt
+          ? "scheduled"
+          : "draft",
+        scheduled_at: scheduledAt || "",
       })
 
       const saved = data.content
@@ -323,7 +386,9 @@ export default function SocialStudio({
 
           if (exists) {
             return current.map((item) =>
-              item.id === saved.id ? saved : item,
+              item.id === saved.id
+                ? saved
+                : item,
             )
           }
 
@@ -349,7 +414,9 @@ export default function SocialStudio({
     }
   }
 
-  async function deleteContent(content: SocialContent) {
+  async function deleteContent(
+    content: SocialContent,
+  ) {
     const confirmed = window.confirm(
       "Supprimer définitivement ce contenu ?",
     )
@@ -364,7 +431,9 @@ export default function SocialStudio({
       })
 
       setContents((current) =>
-        current.filter((item) => item.id !== content.id),
+        current.filter(
+          (item) => item.id !== content.id,
+        ),
       )
 
       if (selected?.id === content.id) {
@@ -388,24 +457,22 @@ export default function SocialStudio({
       return
     }
 
-    /*
-     * Pour l'instant, nous utilisons le visuel de démonstration
-     * configuré côté serveur.
-     *
-     * Plus tard, Social Studio pourra envoyer ici l'URL du
-     * véritable visuel généré pour la publication.
-     */
-    const imageUrl =
-      "https://vitrineplus.fr/social-preview/default-post.jpg"
+    if (!mediaUrl.trim()) {
+      notify(
+        "Ajoute ou génère d'abord un visuel public.",
+      )
+      return
+    }
 
     try {
       setPublishing(true)
       setError("")
 
       const data = await apiRequest("publish", {
+        id: selected?.id || undefined,
         type,
         caption,
-        image: imageUrl,
+        image: mediaUrl,
         slides,
         script,
       })
@@ -417,7 +484,8 @@ export default function SocialStudio({
               ? {
                   ...item,
                   status: "published",
-                  updatedAt: new Date().toISOString(),
+                  updatedAt:
+                    new Date().toISOString(),
                 }
               : item,
           ),
@@ -428,7 +496,8 @@ export default function SocialStudio({
             ? {
                 ...current,
                 status: "published",
-                updatedAt: new Date().toISOString(),
+                updatedAt:
+                  new Date().toISOString(),
               }
             : current,
         )
@@ -458,10 +527,15 @@ export default function SocialStudio({
     ])
   }
 
-  function updateSlide(index: number, value: string) {
+  function updateSlide(
+    index: number,
+    value: string,
+  ) {
     setSlides((current) =>
       current.map((slide, slideIndex) =>
-        slideIndex === index ? value : slide,
+        slideIndex === index
+          ? value
+          : slide,
       ),
     )
   }
@@ -469,7 +543,8 @@ export default function SocialStudio({
   function removeSlide(index: number) {
     setSlides((current) =>
       current.filter(
-        (_, slideIndex) => slideIndex !== index,
+        (_, slideIndex) =>
+          slideIndex !== index,
       ),
     )
   }
@@ -480,16 +555,20 @@ export default function SocialStudio({
     }
 
     try {
-      await navigator.clipboard.writeText(caption)
+      await navigator.clipboard.writeText(
+        caption,
+      )
+
       notify("Légende copiée.")
     } catch {
-      notify("Impossible de copier la légende.")
+      notify(
+        "Impossible de copier la légende.",
+      )
     }
   }
 
   return (
     <div className="space-y-6">
-      {/* HEADER */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.22em] text-[#C8A45D]">
@@ -502,8 +581,9 @@ export default function SocialStudio({
           </h1>
 
           <p className="mt-1 max-w-2xl text-sm leading-6 text-white/50">
-            Crée, prépare, programme et publie les contenus
-            sociaux de Vitrine+ depuis ton administration.
+            Crée, prépare, programme et publie les
+            contenus sociaux de Vitrine+ depuis ton
+            administration.
           </p>
         </div>
 
@@ -517,10 +597,11 @@ export default function SocialStudio({
         </button>
       </div>
 
-      {/* ERROR */}
       {error && (
         <div className="flex items-start justify-between gap-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          <div>{error}</div>
+          <div className="whitespace-pre-wrap">
+            {error}
+          </div>
 
           <button
             type="button"
@@ -532,9 +613,7 @@ export default function SocialStudio({
         </div>
       )}
 
-      {/* MAIN GRID */}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-        {/* EDITOR */}
         <section className="rounded-3xl border border-white/10 bg-[#101010] p-5 shadow-2xl shadow-black/20 lg:p-6">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
@@ -554,7 +633,6 @@ export default function SocialStudio({
             )}
           </div>
 
-          {/* TYPE */}
           <div>
             <label className="mb-3 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
               Format
@@ -563,13 +641,16 @@ export default function SocialStudio({
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {CONTENT_TYPES.map((item) => {
                 const Icon = item.icon
-                const active = type === item.value
+                const active =
+                  type === item.value
 
                 return (
                   <button
                     key={item.value}
                     type="button"
-                    onClick={() => setType(item.value)}
+                    onClick={() =>
+                      setType(item.value)
+                    }
                     className={[
                       "rounded-2xl border p-4 text-left transition",
                       active
@@ -606,7 +687,6 @@ export default function SocialStudio({
             </div>
           </div>
 
-          {/* TOPIC */}
           <div className="mt-6">
             <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
               Sujet
@@ -623,7 +703,6 @@ export default function SocialStudio({
             />
           </div>
 
-          {/* OBJECTIVE */}
           <div className="mt-5">
             <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
               Objectif
@@ -633,7 +712,9 @@ export default function SocialStudio({
               <select
                 value={objective}
                 onChange={(event) =>
-                  setObjective(event.target.value)
+                  setObjective(
+                    event.target.value,
+                  )
                 }
                 className="w-full appearance-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 pr-10 text-sm text-white outline-none transition focus:border-[#C8A45D]/50"
               >
@@ -655,7 +736,6 @@ export default function SocialStudio({
             </div>
           </div>
 
-          {/* GENERATE */}
           <button
             type="button"
             onClick={generateContent}
@@ -678,7 +758,6 @@ export default function SocialStudio({
             )}
           </button>
 
-          {/* CAPTION */}
           <div className="mt-7">
             <div className="mb-2 flex items-center justify-between gap-3">
               <label className="block text-xs font-black uppercase tracking-[0.16em] text-white/45">
@@ -699,7 +778,9 @@ export default function SocialStudio({
             <textarea
               value={caption}
               onChange={(event) =>
-                setCaption(event.target.value)
+                setCaption(
+                  event.target.value,
+                )
               }
               placeholder="La légende générée apparaîtra ici..."
               rows={11}
@@ -707,7 +788,9 @@ export default function SocialStudio({
             />
 
             <div className="mt-2 flex items-center justify-between text-[11px] text-white/25">
-              <span>{caption.length} caractères</span>
+              <span>
+                {caption.length} caractères
+              </span>
 
               <span>
                 Instagram · Vitrine+
@@ -715,7 +798,76 @@ export default function SocialStudio({
             </div>
           </div>
 
-          {/* CAROUSEL */}
+          <div className="mt-7 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-[#C8A45D]/10 p-2 text-[#C8A45D]">
+                <ImageIcon size={18} />
+              </div>
+
+              <div className="flex-1">
+                <div className="text-sm font-black text-white">
+                  Visuel de publication
+                </div>
+
+                <div className="mt-1 text-xs leading-5 text-white/35">
+                  Le visuel doit être accessible
+                  publiquement par Instagram.
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <input
+                type="url"
+                value={mediaUrl}
+                onChange={(event) =>
+                  setMediaUrl(
+                    event.target.value,
+                  )
+                }
+                placeholder="https://vitrineplus.fr/..."
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-[#C8A45D]/50"
+              />
+
+              <button
+                type="button"
+                onClick={generateVisual}
+                disabled={generatingVisual}
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#C8A45D]/20 bg-[#C8A45D]/5 px-4 py-3 text-xs font-black text-[#C8A45D] transition hover:bg-[#C8A45D]/10 disabled:opacity-40"
+              >
+                {generatingVisual ? (
+                  <>
+                    <Loader2
+                      size={15}
+                      className="animate-spin"
+                    />
+                    Création du visuel...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={15} />
+                    Générer un visuel Vitrine+
+                  </>
+                )}
+              </button>
+            </div>
+
+            {mediaUrl && (
+              <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-black">
+                <img
+                  src={mediaUrl}
+                  alt="Visuel Instagram"
+                  className="aspect-square w-full object-cover"
+                  onError={() =>
+                    setError(
+                      "Le visuel indiqué n'est pas accessible depuis le navigateur.",
+                    )
+                  }
+                />
+              </div>
+            )}
+          </div>
+
           {type === "carousel" && (
             <div className="mt-7">
               <div className="mb-3 flex items-center justify-between">
@@ -734,40 +886,47 @@ export default function SocialStudio({
               </div>
 
               <div className="space-y-3">
-                {slides.map((slide, index) => (
-                  <div
-                    key={`slide-${index}`}
-                    className="rounded-2xl border border-white/10 bg-black/20 p-3"
-                  >
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-black text-[#C8A45D]">
-                        Slide {index + 1}
-                      </span>
+                {slides.map(
+                  (slide, index) => (
+                    <div
+                      key={`slide-${index}`}
+                      className="rounded-2xl border border-white/10 bg-black/20 p-3"
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-black text-[#C8A45D]">
+                          Slide {index + 1}
+                        </span>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeSlide(index)
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeSlide(
+                              index,
+                            )
+                          }
+                          className="text-white/30 hover:text-red-300"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <textarea
+                        value={slide}
+                        onChange={(
+                          event,
+                        ) =>
+                          updateSlide(
+                            index,
+                            event.target
+                              .value,
+                          )
                         }
-                        className="text-white/30 hover:text-red-300"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                        rows={3}
+                        className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm leading-5 text-white outline-none focus:border-[#C8A45D]/40"
+                      />
                     </div>
-
-                    <textarea
-                      value={slide}
-                      onChange={(event) =>
-                        updateSlide(
-                          index,
-                          event.target.value,
-                        )
-                      }
-                      rows={3}
-                      className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm leading-5 text-white outline-none focus:border-[#C8A45D]/40"
-                    />
-                  </div>
-                ))}
+                  ),
+                )}
 
                 {slides.length === 0 && (
                   <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-white/30">
@@ -778,7 +937,6 @@ export default function SocialStudio({
             </div>
           )}
 
-          {/* REEL SCRIPT */}
           {type === "reel" && (
             <div className="mt-7">
               <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
@@ -788,7 +946,9 @@ export default function SocialStudio({
               <textarea
                 value={script}
                 onChange={(event) =>
-                  setScript(event.target.value)
+                  setScript(
+                    event.target.value,
+                  )
                 }
                 placeholder="Le script du Reel apparaîtra ici..."
                 rows={12}
@@ -797,7 +957,6 @@ export default function SocialStudio({
             </div>
           )}
 
-          {/* SCHEDULE */}
           <div className="mt-7 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
             <div className="flex items-start gap-3">
               <div className="rounded-xl bg-[#C8A45D]/10 p-2 text-[#C8A45D]">
@@ -810,8 +969,8 @@ export default function SocialStudio({
                 </div>
 
                 <div className="mt-1 text-xs leading-5 text-white/35">
-                  Laisse vide pour enregistrer uniquement
-                  un brouillon.
+                  Laisse vide pour enregistrer
+                  uniquement un brouillon.
                 </div>
               </div>
             </div>
@@ -820,7 +979,9 @@ export default function SocialStudio({
               type="datetime-local"
               value={scheduledAt}
               onChange={(event) =>
-                setScheduledAt(event.target.value)
+                setScheduledAt(
+                  event.target.value,
+                )
               }
               className="mt-4 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none focus:border-[#C8A45D]/50"
             />
@@ -828,7 +989,9 @@ export default function SocialStudio({
             {scheduledAt && (
               <button
                 type="button"
-                onClick={() => setScheduledAt("")}
+                onClick={() =>
+                  setScheduledAt("")
+                }
                 className="mt-2 text-xs font-bold text-white/35 hover:text-white"
               >
                 Annuler la programmation
@@ -836,12 +999,14 @@ export default function SocialStudio({
             )}
           </div>
 
-          {/* ACTIONS */}
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <button
               type="button"
               onClick={saveContent}
-              disabled={saving || !caption.trim()}
+              disabled={
+                saving ||
+                !caption.trim()
+              }
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm font-black text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {saving ? (
@@ -863,7 +1028,8 @@ export default function SocialStudio({
               onClick={publishInstagram}
               disabled={
                 publishing ||
-                !caption.trim()
+                !caption.trim() ||
+                !mediaUrl.trim()
               }
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#C8A45D] px-4 py-3.5 text-sm font-black text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -885,7 +1051,6 @@ export default function SocialStudio({
           </div>
         </section>
 
-        {/* PREVIEW */}
         <aside className="space-y-6">
           <section className="rounded-3xl border border-white/10 bg-[#101010] p-5 shadow-2xl shadow-black/20">
             <div className="mb-5 flex items-center justify-between">
@@ -905,7 +1070,6 @@ export default function SocialStudio({
               />
             </div>
 
-            {/* INSTAGRAM CARD */}
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
               <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#C8A45D] text-xs font-black text-black">
@@ -922,12 +1086,21 @@ export default function SocialStudio({
                   </div>
                 </div>
 
-                <div className="text-white/40">•••</div>
+                <div className="text-white/40">
+                  •••
+                </div>
               </div>
 
-              <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-[#171717] via-[#0b0b0b] to-[#1a1a1a] px-8 text-center">
-                {type === "carousel" ? (
-                  <div>
+              <div className="flex aspect-square items-center justify-center overflow-hidden bg-black">
+                {mediaUrl ? (
+                  <img
+                    src={mediaUrl}
+                    alt="Aperçu"
+                    className="h-full w-full object-cover"
+                  />
+                ) : type ===
+                  "carousel" ? (
+                  <div className="px-8 text-center">
                     <Copy
                       size={36}
                       className="mx-auto text-[#C8A45D]"
@@ -945,7 +1118,7 @@ export default function SocialStudio({
                     </p>
                   </div>
                 ) : type === "reel" ? (
-                  <div>
+                  <div className="text-center">
                     <Film
                       size={36}
                       className="mx-auto text-[#C8A45D]"
@@ -956,7 +1129,7 @@ export default function SocialStudio({
                     </p>
                   </div>
                 ) : type === "story" ? (
-                  <div>
+                  <div className="text-center">
                     <Instagram
                       size={36}
                       className="mx-auto text-[#C8A45D]"
@@ -967,7 +1140,7 @@ export default function SocialStudio({
                     </p>
                   </div>
                 ) : (
-                  <div>
+                  <div className="text-center">
                     <ImageIcon
                       size={36}
                       className="mx-auto text-[#C8A45D]"
@@ -985,14 +1158,16 @@ export default function SocialStudio({
                   <span>♡</span>
                   <span>◯</span>
                   <span>➤</span>
-
-                  <span className="ml-auto">⌑</span>
+                  <span className="ml-auto">
+                    ⌑
+                  </span>
                 </div>
 
                 <div className="max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-5 text-white/70">
                   {caption || (
                     <span className="text-white/20">
-                      La légende apparaîtra ici...
+                      La légende apparaîtra
+                      ici...
                     </span>
                   )}
                 </div>
@@ -1005,7 +1180,6 @@ export default function SocialStudio({
             </div>
           </section>
 
-          {/* QUICK INFO */}
           <section className="rounded-3xl border border-white/10 bg-[#101010] p-5">
             <div className="flex items-start gap-3">
               <div className="rounded-xl bg-[#C8A45D]/10 p-2 text-[#C8A45D]">
@@ -1018,9 +1192,9 @@ export default function SocialStudio({
                 </h3>
 
                 <p className="mt-1 text-xs leading-5 text-white/35">
-                  Crée ton contenu, vérifie la légende,
-                  enregistre-le puis publie-le directement
-                  depuis ton administration.
+                  L’IA crée une publication
+                  différente à partir du sujet
+                  et de l’objectif choisis.
                 </p>
               </div>
             </div>
@@ -1050,7 +1224,6 @@ export default function SocialStudio({
         </aside>
       </div>
 
-      {/* LIBRARY */}
       <section className="rounded-3xl border border-white/10 bg-[#101010] p-5 shadow-2xl shadow-black/20 lg:p-6">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -1100,8 +1273,8 @@ export default function SocialStudio({
             </p>
 
             <p className="mt-1 text-xs text-white/20">
-              Tes brouillons et publications apparaîtront
-              ici.
+              Tes brouillons et publications
+              apparaîtront ici.
             </p>
           </div>
         ) : (
@@ -1114,16 +1287,21 @@ export default function SocialStudio({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <div className="rounded-lg bg-[#C8A45D]/10 p-2 text-[#C8A45D]">
-                      {content.type === "reel" ? (
+                      {content.type ===
+                      "reel" ? (
                         <Film size={15} />
                       ) : content.type ===
                         "carousel" ? (
                         <Copy size={15} />
                       ) : content.type ===
                         "story" ? (
-                        <Instagram size={15} />
+                        <Instagram
+                          size={15}
+                        />
                       ) : (
-                        <ImageIcon size={15} />
+                        <ImageIcon
+                          size={15}
+                        />
                       )}
                     </div>
 
@@ -1153,13 +1331,25 @@ export default function SocialStudio({
                       ),
                     ].join(" ")}
                   >
-                    {statusLabel(content.status)}
+                    {statusLabel(
+                      content.status,
+                    )}
                   </span>
                 </div>
 
                 <p className="mt-4 line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-white/50">
                   {content.caption}
                 </p>
+
+                {content.mediaUrl && (
+                  <div className="mt-4 overflow-hidden rounded-xl border border-white/10">
+                    <img
+                      src={content.mediaUrl}
+                      alt=""
+                      className="aspect-video w-full object-cover"
+                    />
+                  </div>
+                )}
 
                 <div className="mt-4 flex items-center gap-1.5 text-[10px] text-white/25">
                   <Clock3 size={12} />
@@ -1177,7 +1367,9 @@ export default function SocialStudio({
                   <button
                     type="button"
                     onClick={() =>
-                      loadIntoEditor(content)
+                      loadIntoEditor(
+                        content,
+                      )
                     }
                     className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/60 transition hover:bg-white/10 hover:text-white"
                   >
@@ -1187,7 +1379,9 @@ export default function SocialStudio({
                   <button
                     type="button"
                     onClick={() =>
-                      deleteContent(content)
+                      deleteContent(
+                        content,
+                      )
                     }
                     className="rounded-xl border border-red-400/10 bg-red-500/5 px-3 py-2 text-red-300/60 transition hover:bg-red-500/10 hover:text-red-200"
                   >
