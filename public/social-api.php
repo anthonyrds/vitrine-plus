@@ -559,18 +559,26 @@ function call_gemini(
             'gemini_model'
         );
 
-    $models =
-        array_values(
+    $allowedModels = [
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+    ];
+
+    $models = $allowedModels;
+
+    if (
+        $configured !== '' &&
+        in_array($configured, $allowedModels, true)
+    ) {
+        $models = array_values(
             array_unique(
-                array_filter(
-                    [
-                        $configured,
-                        'gemini-2.5-flash',
-                        'gemini-2.5-flash-lite',
-                    ]
-                )
+                [
+                    $configured,
+                    ...$allowedModels,
+                ]
             )
         );
+    }
 
     $errors = [];
 
