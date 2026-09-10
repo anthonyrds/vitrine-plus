@@ -1,26 +1,32 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   CalendarClock,
   Check,
   ChevronDown,
-  Clock3,
   Copy,
   Film,
   Image as ImageIcon,
   Instagram,
   Loader2,
-  MessageSquareText,
   Plus,
   RefreshCw,
   Save,
   Send,
   Sparkles,
   Trash2,
+  Upload,
   WandSparkles,
   X,
+  Play,
 } from "lucide-react"
 
 type ContentType = "post" | "carousel" | "reel" | "story"
+
+type ContentStatus =
+  | "draft"
+  | "scheduled"
+  | "published"
+  | "scheduled_error"
 
 type SocialContent = {
   id: string
@@ -30,18 +36,25 @@ type SocialContent = {
   caption: string
   slides?: string[]
   script?: string
+  mediaUrls?: string[]
+  videoUrl?: string
   scheduledAt?: string
-  status: "draft" | "scheduled" | "published"
+  status: ContentStatus
   createdAt: string
   updatedAt?: string
-  image?: string
-  images?: string[]
-  video?: string
-  instagramMediaId?: string
+  instagram?: Record<string, unknown>
+  publishError?: string
+  title?: string
 }
 
 type SocialStudioProps = {
   onToast?: (message: string) => void
+}
+
+type GeneratedVideoResult = {
+  blob: Blob
+  extension: string
+  mimeType: string
 }
 
 const CONTENT_TYPES: {
@@ -53,25 +66,25 @@ const CONTENT_TYPES: {
   {
     value: "post",
     label: "Publication",
-    description: "Un post Instagram classique",
+    description: "Post Instagram classique",
     icon: ImageIcon,
   },
   {
     value: "carousel",
     label: "Carrousel",
-    description: "Plusieurs slides pédagogiques",
+    description: "2 à 10 slides",
     icon: Copy,
   },
   {
     value: "reel",
     label: "Reel",
-    description: "Vidéo courte avec script",
+    description: "Vidéo verticale",
     icon: Film,
   },
   {
     value: "story",
     label: "Story",
-    description: "Contenu vertical rapide",
+    description: "Format vertical",
     icon: Instagram,
   },
 ]
@@ -100,97 +113,564 @@ function formatDate(date: string) {
   })
 }
 
-function statusLabel(status: SocialContent["status"]) {
-  switch (status) {
-    case "published":
-      return "Publié"
-    case "scheduled":
-      return "Programmé"
-    default:
-      return "Brouillon"
-  }
+function statusLabel(status: ContentStatus) {
+  if (status === "published") return "Publié"
+  if (status === "scheduled") return "Programmé"
+  if (status === "scheduled_error") return "Erreur de publication"
+
+  return "Brouillon"
 }
 
-function statusClasses(status: SocialContent["status"]) {
-  switch (status) {
-    case "published":
-      return "bg-emerald-500/10 text-emerald-300 border-emerald-400/20"
-    case "scheduled":
-      return "bg-blue-500/10 text-blue-300 border-blue-400/20"
-    default:
-      return "bg-white/5 text-white/60 border-white/10"
+function statusClasses(status: ContentStatus) {
+  if (status === "published") {
+    return "bg-emerald-500/10 text-emerald-300 border-emerald-400/20"
+  }
+
+  if (status === "scheduled") {
+    return "bg-blue-500/10 text-blue-300 border-blue-400/20"
+  }
+
+  if (status === "scheduled_error") {
+    return "bg-red-500/10 text-red-300 border-red-400/20"
+  }
+
+  return "bg-white/5 text-white/60 border-white/10"
+}
+
+function getSupportedVideoMimeType() {
+  if (
+    typeof MediaRecorder !== "undefined" &&
+    MediaRecorder.isTypeSupported("video/mp4;codecs=h264")
+  ) {
+    return "video/mp4;codecs=h264"
+  }
+
+  if (
+    typeof MediaRecorder !== "undefined" &&
+    MediaRecorder.isTypeSupported("video/mp4")
+  ) {
+    return "video/mp4"
+  }
+
+  if (
+    typeof MediaRecorder !== "undefined" &&
+    MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+  ) {
+    return "video/webm;codecs=vp9"
+  }
+
+  if (
+    typeof MediaRecorder !== "undefined" &&
+    MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
+  ) {
+    return "video/webm;codecs=vp8"
+  }
+
+  if (
+    typeof MediaRecorder !== "undefined" &&
+    MediaRecorder.isTypeSupported("video/webm")
+  ) {
+    return "video/webm"
+  }
+
+  return ""
+}
+
+function extensionFromMimeType(mimeType: string) {
+  if (mimeType.includes("mp4")) {
+    return "mp4"
+  }
+
+  return "webm"
+}
+
+function sleep(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds)
+  })
+}
+
+function wrapCanvasText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+) {
+  const words = text.trim().split(/\s+/)
+  const lines: string[] = []
+
+  let currentLine = ""
+
+  for (const word of words) {
+    const candidate = currentLine
+      ? `${currentLine} ${word}`
+      : word
+
+    const metrics = context.measureText(candidate)
+
+    if (metrics.width > maxWidth && currentLine) {
+      lines.push(currentLine)
+      currentLine = word
+    } else {
+      currentLine = candidate
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine)
+  }
+
+  return lines
+}
+
+function drawWrappedCanvasText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+) {
+  const paragraphs = text
+    .split("\n")
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  let currentY = y
+
+  for (const paragraph of paragraphs) {
+    const lines = wrapCanvasText(
+      context,
+      paragraph,
+      maxWidth,
+    )
+
+    for (const line of lines) {
+      context.fillText(line, x, currentY)
+      currentY += lineHeight
+    }
+
+    currentY += lineHeight * 0.45
+  }
+
+  return currentY
+}
+
+async function loadImage(url: string) {
+  const image = new Image()
+
+  image.crossOrigin = "anonymous"
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve()
+    image.onerror = () =>
+      reject(
+        new Error(
+          "Impossible de charger le visuel du Reel.",
+        ),
+      )
+
+    image.src = url
+  })
+
+  return image
+}
+
+async function createReelVideo(
+  imageUrl: string,
+  scriptText: string,
+): Promise<GeneratedVideoResult> {
+  if (
+    typeof document === "undefined" ||
+    typeof MediaRecorder === "undefined"
+  ) {
+    throw new Error(
+      "La génération vidéo n’est pas disponible dans ce navigateur.",
+    )
+  }
+
+  const mimeType = getSupportedVideoMimeType()
+
+  if (!mimeType) {
+    throw new Error(
+      "Ce navigateur ne permet pas de générer une vidéo compatible.",
+    )
+  }
+
+  const image = await loadImage(imageUrl)
+
+  const canvas = document.createElement("canvas")
+
+  canvas.width = 1080
+  canvas.height = 1920
+
+  const context = canvas.getContext("2d")
+
+  if (!context) {
+    throw new Error(
+      "Impossible d’initialiser le moteur vidéo.",
+    )
+  }
+
+  const stream = canvas.captureStream(30)
+
+  const chunks: BlobPart[] = []
+
+  const recorder = new MediaRecorder(stream, {
+    mimeType,
+    videoBitsPerSecond: 6_000_000,
+  })
+
+  recorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) {
+      chunks.push(event.data)
+    }
+  }
+
+  const duration = 12_000
+
+  const recorderStopped = new Promise<void>(
+    (resolve) => {
+      recorder.onstop = () => resolve()
+    },
+  )
+
+  recorder.start(250)
+
+  const start = performance.now()
+
+  while (performance.now() - start < duration) {
+    const elapsed = performance.now() - start
+    const progress = Math.min(
+      elapsed / duration,
+      1,
+    )
+
+    context.clearRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    )
+
+    /*
+     * Fond noir premium.
+     */
+    context.fillStyle = "#080808"
+
+    context.fillRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    )
+
+    /*
+     * Image centrée en conservant son ratio.
+     */
+    const imageRatio =
+      image.width / image.height
+
+    const canvasRatio =
+      canvas.width / canvas.height
+
+    let drawWidth = canvas.width
+    let drawHeight = canvas.height
+
+    if (imageRatio > canvasRatio) {
+      drawHeight =
+        canvas.width / imageRatio
+    } else {
+      drawWidth =
+        canvas.height * imageRatio
+    }
+
+    const imageX =
+      (canvas.width - drawWidth) / 2
+
+    const imageY =
+      (canvas.height - drawHeight) / 2
+
+    const zoom =
+      1 +
+      Math.sin(progress * Math.PI) * 0.035
+
+    const zoomWidth =
+      drawWidth * zoom
+
+    const zoomHeight =
+      drawHeight * zoom
+
+    const zoomX =
+      (canvas.width - zoomWidth) / 2
+
+    const zoomY =
+      (canvas.height - zoomHeight) / 2
+
+    context.save()
+
+    context.globalAlpha = 0.96
+
+    context.drawImage(
+      image,
+      zoomX,
+      zoomY,
+      zoomWidth,
+      zoomHeight,
+    )
+
+    context.restore()
+
+    /*
+     * Overlay sombre pour garder le texte lisible.
+     */
+    const gradient =
+      context.createLinearGradient(
+        0,
+        0,
+        0,
+        canvas.height,
+      )
+
+    gradient.addColorStop(
+      0,
+      "rgba(0,0,0,0.15)",
+    )
+
+    gradient.addColorStop(
+      0.5,
+      "rgba(0,0,0,0.15)",
+    )
+
+    gradient.addColorStop(
+      1,
+      "rgba(0,0,0,0.92)",
+    )
+
+    context.fillStyle = gradient
+
+    context.fillRect(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    )
+
+    /*
+     * Barre supérieure Vitrine+.
+     */
+    context.fillStyle = "#C8A45D"
+
+    context.fillRect(
+      70,
+      78,
+      940,
+      6,
+    )
+
+    context.font =
+      "900 34px Arial, sans-serif"
+
+    context.fillText(
+      "VITRINE+",
+      75,
+      150,
+    )
+
+    /*
+     * Script du Reel.
+     */
+    context.font =
+      "800 52px Arial, sans-serif"
+
+    context.fillStyle = "#FFFFFF"
+
+    const safeScript =
+      scriptText.trim() ||
+      "Votre entreprise mérite une présence en ligne à la hauteur de vos ambitions."
+
+    drawWrappedCanvasText(
+      context,
+      safeScript,
+      80,
+      1250,
+      920,
+      70,
+    )
+
+    /*
+     * CTA.
+     */
+    context.font =
+      "700 30px Arial, sans-serif"
+
+    context.fillStyle = "#C8A45D"
+
+    context.fillText(
+      "Votre entreprise. En mieux.",
+      80,
+      1770,
+    )
+
+    context.font =
+      "600 26px Arial, sans-serif"
+
+    context.fillStyle = "#D0D0D0"
+
+    context.fillText(
+      "vitrineplus.fr",
+      80,
+      1820,
+    )
+
+    await sleep(33)
+  }
+
+  recorder.stop()
+
+  await recorderStopped
+
+  stream.getTracks().forEach(
+    (track) => track.stop(),
+  )
+
+  const blob = new Blob(
+    chunks,
+    {
+      type: mimeType,
+    },
+  )
+
+  if (blob.size === 0) {
+    throw new Error(
+      "La vidéo générée est vide.",
+    )
+  }
+
+  return {
+    blob,
+    extension:
+      extensionFromMimeType(mimeType),
+    mimeType,
   }
 }
 
 export default function SocialStudio({
   onToast,
 }: SocialStudioProps) {
-  const [contents, setContents] = useState<SocialContent[]>([])
-  const [selected, setSelected] = useState<SocialContent | null>(null)
+  const [contents, setContents] =
+    useState<SocialContent[]>([])
 
-  const [type, setType] = useState<ContentType>("post")
-  const [topic, setTopic] = useState("")
-  const [objective, setObjective] = useState("Gagner en visibilité")
+  const [selected, setSelected] =
+    useState<SocialContent | null>(null)
 
-  const [caption, setCaption] = useState("")
-  const [slides, setSlides] = useState<string[]>([])
-  const [script, setScript] = useState("")
+  const [type, setType] =
+    useState<ContentType>("post")
 
-  const [scheduledAt, setScheduledAt] = useState("")
-  const [image, setImage] = useState("")
-  const [images, setImages] = useState<string[]>([])
-  const [video, setVideo] = useState("")
+  const [topic, setTopic] =
+    useState("")
 
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [publishing, setPublishing] = useState(false)
-  const [generatingVisual, setGeneratingVisual] = useState(false)
-  const [uploading, setUploading] = useState(false)
+  const [objective, setObjective] =
+    useState("Gagner en visibilité")
 
-  const [error, setError] = useState("")
+  const [caption, setCaption] =
+    useState("")
 
-  function notify(message: string) {
-    onToast?.(message)
+  const [slides, setSlides] =
+    useState<string[]>([])
+
+  const [mediaUrls, setMediaUrls] =
+    useState<string[]>([])
+
+  const [videoUrl, setVideoUrl] =
+    useState("")
+
+  const [script, setScript] =
+    useState("")
+
+  const [scheduledAt, setScheduledAt] =
+    useState("")
+
+  const [loading, setLoading] =
+    useState(false)
+
+  const [publishing, setPublishing] =
+    useState(false)
+
+  const [saving, setSaving] =
+    useState(false)
+
+  const [uploading, setUploading] =
+    useState(false)
+
+  const [generatingReel, setGeneratingReel] =
+    useState(false)
+
+  const [loadingLibrary, setLoadingLibrary] =
+    useState(false)
+
+  const [error, setError] =
+    useState("")
+
+  const videoObjectUrlRef =
+    useRef<string | null>(null)
+
+  const notify = (message: string) => {
+    if (onToast) {
+      onToast(message)
+    } else {
+      window.alert(message)
+    }
   }
+
+  const selectedType = useMemo(
+    () =>
+      CONTENT_TYPES.find(
+        (item) => item.value === type,
+      ),
+    [type],
+  )
 
   async function apiRequest(
     action: string,
     payload: Record<string, unknown> = {},
   ) {
-    const response = await fetch("/social-api.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const response = await fetch(
+      "/social-api.php",
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          action,
+          ...payload,
+        }),
       },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        action,
-        ...payload,
-      }),
-    })
+    )
 
-    const text = await response.text()
+    if (response.status === 401) {
+      window.location.href =
+        "/grand-plus-admin.php"
 
-    let data: any
-
-    try {
-      data = JSON.parse(text)
-    } catch {
       throw new Error(
-        text ||
-          `Erreur serveur (${response.status}).`,
+        "Session administrateur expirée.",
       )
     }
 
-    if (response.status === 401) {
-      window.location.href = "/grand-plus-admin.php"
-      throw new Error("Authentification requise.")
-    }
+    const data =
+      await response
+        .json()
+        .catch(() => null)
 
-    if (!response.ok || data.success === false) {
+    if (
+      !response.ok ||
+      !data?.success
+    ) {
       throw new Error(
-        data.message ||
-          `Erreur serveur (${response.status}).`,
+        data?.message ||
+          "Une erreur est survenue.",
       )
     }
 
@@ -199,29 +679,10 @@ export default function SocialStudio({
 
   async function loadContents() {
     try {
-      setLoading(true)
-      setError("")
+      setLoadingLibrary(true)
 
-      const response = await fetch(
-        "/social-api.php",
-        {
-          credentials: "same-origin",
-        },
-      )
-
-      if (response.status === 401) {
-        window.location.href = "/grand-plus-admin.php"
-        return
-      }
-
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(
-          data.message ||
-            "Impossible de charger les contenus.",
-        )
-      }
+      const data =
+        await apiRequest("list")
 
       setContents(
         Array.isArray(data.contents)
@@ -229,96 +690,177 @@ export default function SocialStudio({
           : [],
       )
     } catch (err) {
-      const message =
+      setError(
         err instanceof Error
           ? err.message
-          : "Impossible de charger les contenus."
-
-      setError(message)
+          : "Impossible de charger les contenus.",
+      )
     } finally {
-      setLoading(false)
+      setLoadingLibrary(false)
     }
   }
 
   useEffect(() => {
-    loadContents()
+    void loadContents()
+
+    return () => {
+      if (
+        videoObjectUrlRef.current
+      ) {
+        URL.revokeObjectURL(
+          videoObjectUrlRef.current,
+        )
+      }
+    }
   }, [])
+
+  function clearGeneratedVideo() {
+    if (
+      videoObjectUrlRef.current
+    ) {
+      URL.revokeObjectURL(
+        videoObjectUrlRef.current,
+      )
+
+      videoObjectUrlRef.current =
+        null
+    }
+
+    setVideoUrl("")
+  }
 
   function resetEditor() {
     setSelected(null)
+
     setType("post")
+
     setTopic("")
-    setObjective("Gagner en visibilité")
+
+    setObjective(
+      "Gagner en visibilité",
+    )
+
     setCaption("")
+
     setSlides([])
+
+    setMediaUrls([])
+
+    clearGeneratedVideo()
+
     setScript("")
+
     setScheduledAt("")
-    setImage("")
-    setImages([])
-    setVideo("")
+
     setError("")
   }
 
-  function loadContent(content: SocialContent) {
+  function loadIntoEditor(
+    content: SocialContent,
+  ) {
     setSelected(content)
+
     setType(content.type)
+
     setTopic(content.topic || "")
+
     setObjective(
       content.objective ||
         "Gagner en visibilité",
     )
-    setCaption(content.caption || "")
+
+    setCaption(
+      content.caption || "",
+    )
+
     setSlides(
       Array.isArray(content.slides)
         ? content.slides
         : [],
     )
-    setScript(content.script || "")
-    setScheduledAt(
-      content.scheduledAt
-        ? new Date(content.scheduledAt)
-            .toISOString()
-            .slice(0, 16)
-        : "",
-    )
-    setImage(content.image || "")
-    setImages(
-      Array.isArray(content.images)
-        ? content.images
+
+    setMediaUrls(
+      Array.isArray(content.mediaUrls)
+        ? content.mediaUrls
         : [],
     )
-    setVideo(content.video || "")
-    setError("")
+
+    if (
+      videoObjectUrlRef.current
+    ) {
+      URL.revokeObjectURL(
+        videoObjectUrlRef.current,
+      )
+
+      videoObjectUrlRef.current =
+        null
+    }
+
+    setVideoUrl(
+      content.videoUrl || "",
+    )
+
+    setScript(
+      content.script || "",
+    )
+
+    setScheduledAt(
+      content.scheduledAt || "",
+    )
+
+    setError(
+      content.publishError || "",
+    )
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    })
   }
 
   async function generateContent() {
     if (!topic.trim()) {
-      notify("Indique d'abord un sujet.")
+      notify(
+        "Indique d'abord le sujet du contenu.",
+      )
+
       return
     }
 
     try {
       setLoading(true)
+
       setError("")
 
-      const data = await apiRequest(
-        "generate",
-        {
-          type,
-          topic,
-          objective,
-        },
-      )
+      const data =
+        await apiRequest(
+          "generate",
+          {
+            type,
+            topic: topic.trim(),
+            objective,
+          },
+        )
 
       const generated =
-        data.content || {}
+        data.content
+
+      if (!generated) {
+        throw new Error(
+          "Le serveur n'a retourné aucun contenu.",
+        )
+      }
+
+      setSelected(null)
 
       setCaption(
         generated.caption || "",
       )
 
       setSlides(
-        Array.isArray(generated.slides)
+        Array.isArray(
+          generated.slides,
+        )
           ? generated.slides
           : [],
       )
@@ -327,9 +869,57 @@ export default function SocialStudio({
         generated.script || "",
       )
 
-      notify(
-        "Contenu généré par Gemini.",
+      setMediaUrls([])
+
+      clearGeneratedVideo()
+
+      /*
+       * Génération automatique des visuels.
+       */
+      const visual =
+        await apiRequest(
+          "generate_visual",
+          {
+            type,
+            topic: topic.trim(),
+            caption:
+              generated.caption || "",
+            slides:
+              Array.isArray(
+                generated.slides,
+              )
+                ? generated.slides
+                : [],
+          },
+        )
+
+      const generatedUrls =
+        Array.isArray(visual.urls)
+          ? visual.urls
+          : []
+
+      setMediaUrls(
+        generatedUrls,
       )
+
+      /*
+       * Pour un Reel, on génère
+       * automatiquement une vidéo
+       * à partir du visuel.
+       */
+      if (
+        type === "reel" &&
+        generatedUrls[0]
+      ) {
+        await generateReelFromVisual(
+          generatedUrls[0],
+          generated.script || "",
+        )
+      } else {
+        notify(
+          "Contenu et visuels générés avec succès.",
+        )
+      }
     } catch (err) {
       const message =
         err instanceof Error
@@ -337,75 +927,29 @@ export default function SocialStudio({
           : "Impossible de générer le contenu."
 
       setError(message)
+
       notify(message)
     } finally {
       setLoading(false)
     }
   }
 
-  async function generateVisual() {
-    if (!topic.trim() && !caption.trim()) {
+  async function regenerateVisuals() {
+    if (
+      !caption.trim() &&
+      !topic.trim()
+    ) {
       notify(
-        "Indique un sujet ou génère d'abord une légende.",
+        "Ajoute un sujet ou une légende avant de générer un visuel.",
       )
+
       return
     }
 
     try {
-      setGeneratingVisual(true)
+      setLoading(true)
+
       setError("")
-
-      if (type === "carousel") {
-        const slideList =
-          slides.length > 0
-            ? slides
-            : [caption]
-
-        const generatedImages: string[] = []
-
-        for (
-          let index = 0;
-          index < slideList.length;
-          index += 1
-        ) {
-          const data =
-            await apiRequest(
-              "generate_visual",
-              {
-                type: "carousel",
-                topic,
-                caption:
-                  slideList[index],
-                slide:
-                  index + 1,
-                total:
-                  slideList.length,
-              },
-            )
-
-          if (data.url) {
-            generatedImages.push(
-              data.url,
-            )
-          }
-        }
-
-        setImages(generatedImages)
-
-        notify(
-          `${generatedImages.length} visuel${
-            generatedImages.length > 1
-              ? "s"
-              : ""
-          } généré${
-            generatedImages.length > 1
-              ? "s"
-              : ""
-          }.`,
-        )
-
-        return
-      }
 
       const data =
         await apiRequest(
@@ -414,14 +958,35 @@ export default function SocialStudio({
             type,
             topic,
             caption,
+            slides,
           },
         )
 
-      if (data.url) {
-        setImage(data.url)
-      }
+      const urls =
+        Array.isArray(data.urls)
+          ? data.urls
+          : []
 
-      notify("Visuel généré.")
+      setMediaUrls(urls)
+
+      /*
+       * Si c'est un Reel,
+       * on régénère aussi automatiquement
+       * la vidéo.
+       */
+      if (
+        type === "reel" &&
+        urls[0]
+      ) {
+        await generateReelFromVisual(
+          urls[0],
+          script,
+        )
+      } else {
+        notify(
+          "Visuel(s) régénéré(s).",
+        )
+      }
     } catch (err) {
       const message =
         err instanceof Error
@@ -429,51 +994,319 @@ export default function SocialStudio({
           : "Impossible de générer le visuel."
 
       setError(message)
+
       notify(message)
     } finally {
-      setGeneratingVisual(false)
+      setLoading(false)
+    }
+  }
+
+  async function uploadVideoBlob(
+    blob: Blob,
+    extension: string,
+  ) {
+    const form =
+      new FormData()
+
+    const filename =
+      `vitrine-reel-${Date.now()}.${extension}`
+
+    form.append(
+      "action",
+      "upload_media",
+    )
+
+    form.append(
+      "media",
+      blob,
+      filename,
+    )
+
+    const response =
+      await fetch(
+        "/social-api.php",
+        {
+          method: "POST",
+          credentials:
+            "same-origin",
+          body: form,
+        },
+      )
+
+    if (
+      response.status === 401
+    ) {
+      window.location.href =
+        "/grand-plus-admin.php"
+
+      throw new Error(
+        "Session administrateur expirée.",
+      )
+    }
+
+    const data =
+      await response
+        .json()
+        .catch(() => null)
+
+    if (
+      !response.ok ||
+      !data?.success ||
+      !data?.media?.url
+    ) {
+      throw new Error(
+        data?.message ||
+          "Impossible d'envoyer la vidéo au serveur.",
+      )
+    }
+
+    return data.media.url as string
+  }
+
+  async function generateReelFromVisual(
+    imageUrl: string,
+    scriptText: string,
+  ) {
+    try {
+      setGeneratingReel(true)
+
+      setError("")
+
+      notify(
+        "Création automatique du Reel en cours…",
+      )
+
+      const generated =
+        await createReelVideo(
+          imageUrl,
+          scriptText,
+        )
+
+      /*
+       * Si le navigateur produit directement
+       * du MP4, on l'envoie comme tel.
+       *
+       * Si le navigateur produit du WebM,
+       * le serveur actuel ne pourra pas forcément
+       * le publier comme Reel Instagram.
+       */
+      const publicUrl =
+        await uploadVideoBlob(
+          generated.blob,
+          generated.extension,
+        )
+
+      setVideoUrl(
+        publicUrl,
+      )
+
+      notify(
+        generated.extension ===
+          "mp4"
+          ? "Reel MP4 généré et envoyé au serveur."
+          : "Vidéo Reel générée. Le navigateur a produit du WebM ; une conversion MP4 sera nécessaire avant publication Instagram.",
+      )
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Impossible de générer le Reel."
+
+      setError(message)
+
+      notify(message)
+
+      throw err
+    } finally {
+      setGeneratingReel(false)
+    }
+  }
+
+  async function uploadMedia(
+    file: File,
+  ) {
+    try {
+      setUploading(true)
+
+      setError("")
+
+      const form =
+        new FormData()
+
+      form.append(
+        "action",
+        "upload_media",
+      )
+
+      form.append(
+        "media",
+        file,
+      )
+
+      const response =
+        await fetch(
+          "/social-api.php",
+          {
+            method: "POST",
+            credentials:
+              "same-origin",
+            body: form,
+          },
+        )
+
+      if (
+        response.status === 401
+      ) {
+        window.location.href =
+          "/grand-plus-admin.php"
+
+        throw new Error(
+          "Session administrateur expirée.",
+        )
+      }
+
+      const data =
+        await response
+          .json()
+          .catch(() => null)
+
+      if (
+        !response.ok ||
+        !data?.success
+      ) {
+        throw new Error(
+          data?.message ||
+            "Échec de l'envoi du média.",
+        )
+      }
+
+      const media =
+        data.media
+
+      if (
+        media.type ===
+        "video"
+      ) {
+        clearGeneratedVideo()
+
+        setVideoUrl(
+          media.url,
+        )
+
+        notify(
+          "Vidéo ajoutée.",
+        )
+      } else {
+        setMediaUrls(
+          (current) =>
+            type ===
+            "carousel"
+              ? [
+                  ...current,
+                  media.url,
+                ].slice(0, 10)
+              : [media.url],
+        )
+
+        notify(
+          "Visuel ajouté.",
+        )
+
+        /*
+         * Pour un Reel,
+         * une image importée peut servir
+         * de base pour créer automatiquement
+         * une vidéo.
+         */
+        if (
+          type === "reel"
+        ) {
+          await generateReelFromVisual(
+            media.url,
+            script,
+          )
+        }
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Impossible d'importer le média."
+
+      setError(message)
+
+      notify(message)
+    } finally {
+      setUploading(false)
     }
   }
 
   async function saveContent() {
     if (!caption.trim()) {
-      notify("La légende est vide.")
+      notify(
+        "La légende est vide.",
+      )
+
+      return
+    }
+
+    if (
+      type === "reel" &&
+      !videoUrl
+    ) {
+      notify(
+        "Ajoute ou génère une vidéo MP4/MOV pour le Reel avant de l'enregistrer.",
+      )
+
+      return
+    }
+
+    if (
+      (
+        type === "post" ||
+        type === "story"
+      ) &&
+      mediaUrls.length === 0
+    ) {
+      notify(
+        "Ajoute ou génère un visuel avant d'enregistrer.",
+      )
+
+      return
+    }
+
+    if (
+      type === "carousel" &&
+      mediaUrls.length < 2
+    ) {
+      notify(
+        "Un carrousel doit contenir au moins 2 visuels.",
+      )
+
       return
     }
 
     try {
       setSaving(true)
+
       setError("")
 
-      const content: SocialContent = {
-        id:
-          selected?.id ||
-          "",
+      const content = {
+        id: selected?.id,
         type,
         topic,
         objective,
         caption,
         slides,
         script,
-        scheduledAt: scheduledAt
-          ? new Date(
-              scheduledAt,
-            ).toISOString()
-          : undefined,
+        mediaUrls,
+        videoUrl,
+        scheduledAt:
+          scheduledAt ||
+          undefined,
         status: scheduledAt
           ? "scheduled"
-          : selected?.status ===
-            "published"
-          ? "published"
           : "draft",
-        createdAt:
-          selected?.createdAt ||
-          new Date().toISOString(),
-        updatedAt:
-          new Date().toISOString(),
-        image,
-        images,
-        video,
       }
 
       const data =
@@ -485,33 +1318,29 @@ export default function SocialStudio({
         )
 
       const saved =
-        data.content
+        data.content as SocialContent
 
-      if (saved) {
-        setSelected(saved)
+      setSelected(saved)
 
-        setContents((current) => {
-          const exists =
-            current.some(
-              (item) =>
-                item.id === saved.id,
-            )
-
-          if (exists) {
-            return current.map(
-              (item) =>
-                item.id === saved.id
-                  ? saved
-                  : item,
-            )
-          }
-
-          return [
-            saved,
-            ...current,
-          ]
-        })
-      }
+      setContents(
+        (current) =>
+          current.some(
+            (item) =>
+              item.id ===
+              saved.id,
+          )
+            ? current.map(
+                (item) =>
+                  item.id ===
+                  saved.id
+                    ? saved
+                    : item,
+              )
+            : [
+                saved,
+                ...current,
+              ],
+      )
 
       notify(
         scheduledAt
@@ -525,21 +1354,157 @@ export default function SocialStudio({
           : "Impossible d'enregistrer le contenu."
 
       setError(message)
+
       notify(message)
     } finally {
       setSaving(false)
     }
   }
 
+  async function publishInstagram() {
+    if (!caption.trim()) {
+      notify(
+        "La légende est vide.",
+      )
+
+      return
+    }
+
+    if (
+      type === "reel" &&
+      !videoUrl
+    ) {
+      notify(
+        "Ajoute ou génère une vidéo MP4/MOV pour le Reel.",
+      )
+
+      return
+    }
+
+    if (
+      type === "carousel" &&
+      mediaUrls.length < 2
+    ) {
+      notify(
+        "Le carrousel nécessite au moins 2 visuels.",
+      )
+
+      return
+    }
+
+    if (
+      (
+        type === "post" ||
+        type === "story"
+      ) &&
+      mediaUrls.length < 1
+    ) {
+      notify(
+        "Ajoute ou génère un visuel.",
+      )
+
+      return
+    }
+
+    try {
+      setPublishing(true)
+
+      setError("")
+
+      const content = {
+        id:
+          selected?.id ||
+          "",
+        type,
+        topic,
+        objective,
+        caption,
+        slides,
+        script,
+        mediaUrls,
+        videoUrl,
+      }
+
+      const data =
+        await apiRequest(
+          "publish",
+          {
+            id:
+              selected?.id ||
+              "",
+            content,
+          },
+        )
+
+      const now =
+        new Date().toISOString()
+
+      if (
+        selected?.id
+      ) {
+        setSelected(
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  status:
+                    "published",
+                  updatedAt:
+                    now,
+                  instagram:
+                    data.result,
+                }
+              : current,
+        )
+
+        setContents(
+          (current) =>
+            current.map(
+              (item) =>
+                item.id ===
+                selected.id
+                  ? {
+                      ...item,
+                      status:
+                        "published",
+                      updatedAt:
+                        now,
+                      instagram:
+                        data.result,
+                    }
+                  : item,
+            ),
+        )
+      }
+
+      notify(
+        data.message ||
+          "Publication envoyée sur Instagram.",
+      )
+
+      await loadContents()
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Erreur lors de la publication Instagram."
+
+      setError(message)
+
+      notify(message)
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   async function deleteContent(
     content: SocialContent,
   ) {
-    const confirmed =
-      window.confirm(
+    if (
+      !window.confirm(
         "Supprimer définitivement ce contenu ?",
       )
-
-    if (!confirmed) {
+    ) {
       return
     }
 
@@ -551,11 +1516,13 @@ export default function SocialStudio({
         },
       )
 
-      setContents((current) =>
-        current.filter(
-          (item) =>
-            item.id !== content.id,
-        ),
+      setContents(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.id !==
+              content.id,
+          ),
       )
 
       if (
@@ -565,166 +1532,66 @@ export default function SocialStudio({
         resetEditor()
       }
 
-      notify("Contenu supprimé.")
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Impossible de supprimer le contenu."
-
-      notify(message)
-    }
-  }
-
-  async function publishInstagram() {
-    if (!caption.trim()) {
-      notify("La légende est vide.")
-      return
-    }
-
-    if (
-      type === "carousel" &&
-      images.length === 0
-    ) {
       notify(
-        "Génère les visuels du carrousel avant de publier.",
-      )
-      return
-    }
-
-    if (
-      type !== "carousel" &&
-      type !== "reel" &&
-      !image
-    ) {
-      notify(
-        "Génère ou ajoute un visuel avant de publier.",
-      )
-      return
-    }
-
-    if (
-      type === "reel" &&
-      !video
-    ) {
-      notify(
-        "Ajoute une vidéo pour publier le Reel.",
-      )
-      return
-    }
-
-    try {
-      setPublishing(true)
-      setError("")
-
-      const data =
-        await apiRequest(
-          "publish",
-          {
-            id:
-              selected?.id ||
-              "",
-            type,
-            caption,
-            image,
-            images,
-            video,
-            slides,
-            script,
-          },
-        )
-
-      const mediaId =
-        data.media_id ||
-        data.instagramMediaId
-
-      if (selected?.id) {
-        setContents((current) =>
-          current.map(
-            (item) =>
-              item.id ===
-              selected.id
-                ? {
-                    ...item,
-                    status:
-                      "published",
-                    updatedAt:
-                      new Date().toISOString(),
-                    instagramMediaId:
-                      mediaId,
-                  }
-                : item,
-          ),
-        )
-
-        setSelected((current) =>
-          current
-            ? {
-                ...current,
-                status:
-                  "published",
-                updatedAt:
-                  new Date().toISOString(),
-                instagramMediaId:
-                  mediaId,
-              }
-            : current,
-        )
-      }
-
-      notify(
-        data.message ||
-          "Publication envoyée sur Instagram.",
+        "Contenu supprimé.",
       )
     } catch (err) {
-      const message =
+      notify(
         err instanceof Error
           ? err.message
-          : "Erreur lors de la publication Instagram."
-
-      setError(message)
-      notify(message)
-    } finally {
-      setPublishing(false)
+          : "Impossible de supprimer le contenu.",
+      )
     }
   }
 
   function addSlide() {
-    if (slides.length >= 10) {
+    if (
+      slides.length >= 10
+    ) {
       notify(
-        "Instagram autorise au maximum 10 slides.",
+        "Instagram limite les carrousels à 10 éléments.",
       )
+
       return
     }
 
-    setSlides((current) => [
-      ...current,
-      "",
-    ])
-  }
-
-  function updateSlide(
-    index: number,
-    value: string,
-  ) {
-    setSlides((current) =>
-      current.map(
-        (slide, slideIndex) =>
-          slideIndex === index
-            ? value
-            : slide,
-      ),
+    setSlides(
+      (current) => [
+        ...current,
+        "",
+      ],
     )
   }
 
   function removeSlide(
     index: number,
   ) {
-    setSlides((current) =>
-      current.filter(
-        (_, slideIndex) =>
-          slideIndex !== index,
-      ),
+    setSlides(
+      (current) =>
+        current.filter(
+          (_, i) =>
+            i !== index,
+        ),
+    )
+
+    setMediaUrls(
+      (current) =>
+        current.filter(
+          (_, i) =>
+            i !== index,
+        ),
+    )
+  }
+
+  function removeMedia(
+    index: number,
+  ) {
+    setMediaUrls(
+      (current) =>
+        current.filter(
+          (_, i) =>
+            i !== index,
+        ),
     )
   }
 
@@ -738,7 +1605,9 @@ export default function SocialStudio({
         caption,
       )
 
-      notify("Légende copiée.")
+      notify(
+        "Légende copiée.",
+      )
     } catch {
       notify(
         "Impossible de copier la légende.",
@@ -746,15 +1615,9 @@ export default function SocialStudio({
     }
   }
 
-  const selectedType =
-    useMemo(
-      () =>
-        CONTENT_TYPES.find(
-          (item) =>
-            item.value === type,
-        ),
-      [type],
-    )
+  const reelGenerationBusy =
+    generatingReel ||
+    loading
 
   return (
     <div className="space-y-6">
@@ -769,34 +1632,40 @@ export default function SocialStudio({
             Réseaux sociaux
           </h1>
 
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-white/50">
-            Crée, prépare, programme et publie les contenus sociaux de Vitrine+ depuis ton administration.
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-white/50">
+            Crée, génère, programme et publie les contenus Instagram de Vitrine+ depuis une seule interface.
           </p>
         </div>
 
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={loadContents}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10"
+            onClick={() =>
+              void loadContents()
+            }
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white hover:bg-white/10"
           >
             <RefreshCw
-              size={17}
+              size={16}
               className={
-                loading
+                loadingLibrary
                   ? "animate-spin"
                   : ""
               }
             />
+
             Actualiser
           </button>
 
           <button
             type="button"
-            onClick={resetEditor}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10"
+            onClick={
+              resetEditor
+            }
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-white hover:bg-white/10"
           >
             <Plus size={17} />
+
             Nouveau contenu
           </button>
         </div>
@@ -804,14 +1673,15 @@ export default function SocialStudio({
 
       {error && (
         <div className="flex items-start justify-between gap-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          <div>{error}</div>
+          <div>
+            {error}
+          </div>
 
           <button
             type="button"
             onClick={() =>
               setError("")
             }
-            className="shrink-0 text-red-200/60 hover:text-red-100"
           >
             <X size={16} />
           </button>
@@ -820,7 +1690,7 @@ export default function SocialStudio({
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
         <section className="rounded-3xl border border-white/10 bg-[#101010] p-5 shadow-2xl shadow-black/20 lg:p-6">
-          <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="mb-6 flex items-center justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">
                 Création
@@ -832,208 +1702,223 @@ export default function SocialStudio({
             </div>
 
             {selected && (
-              <span
-                className={`rounded-full border px-3 py-1.5 text-xs font-bold ${statusClasses(
-                  selected.status,
-                )}`}
-              >
-                {statusLabel(
-                  selected.status,
-                )}
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/50">
+                Édition
               </span>
             )}
           </div>
 
-          <div>
-            <label className="mb-3 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
-              Format
-            </label>
+          <label className="mb-3 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
+            Format
+          </label>
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {CONTENT_TYPES.map(
-                (item) => {
-                  const Icon =
-                    item.icon
-                  const active =
-                    type ===
-                    item.value
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {CONTENT_TYPES.map(
+              (item) => {
+                const Icon =
+                  item.icon
 
-                  return (
-                    <button
-                      type="button"
-                      key={
-                        item.value
+                const active =
+                  type ===
+                  item.value
+
+                return (
+                  <button
+                    key={
+                      item.value
+                    }
+                    type="button"
+                    onClick={() => {
+                      setType(
+                        item.value,
+                      )
+
+                      if (
+                        item.value !==
+                        "reel"
+                      ) {
+                        clearGeneratedVideo()
                       }
-                      onClick={() =>
-                        setType(
-                          item.value,
-                        )
-                      }
-                      className={`rounded-2xl border p-4 text-left transition ${
+                    }}
+                    className={`rounded-2xl border p-4 text-left transition ${
+                      active
+                        ? "border-[#C8A45D]/50 bg-[#C8A45D]/10"
+                        : "border-white/10 bg-black/20 hover:bg-white/5"
+                    }`}
+                  >
+                    <Icon
+                      size={18}
+                      className={
                         active
-                          ? "border-[#C8A45D]/40 bg-[#C8A45D]/10"
-                          : "border-white/10 bg-white/[0.02] hover:bg-white/5"
-                      }`}
-                    >
-                      <Icon
-                        size={20}
-                        className={
-                          active
-                            ? "text-[#C8A45D]"
-                            : "text-white/50"
-                        }
-                      />
+                          ? "text-[#C8A45D]"
+                          : "text-white/45"
+                      }
+                    />
 
-                      <p className="mt-3 text-sm font-black text-white">
-                        {item.label}
-                      </p>
+                    <div className="mt-3 text-sm font-black text-white">
+                      {
+                        item.label
+                      }
+                    </div>
 
-                      <p className="mt-1 text-xs leading-5 text-white/35">
-                        {
-                          item.description
-                        }
-                      </p>
-                    </button>
-                  )
-                },
-              )}
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-5 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
-                Sujet
-              </label>
-
-              <input
-                value={topic}
-                onChange={(event) =>
-                  setTopic(
-                    event.target.value,
-                  )
-                }
-                placeholder="Ex. 5 erreurs d'un site internet"
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-[#C8A45D]/40"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
-                Objectif
-              </label>
-
-              <div className="relative">
-                <select
-                  value={objective}
-                  onChange={(event) =>
-                    setObjective(
-                      event.target.value,
-                    )
-                  }
-                  className="w-full appearance-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#C8A45D]/40"
-                >
-                  {OBJECTIVES.map(
-                    (item) => (
-                      <option
-                        key={item}
-                        value={item}
-                        className="bg-[#101010]"
-                      >
-                        {item}
-                      </option>
-                    ),
-                  )}
-                </select>
-
-                <ChevronDown
-                  size={17}
-                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/40"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={generateContent}
-              disabled={loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#C8A45D] px-4 py-3 text-sm font-black text-black transition hover:bg-[#d7b76d] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? (
-                <Loader2
-                  size={17}
-                  className="animate-spin"
-                />
-              ) : (
-                <WandSparkles
-                  size={17}
-                />
-              )}
-
-              Générer avec Gemini
-            </button>
-
-            <button
-              type="button"
-              onClick={generateVisual}
-              disabled={
-                generatingVisual
-              }
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#C8A45D]/30 bg-[#C8A45D]/10 px-4 py-3 text-sm font-black text-[#C8A45D] transition hover:bg-[#C8A45D]/15 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {generatingVisual ? (
-                <Loader2
-                  size={17}
-                  className="animate-spin"
-                />
-              ) : (
-                <Sparkles
-                  size={17}
-                />
-              )}
-
-              Générer le visuel
-            </button>
+                    <div className="mt-1 text-[11px] leading-4 text-white/35">
+                      {
+                        item.description
+                      }
+                    </div>
+                  </button>
+                )
+              },
+            )}
           </div>
 
           <div className="mt-6">
+            <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
+              Sujet
+            </label>
+
+            <textarea
+              value={topic}
+              onChange={(event) =>
+                setTopic(
+                  event.target
+                    .value,
+                )
+              }
+              placeholder="Exemple : pourquoi un site professionnel change la perception d'une entreprise..."
+              rows={4}
+              className="w-full resize-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/20 focus:border-[#C8A45D]/50"
+            />
+          </div>
+
+          <div className="mt-5">
+            <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
+              Objectif
+            </label>
+
+            <div className="relative">
+              <select
+                value={
+                  objective
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setObjective(
+                    event.target
+                      .value,
+                  )
+                }
+                className="w-full appearance-none rounded-2xl border border-white/10 bg-black/30 px-4 py-3 pr-10 text-sm text-white outline-none focus:border-[#C8A45D]/50"
+              >
+                {OBJECTIVES.map(
+                  (item) => (
+                    <option
+                      key={item}
+                      value={item}
+                      className="bg-[#101010]"
+                    >
+                      {item}
+                    </option>
+                  ),
+                )}
+              </select>
+
+              <ChevronDown
+                size={17}
+                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/35"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              void generateContent()
+            }
+            disabled={
+              loading ||
+              generatingReel
+            }
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#C8A45D] px-5 py-3.5 text-sm font-black text-black hover:brightness-110 disabled:opacity-50"
+          >
+            {reelGenerationBusy ? (
+              <>
+                <Loader2
+                  size={18}
+                  className="animate-spin"
+                />
+
+                {generatingReel
+                  ? "Création du Reel..."
+                  : "Génération complète..."}
+              </>
+            ) : (
+              <>
+                <WandSparkles
+                  size={18}
+                />
+
+                Générer contenu + visuels
+              </>
+            )}
+          </button>
+
+          <div className="mt-7">
             <div className="mb-2 flex items-center justify-between">
-              <label className="block text-xs font-black uppercase tracking-[0.16em] text-white/45">
+              <label className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
                 Légende Instagram
               </label>
 
               <button
                 type="button"
-                onClick={copyCaption}
+                onClick={() =>
+                  void copyCaption()
+                }
                 disabled={!caption}
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-white/40 hover:text-white disabled:opacity-30"
               >
-                <Copy size={14} />
+                <Copy
+                  size={13}
+                />
+
                 Copier
               </button>
             </div>
 
             <textarea
               value={caption}
-              onChange={(event) =>
+              onChange={(
+                event,
+              ) =>
                 setCaption(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
-              rows={9}
+              rows={11}
               placeholder="La légende générée apparaîtra ici..."
-              className="w-full resize-y rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/20 focus:border-[#C8A45D]/40"
+              className="w-full resize-y rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/20 focus:border-[#C8A45D]/50"
             />
+
+            <div className="mt-2 flex justify-between text-[11px] text-white/25">
+              <span>
+                {caption.length}{" "}
+                caractères
+              </span>
+
+              <span>
+                Instagram · Vitrine+
+              </span>
+            </div>
           </div>
 
           {type ===
             "carousel" && (
-            <div className="mt-6">
+            <div className="mt-7">
               <div className="mb-3 flex items-center justify-between">
                 <label className="text-xs font-black uppercase tracking-[0.16em] text-white/45">
-                  Slides du carrousel
+                  Slides
                 </label>
 
                 <button
@@ -1041,15 +1926,12 @@ export default function SocialStudio({
                   onClick={
                     addSlide
                   }
-                  disabled={
-                    slides.length >=
-                    10
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10 disabled:opacity-30"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-white/60 hover:bg-white/10"
                 >
                   <Plus
-                    size={14}
+                    size={13}
                   />
+
                   Ajouter
                 </button>
               </div>
@@ -1061,45 +1943,63 @@ export default function SocialStudio({
                     index,
                   ) => (
                     <div
-                      key={`${index}-${slide.slice(
-                        0,
-                        10,
-                      )}`}
-                      className="flex gap-3"
+                      key={
+                        index
+                      }
+                      className="rounded-2xl border border-white/10 bg-black/20 p-3"
                     >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#C8A45D]/10 text-sm font-black text-[#C8A45D]">
-                        {index + 1}
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-black text-[#C8A45D]">
+                          Slide{" "}
+                          {index +
+                            1}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeSlide(
+                              index,
+                            )
+                          }
+                          className="text-white/30 hover:text-red-300"
+                        >
+                          <Trash2
+                            size={
+                              14
+                            }
+                          />
+                        </button>
                       </div>
 
                       <textarea
-                        value={slide}
+                        value={
+                          slide
+                        }
                         onChange={(
                           event,
                         ) =>
-                          updateSlide(
-                            index,
-                            event
-                              .target
-                              .value,
+                          setSlides(
+                            (
+                              current,
+                            ) =>
+                              current.map(
+                                (
+                                  value,
+                                  i,
+                                ) =>
+                                  i ===
+                                  index
+                                    ? event
+                                        .target
+                                        .value
+                                    : value,
+                              ),
                           )
                         }
                         rows={3}
-                        className="min-w-0 flex-1 resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#C8A45D]/40"
+                        className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm leading-5 text-white outline-none focus:border-[#C8A45D]/40"
                       />
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeSlide(
-                            index,
-                          )
-                        }
-                        className="self-start rounded-xl p-2 text-white/30 hover:bg-red-500/10 hover:text-red-300"
-                      >
-                        <Trash2
-                          size={16}
-                        />
-                      </button>
                     </div>
                   ),
                 )}
@@ -1107,76 +2007,216 @@ export default function SocialStudio({
                 {slides.length ===
                   0 && (
                   <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-white/30">
-                    Génère le contenu ou ajoute tes slides manuellement.
+                    Les slides générées apparaîtront ici.
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {type === "reel" && (
-            <div className="mt-6">
-              <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
-                Script du Reel
-              </label>
+          {type ===
+            "reel" && (
+            <div className="mt-7 space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <label className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-white/45">
+                  Script du Reel
+                </label>
 
-              <textarea
-                value={script}
-                onChange={(event) =>
-                  setScript(
-                    event.target.value,
-                  )
-                }
-                rows={9}
-                placeholder="Le script généré par Gemini apparaîtra ici..."
-                className="w-full resize-y rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/20 focus:border-[#C8A45D]/40"
-              />
+                <textarea
+                  value={script}
+                  onChange={(
+                    event,
+                  ) =>
+                    setScript(
+                      event.target
+                        .value,
+                    )
+                  }
+                  rows={10}
+                  placeholder="Script généré par l’IA..."
+                  className="w-full resize-y rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/20 focus:border-[#C8A45D]/50"
+                />
+
+                <p className="mt-2 text-[11px] leading-5 text-white/30">
+                  Le Social Studio peut créer automatiquement une vidéo verticale à partir du visuel et du script. Pour une publication Instagram fiable, la vidéo finale doit être en MP4/MOV accepté par Instagram.
+                </p>
+              </div>
+
+              {generatingReel && (
+                <div className="flex items-center gap-3 rounded-2xl border border-[#C8A45D]/20 bg-[#C8A45D]/5 px-4 py-4 text-sm text-white/70">
+                  <Loader2
+                    size={18}
+                    className="animate-spin text-[#C8A45D]"
+                  />
+
+                  Création de la vidéo du Reel…
+                </div>
+              )}
+
+              {videoUrl && (
+                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 px-4 py-3">
+                  <div className="flex items-center gap-2 text-sm font-bold text-emerald-300">
+                    <Check
+                      size={17}
+                    />
+
+                    Vidéo du Reel prête
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2">
-            <div>
-              <label className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/45">
+          <div className="mt-7 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-[#C8A45D]/10 p-2 text-[#C8A45D]">
                 <CalendarClock
-                  size={14}
+                  size={18}
                 />
-                Programmation
-              </label>
+              </div>
 
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(event) =>
-                  setScheduledAt(
-                    event.target
-                      .value,
-                  )
-                }
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#C8A45D]/40"
-              />
-            </div>
+              <div>
+                <div className="text-sm font-black text-white">
+                  Programmer
+                </div>
 
-            <div className="flex items-end">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-xs leading-5 text-white/35">
-                {scheduledAt
-                  ? `Publication prévue le ${formatDate(
-                      new Date(
-                        scheduledAt,
-                      ).toISOString(),
-                    )}`
-                  : "Sans date : le contenu sera enregistré comme brouillon."}
+                <div className="mt-1 text-xs leading-5 text-white/35">
+                  Le serveur publiera automatiquement à cette date/heure si le cron Vitrine+ est actif.
+                </div>
               </div>
             </div>
+
+            <input
+              type="datetime-local"
+              value={
+                scheduledAt
+              }
+              onChange={(
+                event,
+              ) =>
+                setScheduledAt(
+                  event.target
+                    .value,
+                )
+              }
+              className="mt-4 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none focus:border-[#C8A45D]/50"
+            />
+
+            {scheduledAt && (
+              <button
+                type="button"
+                onClick={() =>
+                  setScheduledAt(
+                    "",
+                  )
+                }
+                className="mt-2 text-xs font-bold text-white/35 hover:text-white"
+              >
+                Annuler la programmation
+              </button>
+            )}
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3 border-t border-white/10 pt-6">
+          <div className="mt-6 flex flex-wrap gap-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm font-black text-white hover:bg-white/10">
+              <Upload
+                size={17}
+              />
+
+              {uploading
+                ? "Envoi..."
+                : type ===
+                    "reel"
+                  ? "Importer une vidéo"
+                  : "Importer un visuel"}
+
+              <input
+                type="file"
+                accept={
+                  type ===
+                  "reel"
+                    ? "video/mp4,video/quicktime,image/jpeg,image/jpg"
+                    : "image/jpeg,image/jpg"
+                }
+                className="hidden"
+                disabled={
+                  uploading ||
+                  generatingReel
+                }
+                onChange={(
+                  event,
+                ) => {
+                  const file =
+                    event
+                      .target
+                      .files?.[0]
+
+                  if (file) {
+                    void uploadMedia(
+                      file,
+                    )
+                  }
+
+                  event.currentTarget.value =
+                    ""
+                }}
+              />
+            </label>
+
             <button
               type="button"
-              onClick={
-                saveContent
+              onClick={() =>
+                void regenerateVisuals()
               }
-              disabled={saving}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-white transition hover:bg-white/10 disabled:opacity-50"
+              disabled={
+                loading ||
+                generatingReel
+              }
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm font-black text-white hover:bg-white/10 disabled:opacity-40"
+            >
+              <Sparkles
+                size={17}
+              />
+
+              Régénérer visuel(s)
+            </button>
+
+            {type ===
+              "reel" &&
+              mediaUrls[0] &&
+              !videoUrl &&
+              !generatingReel && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void generateReelFromVisual(
+                      mediaUrls[0],
+                      script,
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-2xl border border-[#C8A45D]/30 bg-[#C8A45D]/10 px-4 py-3.5 text-sm font-black text-[#C8A45D] hover:bg-[#C8A45D]/20"
+                >
+                  <Film
+                    size={17}
+                  />
+
+                  Créer le Reel
+                </button>
+              )}
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() =>
+                void saveContent()
+              }
+              disabled={
+                saving ||
+                !caption.trim() ||
+                generatingReel
+              }
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm font-black text-white hover:bg-white/10 disabled:opacity-40"
             >
               {saving ? (
                 <Loader2
@@ -1188,18 +2228,23 @@ export default function SocialStudio({
                   size={17}
                 />
               )}
-              Enregistrer
+
+              {scheduledAt
+                ? "Programmer"
+                : "Enregistrer"}
             </button>
 
             <button
               type="button"
-              onClick={
-                publishInstagram
+              onClick={() =>
+                void publishInstagram()
               }
               disabled={
-                publishing
+                publishing ||
+                !caption.trim() ||
+                generatingReel
               }
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#C8A45D] px-5 py-3 text-sm font-black text-black transition hover:bg-[#d7b76d] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#C8A45D] px-4 py-3.5 text-sm font-black text-black hover:brightness-110 disabled:opacity-40"
             >
               {publishing ? (
                 <>
@@ -1207,6 +2252,7 @@ export default function SocialStudio({
                     size={17}
                     className="animate-spin"
                   />
+
                   Publication...
                 </>
               ) : (
@@ -1214,6 +2260,7 @@ export default function SocialStudio({
                   <Send
                     size={17}
                   />
+
                   Publier sur Instagram
                 </>
               )}
@@ -1222,7 +2269,7 @@ export default function SocialStudio({
         </section>
 
         <aside className="space-y-6">
-          <section className="rounded-3xl border border-white/10 bg-[#101010] p-5 shadow-2xl shadow-black/20">
+          <section className="rounded-3xl border border-white/10 bg-[#101010] p-5">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-white/35">
@@ -1234,19 +2281,20 @@ export default function SocialStudio({
                 </h2>
               </div>
 
-              {selectedType && (
-                <div className="flex items-center gap-2 text-xs font-bold text-white/40">
-                  <selectedType.icon
-                    size={16}
-                  />
-                  {
-                    selectedType.label
-                  }
-                </div>
-              )}
+              <Instagram
+                size={20}
+                className="text-[#C8A45D]"
+              />
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
+            <div
+              className={`overflow-hidden rounded-2xl border border-white/10 bg-black ${
+                type === "story" ||
+                type === "reel"
+                  ? "mx-auto max-w-[280px]"
+                  : ""
+              }`}
+            >
               <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#C8A45D] text-xs font-black text-black">
                   V+
@@ -1267,55 +2315,55 @@ export default function SocialStudio({
                 </div>
               </div>
 
-              <div className="flex aspect-square items-center justify-center overflow-hidden bg-gradient-to-br from-[#171717] via-[#0b0b0b] to-[#1a1a1a]">
+              <div
+                className={`${
+                  type ===
+                    "story" ||
+                  type ===
+                    "reel"
+                    ? "aspect-[9/16]"
+                    : "aspect-square"
+                } flex items-center justify-center overflow-hidden bg-[#080808]`}
+              >
                 {type ===
-                  "carousel" &&
-                images.length >
-                  0 ? (
-                  <img
-                    src={images[0]}
-                    alt=""
+                  "reel" &&
+                videoUrl ? (
+                  <video
+                    src={
+                      videoUrl
+                    }
+                    controls
+                    playsInline
                     className="h-full w-full object-cover"
                   />
-                ) : image ? (
+                ) : mediaUrls[0] ? (
                   <img
-                    src={image}
-                    alt=""
+                    src={
+                      mediaUrls[0]
+                    }
+                    alt="Aperçu Vitrine+"
                     className="h-full w-full object-cover"
                   />
-                ) : type ===
-                  "reel" ? (
-                  <div className="text-center">
-                    <Film
-                      size={36}
-                      className="mx-auto text-[#C8A45D]"
-                    />
-
-                    <p className="mt-3 text-sm font-black text-white">
-                      Reel Vitrine+
-                    </p>
-                  </div>
-                ) : type ===
-                  "story" ? (
-                  <div className="text-center">
-                    <Instagram
-                      size={36}
-                      className="mx-auto text-[#C8A45D]"
-                    />
-
-                    <p className="mt-3 text-sm font-black text-white">
-                      Story Vitrine+
-                    </p>
-                  </div>
                 ) : (
-                  <div className="text-center">
-                    <ImageIcon
-                      size={36}
-                      className="mx-auto text-[#C8A45D]"
-                    />
+                  <div className="px-8 text-center text-white/20">
+                    {type ===
+                    "reel" ? (
+                      <Play
+                        size={40}
+                        className="mx-auto"
+                      />
+                    ) : (
+                      <ImageIcon
+                        size={40}
+                        className="mx-auto"
+                      />
+                    )}
 
-                    <p className="mt-3 text-sm font-black text-white">
-                      Visuel Vitrine+
+                    <p className="mt-3 text-sm">
+                      {
+                        selectedType?.label ||
+                        "Publication"
+                      }
                     </p>
                   </div>
                 )}
@@ -1323,9 +2371,18 @@ export default function SocialStudio({
 
               <div className="p-4">
                 <div className="mb-3 flex items-center gap-4 text-white">
-                  <span>♡</span>
-                  <span>◯</span>
-                  <span>➤</span>
+                  <span>
+                    ♡
+                  </span>
+
+                  <span>
+                    ◯
+                  </span>
+
+                  <span>
+                    ➤
+                  </span>
+
                   <span className="ml-auto">
                     ⌑
                   </span>
@@ -1340,32 +2397,102 @@ export default function SocialStudio({
                 </div>
               </div>
             </div>
-
-            <div className="mt-4 flex items-center gap-2 text-[11px] text-white/25">
-              <Check size={13} />
-              Aperçu indicatif
-            </div>
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-[#101010] p-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-[#C8A45D]/10 p-2 text-[#C8A45D]">
-                <Sparkles
-                  size={18}
+          {type ===
+            "carousel" &&
+            mediaUrls.length >
+              0 && (
+              <section className="rounded-3xl border border-white/10 bg-[#101010] p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-sm font-black text-white">
+                    Visuels du carrousel
+                  </h3>
+
+                  <span className="text-xs text-white/35">
+                    {
+                      mediaUrls.length
+                    }
+                    /10
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {mediaUrls.map(
+                    (
+                      url,
+                      index,
+                    ) => (
+                      <div
+                        key={
+                          url +
+                          index
+                        }
+                        className="relative overflow-hidden rounded-xl border border-white/10"
+                      >
+                        <img
+                          src={url}
+                          alt={`Slide ${
+                            index +
+                            1
+                          }`}
+                          className="aspect-square w-full object-cover"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeMedia(
+                              index,
+                            )
+                          }
+                          className="absolute right-2 top-2 rounded-lg bg-black/70 p-1.5 text-white/70 hover:text-red-300"
+                        >
+                          <Trash2
+                            size={
+                              13
+                            }
+                          />
+                        </button>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
+
+          {type ===
+            "reel" &&
+            videoUrl && (
+              <section className="rounded-3xl border border-white/10 bg-[#101010] p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-sm font-black text-white">
+                    Vidéo du Reel
+                  </h3>
+
+                  <Film
+                    size={18}
+                    className="text-[#C8A45D]"
+                  />
+                </div>
+
+                <video
+                  src={videoUrl}
+                  controls
+                  playsInline
+                  className="mx-auto max-h-[520px] rounded-2xl"
                 />
-              </div>
 
-              <div>
-                <h3 className="text-sm font-black text-white">
-                  Social Studio
-                </h3>
+                <div className="mt-3 flex items-center gap-2 text-[11px] text-white/30">
+                  <Check
+                    size={13}
+                    className="text-emerald-400"
+                  />
 
-                <p className="mt-1 text-xs leading-5 text-white/35">
-                  Gemini génère les idées, légendes et scripts. Les visuels sont ensuite préparés pour Instagram.
-                </p>
-              </div>
-            </div>
-          </section>
+                  Vidéo hébergée sur Vitrine+
+                </div>
+              </section>
+            )}
 
           <section className="rounded-3xl border border-white/10 bg-[#101010] p-5">
             <div className="mb-4 flex items-center justify-between">
@@ -1379,121 +2506,84 @@ export default function SocialStudio({
                 </h2>
               </div>
 
-              <MessageSquareText
-                size={19}
-                className="text-[#C8A45D]"
-              />
+              <span className="text-xs text-white/30">
+                {
+                  contents.length
+                }
+              </span>
             </div>
 
-            <div className="space-y-2">
-              {contents.length ===
-                0 ? (
-                <div className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-white/30">
-                  Aucun contenu enregistré.
-                </div>
-              ) : (
-                contents.map(
-                  (content) => (
+            {contents.length ===
+            0 ? (
+              <div className="py-8 text-center text-sm text-white/25">
+                Aucun contenu enregistré.
+              </div>
+            ) : (
+              <div className="max-h-[520px] space-y-2 overflow-auto pr-1">
+                {contents.map(
+                  (
+                    content,
+                  ) => (
                     <div
                       key={
                         content.id
                       }
-                      className="group rounded-2xl border border-white/10 bg-white/[0.02] p-3 transition hover:bg-white/5"
+                      className="group rounded-2xl border border-white/10 bg-black/20 p-3"
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          loadContent(
-                            content,
-                          )
-                        }
-                        className="w-full text-left"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#C8A45D]/10 text-[#C8A45D]">
-                            {content.type ===
-                            "carousel" ? (
-                              <Copy
-                                size={
-                                  16
-                                }
-                              />
-                            ) : content.type ===
-                              "reel" ? (
-                              <Film
-                                size={
-                                  16
-                                }
-                              />
-                            ) : content.type ===
-                              "story" ? (
-                              <Instagram
-                                size={
-                                  16
-                                }
-                              />
-                            ) : (
-                              <ImageIcon
-                                size={
-                                  16
-                                }
-                              />
-                            )}
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="truncate text-xs font-black text-white">
-                                {
-                                  content.topic ||
-                                  "Sans sujet"
-                                }
-                              </p>
-
-                              <span
-                                className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold ${statusClasses(
-                                  content.status,
-                                )}`}
-                              >
-                                {statusLabel(
-                                  content.status,
-                                )}
-                              </span>
-                            </div>
-
-                            <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-white/35">
-                              {
-                                content.caption
-                              }
-                            </p>
-
-                            {content.scheduledAt && (
-                              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-blue-300/60">
-                                <Clock3
-                                  size={
-                                    12
-                                  }
-                                />
-                                {
-                                  formatDate(
-                                    content.scheduledAt,
-                                  )
-                                }
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-
-                      <div className="mt-2 flex justify-end opacity-0 transition group-hover:opacity-100">
+                      <div className="flex items-start gap-3">
                         <button
                           type="button"
                           onClick={() =>
-                            deleteContent(
+                            loadIntoEditor(
                               content,
                             )
                           }
-                          className="rounded-lg p-1.5 text-white/25 hover:bg-red-500/10 hover:text-red-300"
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`rounded-full border px-2 py-1 text-[10px] font-black ${statusClasses(
+                                content.status,
+                              )}`}
+                            >
+                              {statusLabel(
+                                content.status,
+                              )}
+                            </span>
+
+                            <span className="text-[10px] uppercase text-white/25">
+                              {
+                                content.type
+                              }
+                            </span>
+                          </div>
+
+                          <div className="mt-2 truncate text-sm font-bold text-white">
+                            {content.title ||
+                              content.topic ||
+                              "Sans titre"}
+                          </div>
+
+                          <div className="mt-1 text-[11px] text-white/30">
+                            {content.scheduledAt
+                              ? formatDate(
+                                  content.scheduledAt,
+                                )
+                              : formatDate(
+                                  content.updatedAt ||
+                                    content.createdAt,
+                                )}
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void deleteContent(
+                              content,
+                            )
+                          }
+                          className="rounded-lg p-2 text-white/20 hover:bg-red-500/10 hover:text-red-300"
                         >
                           <Trash2
                             size={
@@ -1502,13 +2592,29 @@ export default function SocialStudio({
                           />
                         </button>
                       </div>
+
+                      {content.status ===
+                        "scheduled_error" &&
+                        content.publishError && (
+                          <div className="mt-2 rounded-xl bg-red-500/5 p-2 text-[11px] leading-4 text-red-300">
+                            {
+                              content.publishError
+                            }
+                          </div>
+                        )}
                     </div>
                   ),
-                )
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </section>
         </aside>
+      </div>
+
+      <div className="flex items-center gap-2 text-[11px] text-white/25">
+        <Check size={13} />
+
+        Social Studio Vitrine+ · Instagram Content Publishing · génération IA Gemini sans appel payant.
       </div>
     </div>
   )
