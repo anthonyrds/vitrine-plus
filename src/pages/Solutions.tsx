@@ -10,10 +10,17 @@ import CTA from "../components/CTA";
 import SEO from "../components/SEO";
 import SectionLabel from "../components/SectionLabel";
 
+
+import {
+  useOctobreRoseActive,
+  applyOctoberRoseDiscount,
+} from "../lib/seasonalPromo";
+
 const plans = [
   {
     name: "START",
     price: "790 €",
+    numericPrice: 790,
     target: "Pour professionnaliser votre présence.",
     result: "Être clair, crédible et correctement présent en ligne.",
     items: [
@@ -27,6 +34,7 @@ const plans = [
   {
     name: "GROW",
     price: "1 990 €",
+    numericPrice: 1990,
     target: "Pour faire du digital un levier d’acquisition.",
     result: "Transformer votre site en outil commercial.",
     featured: true,
@@ -42,6 +50,7 @@ const plans = [
   {
     name: "SCALE",
     price: "3 990 €",
+    numericPrice: 3990,
     target: "Pour construire un écosystème digital avancé.",
     result: "Connecter visibilité, contenu, automatisation et acquisition.",
     items: [
@@ -80,7 +89,7 @@ const faqs: [string, string][] = [
   ],
   [
     "Combien coûte la création d’un site internet avec Vitrine+ ?",
-    "Les solutions Vitrine+ démarrent à 790 €. Le prix exact dépend du périmètre, du niveau de personnalisation, des fonctionnalités et de l’accompagnement nécessaires.",
+    "Les solutions Vitrine+ démarrent à 790 € hors promotion. Pendant l’offre Octobre Rose, une remise de 20 % s’applique aux solutions digitales jusqu’au 31 octobre 2026 inclus. Le prix exact dépend du périmètre, du niveau de personnalisation, des fonctionnalités et de l’accompagnement nécessaires.",
   ],
   [
     "Le SEO est-il inclus dans les solutions ?",
@@ -101,6 +110,7 @@ const faqs: [string, string][] = [
 ];
 
 export default function Solutions() {
+   const octoberRoseActive = useOctobreRoseActive();
   return (
     <>
       <SEO
@@ -128,6 +138,14 @@ export default function Solutions() {
         }
         text="Choisissez le niveau d’accompagnement qui correspond à votre étape. Le périmètre est ensuite ajusté à votre entreprise."
       />
+
+      {octoberRoseActive && (
+        <div className="mx-6 mb-10 rounded-3xl border border-[#e9a0b7] bg-[#fff1f5] px-6 py-5 text-center sm:mx-8">
+          <p className="text-xs font-extrabold uppercase tracking-[.2em] text-[#c21850]">Octobre Rose 2026</p>
+          <p className="mt-2 text-2xl font-extrabold text-[#171014] sm:text-3xl">-20 % sur toutes nos solutions digitales</p>
+          <p className="mt-2 text-sm text-black/60">Offre valable jusqu’au 31 octobre 2026 inclus.</p>
+        </div>
+      )}
 
       <section
         aria-labelledby="solutions-principales"
@@ -175,8 +193,16 @@ export default function Solutions() {
                 </p>
 
                 <h3 className="display mt-6 text-5xl font-extrabold">
-                  {plan.price}
+                  {octoberRoseActive
+                    ? `${applyOctoberRoseDiscount(plan.numericPrice).toLocaleString("fr-FR")} €`
+                    : plan.price}
                 </h3>
+                {octoberRoseActive && (
+                  <p className={`mt-1 text-sm ${plan.featured ? "text-white/45" : "text-black/40"}`}>
+                    <span className="line-through">{plan.price}</span>
+                    <span className="ml-2 font-bold text-[#c21850]">−20 %</span>
+                  </p>
+                )}
 
                 <p
                   className={`mt-4 font-semibold ${

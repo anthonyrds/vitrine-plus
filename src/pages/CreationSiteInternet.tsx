@@ -67,7 +67,7 @@ const websiteTypes = [
 const faqs = [
   [
     "Combien coûte la création d'un site internet ?",
-    "Chez Vitrine+, les solutions de création commencent à 790 €. Le tarif dépend du niveau de personnalisation, du nombre de pages, du contenu, des fonctionnalités et de l'accompagnement nécessaires.",
+    "Chez Vitrine+, les solutions de création commencent à 790 € hors promotion. Pendant Octobre Rose, profitez de -20 % jusqu'au 31 octobre 2026 inclus. Le tarif dépend du niveau de personnalisation, du nombre de pages, du contenu, des fonctionnalités et de l'accompagnement nécessaires.",
   ],
   [
     "Combien de temps faut-il pour créer un site internet ?",

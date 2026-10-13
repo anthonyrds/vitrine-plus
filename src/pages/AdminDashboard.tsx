@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import SocialStudio from "../components/SocialStudio"
-
 
 import {
   Activity,
+  ArrowLeft,
   BarChart3,
   CalendarDays,
+  Check,
   ChevronRight,
   CircleDollarSign,
-  Clock3,
+  FileSearch,
   Gift,
-  Instagram,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -24,6 +23,30 @@ import {
   Users,
   X,
 } from "lucide-react";
+
+/* ================================================================
+   CONSTANTES
+================================================================ */
+
+const statuses = [
+  ["new", "Nouveau"],
+  ["contacted", "Contacté"],
+  ["qualified", "Qualifié"],
+  ["meeting", "Rendez-vous"],
+  ["proposal", "Proposition"],
+  ["negotiation", "Négociation"],
+  ["won", "Gagné"],
+  ["lost", "Perdu"],
+] as const;
+
+const offers = [
+  "START",
+  "GROW",
+  "SCALE",
+  "V+ Care",
+  "V+ Growth",
+  "V+ Performance",
+];
 
 /* ================================================================
    TYPES
@@ -74,33 +97,21 @@ type Prospect = {
   next_action_at: string;
 
   notes: string;
+
   interactions: Interaction[];
 };
 
 type Booking = {
-  reference: string;
-  created_at: string;
-  date: string;
-  time: string;
-  duration?: number;
-
-  name: string;
-  phone: string;
-  company: string;
-  email?: string;
-  reason: string;
-
-  status: string;
-};
-
-type AvailabilityBlock = {
-  id: string;
-  date: string;
-  all_day: boolean;
-  start_time: string | null;
-  end_time: string | null;
-  reason: string;
+  reference?: string;
   created_at?: string;
+  name?: string;
+  company?: string;
+  phone?: string;
+  email?: string;
+  date?: string;
+  time?: string;
+  reason?: string;
+  status?: string;
 };
 
 type GrandPlusParticipant = {
@@ -119,26 +130,30 @@ type GrandPlusParticipant = {
 };
 
 type Data = {
-  success: boolean;
-  generated_at: string;
+  success?: boolean;
 
-  stats: Record<string, number>;
+  stats: {
+    prospects: number;
+    new: number;
+    qualified: number;
+    meetings: number;
+    won: number;
+    lost: number;
+    signed_revenue: number;
+    potential_revenue: number;
+    today_actions: number;
+    overdue_actions: number;
+  };
+
   sources: Record<string, number>;
   pipeline: Record<string, number>;
 
   prospects: Prospect[];
-  bookings: Booking[];
   grand_plus: GrandPlusParticipant[];
+  bookings: Booking[];
 };
 
-/* ================================================================
-   CONSTANTES
-================================================================ */
-
-const EMPTY_DATA: Data = {
-  success: true,
-  generated_at: "",
-
+const emptyData: Data = {
   stats: {
     prospects: 0,
     new: 0,
@@ -150,47 +165,27 @@ const EMPTY_DATA: Data = {
     potential_revenue: 0,
     today_actions: 0,
     overdue_actions: 0,
-    upcoming_bookings: 0,
-    confirmed_bookings: 0,
   },
 
   sources: {},
   pipeline: {},
-
   prospects: [],
-  bookings: [],
   grand_plus: [],
+  bookings: [],
 };
 
-const STATUSES = [
-  "new",
-  "contacted",
-  "qualified",
-  "meeting",
-  "proposal",
-  "negotiation",
-  "won",
-  "lost",
-];
+/* ================================================================
+   STYLES BOUTONS
+================================================================ */
 
-const STATUS_LABEL: Record<string, string> = {
-  new: "Nouveau",
-  contacted: "Contacté",
-  qualified: "Qualifié",
-  meeting: "Rendez-vous",
-  proposal: "Proposition",
-  negotiation: "Négociation",
-  won: "Gagné",
-  lost: "Perdu",
-};
+const buttonDark =
+  "inline-flex items-center justify-center gap-2 rounded-full !bg-[#080808] !text-white font-bold transition-all duration-200 hover:!bg-[#1a1a1a] disabled:cursor-not-allowed disabled:opacity-40";
 
-const SOURCE_LABEL: Record<string, string> = {
-  booking: "Rendez-vous",
-  audit: "Audit",
-  contact: "Contact",
-  "grand-plus": "Grand+",
-  manual: "Manuel",
-};
+const buttonLight =
+  "inline-flex items-center justify-center gap-2 rounded-full !border !border-black/10 !bg-white !text-[#080808] font-bold transition-all duration-200 hover:!border-black/20 hover:!bg-[#f5f5f3] disabled:cursor-not-allowed disabled:opacity-40";
+
+const buttonGold =
+  "inline-flex items-center justify-center gap-2 rounded-full !bg-[#c8a45d] !text-[#080808] font-bold transition-all duration-200 hover:!bg-[#d5b873] disabled:cursor-not-allowed disabled:opacity-40";
 
 /* ================================================================
    HELPERS
@@ -201,15 +196,13 @@ function euro(value: number) {
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: 0,
-  }).format(Number(value) || 0);
+  }).format(value || 0);
 }
 
-function frDate(value: string) {
+function dateFr(value: string) {
   if (!value) return "—";
 
-  const date = new Date(
-    value.includes("T") ? value : `${value}T12:00:00`,
-  );
+  const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -222,7 +215,7 @@ function frDate(value: string) {
   });
 }
 
-function frDateTime(value: string) {
+function dateTimeFr(value: string) {
   if (!value) return "—";
 
   const date = new Date(value);
@@ -240,28 +233,57 @@ function frDateTime(value: string) {
   });
 }
 
+function sourceLabel(source: string) {
+  switch (source) {
+    case "grand-plus":
+      return "Grand+";
+
+    case "audit":
+      return "Audit";
+
+    case "booking":
+      return "Rendez-vous";
+
+    case "contact":
+      return "Contact";
+
+    default:
+      return "Manuel";
+  }
+}
+
+function statusLabel(status: string) {
+  return (
+    statuses.find(([key]) => key === status)?.[1] ??
+    status
+  );
+}
+
 function statusClass(status: string) {
   switch (status) {
     case "won":
-      return "bg-emerald-100 text-emerald-700";
+      return "!bg-emerald-100 !text-emerald-700";
 
     case "lost":
-      return "bg-red-100 text-red-700";
+      return "!bg-red-100 !text-red-700";
 
     case "meeting":
-      return "bg-blue-100 text-blue-700";
+      return "!bg-blue-100 !text-blue-700";
 
     case "proposal":
-      return "bg-purple-100 text-purple-700";
+      return "!bg-purple-100 !text-purple-700";
 
     case "negotiation":
-      return "bg-orange-100 text-orange-700";
+      return "!bg-orange-100 !text-orange-700";
 
     case "qualified":
-      return "bg-[#c8a45d]/20 text-[#85671f]";
+      return "!bg-[#c8a45d]/20 !text-[#8a6a25]";
+
+    case "contacted":
+      return "!bg-slate-100 !text-slate-700";
 
     default:
-      return "bg-black/5 text-black/60";
+      return "!bg-black/5 !text-black/60";
   }
 }
 
@@ -272,117 +294,52 @@ function StatusBadge({
 }) {
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.1em] ${statusClass(
+      className={`inline-flex rounded-full px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] ${statusClass(
         status,
       )}`}
     >
-      {STATUS_LABEL[status] ?? status}
+      {statusLabel(status)}
     </span>
   );
 }
 
 /* ================================================================
-   STYLES ADMIN
-================================================================ */
-
-function AdminButtonStyles() {
-  return (
-    <style>
-      {`
-        .vplus-admin,
-        .vplus-admin button,
-        .vplus-admin input,
-        .vplus-admin select,
-        .vplus-admin textarea {
-          font-family: inherit;
-        }
-
-        .vplus-admin button {
-          color: inherit !important;
-        }
-
-        .vplus-admin .admin-white-button {
-          color: #080808 !important;
-          background: #ffffff !important;
-        }
-
-        .vplus-admin .admin-dark-button {
-          color: #ffffff !important;
-          background: #080808 !important;
-        }
-
-        .vplus-admin .admin-gold-button {
-          color: #080808 !important;
-          background: #c8a45d !important;
-        }
-
-        .vplus-admin .admin-danger-button {
-          color: #dc2626 !important;
-          background: #ffffff !important;
-        }
-
-        .vplus-admin .admin-sidebar-button {
-          color: rgba(255,255,255,.65) !important;
-        }
-
-        .vplus-admin .admin-sidebar-button-active {
-          color: #080808 !important;
-          background: #c8a45d !important;
-        }
-
-        .vplus-admin a {
-          color: inherit;
-        }
-
-        .vplus-admin input::placeholder,
-        .vplus-admin textarea::placeholder {
-          color: rgba(0,0,0,.35);
-        }
-      `}
-    </style>
-  );
-}
-
-/* ================================================================
-   COMPONENT PRINCIPAL
+   COMPOSANT PRINCIPAL
 ================================================================ */
 
 export default function AdminDashboard() {
-  const [data, setData] = useState<Data>(EMPTY_DATA);
+  const [data, setData] =
+    useState<Data>(emptyData);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [section, setSection] = useState("dashboard");
+  const [section, setSection] =
+    useState("dashboard");
 
   const [selected, setSelected] =
     useState<Prospect | null>(null);
 
-  const [query, setQuery] = useState("");
-  const [source, setSource] = useState("all");
-  const [status, setStatus] = useState("all");
+  const [query, setQuery] =
+    useState("");
 
-  const [toast, setToast] = useState("");
+  const [sourceFilter, setSourceFilter] =
+    useState("all");
 
-  const [newOpen, setNewOpen] = useState(false);
+  const [statusFilter, setStatusFilter] =
+    useState("all");
 
-  const [mobile, setMobile] = useState(false);
+  const [mobileMenu, setMobileMenu] =
+    useState(false);
 
-  const [blocks, setBlocks] =
-    useState<AvailabilityBlock[]>([]);
+  const [toast, setToast] =
+    useState("");
 
-  const [blockDate, setBlockDate] = useState("");
-
-  const [allDay, setAllDay] = useState(true);
-
-  const [start, setStart] = useState("09:00");
-
-  const [end, setEnd] = useState("18:00");
-
-  const [reason, setReason] =
-    useState("Indisponible");
+  const [newProspect, setNewProspect] =
+    useState(false);
 
   /* ==============================================================
-     CHARGEMENT CRM
+     CHARGEMENT
   ============================================================== */
 
   async function load() {
@@ -400,6 +357,7 @@ export default function AdminDashboard() {
       if (response.status === 401) {
         window.location.href =
           "/grand-plus-admin.php";
+
         return;
       }
 
@@ -408,7 +366,7 @@ export default function AdminDashboard() {
       if (!response.ok || !json.success) {
         throw new Error(
           json.message ||
-            "Impossible de charger l'administration.",
+            "Impossible de charger le CRM.",
         );
       }
 
@@ -416,8 +374,8 @@ export default function AdminDashboard() {
 
       if (selected) {
         const refreshed =
-          (json.prospects as Prospect[]).find(
-            (prospect) =>
+          json.prospects.find(
+            (prospect: Prospect) =>
               prospect.id === selected.id,
           ) ?? null;
 
@@ -434,54 +392,15 @@ export default function AdminDashboard() {
     }
   }
 
-  /* ==============================================================
-     CHARGEMENT DISPONIBILITÉS
-  ============================================================== */
-
-  async function loadBlocks() {
-    try {
-      const response = await fetch(
-        `/availability.php?action=list&ts=${Date.now()}`,
-        {
-          cache: "no-store",
-          credentials: "same-origin",
-        },
-      );
-
-      if (response.status === 401) {
-        window.location.href =
-          "/grand-plus-admin.php";
-        return;
-      }
-
-      const json = await response.json();
-
-      if (!response.ok || !json.success) {
-        throw new Error(
-          json.message ||
-            "Impossible de charger les disponibilités.",
-        );
-      }
-
-      setBlocks(
-        Array.isArray(json.blocks)
-          ? json.blocks
-          : [],
-      );
-    } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Erreur de chargement.",
-      );
-    }
-  }
+  useEffect(() => {
+    load();
+  }, []);
 
   /* ==============================================================
-     API CRM
+     ACTION API
   ============================================================== */
 
-  async function api(
+  async function action(
     payload: Record<string, unknown>,
   ) {
     const response = await fetch(
@@ -500,6 +419,7 @@ export default function AdminDashboard() {
     if (response.status === 401) {
       window.location.href =
         "/grand-plus-admin.php";
+
       return;
     }
 
@@ -518,70 +438,11 @@ export default function AdminDashboard() {
   }
 
   /* ==============================================================
-     API DISPONIBILITÉS
-  ============================================================== */
-
-  async function availability(
-    payload: Record<string, unknown>,
-  ) {
-    const response = await fetch(
-      "/availability.php",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-        credentials: "same-origin",
-        body: JSON.stringify(payload),
-      },
-    );
-
-    if (response.status === 401) {
-      window.location.href =
-        "/grand-plus-admin.php";
-      return;
-    }
-
-    const json = await response.json();
-
-    if (!response.ok || !json.success) {
-      throw new Error(
-        json.message ||
-          "Action impossible.",
-      );
-    }
-
-    setBlocks(
-      Array.isArray(json.blocks)
-        ? json.blocks
-        : [],
-    );
-  }
-
-  useEffect(() => {
-    load();
-    loadBlocks();
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-
-    const timer = window.setTimeout(
-      () => setToast(""),
-      3500,
-    );
-
-    return () =>
-      window.clearTimeout(timer);
-  }, [toast]);
-
-  /* ==============================================================
      FILTRES
   ============================================================== */
 
   const filtered = useMemo(() => {
-    const q =
+    const normalizedQuery =
       query.trim().toLowerCase();
 
     return data.prospects.filter(
@@ -592,23 +453,26 @@ export default function AdminDashboard() {
           prospect.email,
           prospect.phone,
           prospect.website,
-          prospect.source,
           prospect.sector,
-          prospect.reason,
         ]
           .join(" ")
           .toLowerCase();
 
         const matchesQuery =
-          !q || haystack.includes(q);
+          !normalizedQuery ||
+          haystack.includes(
+            normalizedQuery,
+          );
 
         const matchesSource =
-          source === "all" ||
-          prospect.source === source;
+          sourceFilter === "all" ||
+          prospect.source ===
+            sourceFilter;
 
         const matchesStatus =
-          status === "all" ||
-          prospect.status === status;
+          statusFilter === "all" ||
+          prospect.status ===
+            statusFilter;
 
         return (
           matchesQuery &&
@@ -620,23 +484,43 @@ export default function AdminDashboard() {
   }, [
     data.prospects,
     query,
-    source,
-    status,
+    sourceFilter,
+    statusFilter,
   ]);
 
-  const upcoming = useMemo(() => {
-    return [...data.bookings]
-      .filter(
-        (booking) =>
-          booking.status !==
-          "cancelled",
-      )
+  /* ==============================================================
+     RELANCES
+  ============================================================== */
+
+  const today = new Date()
+    .toISOString()
+    .slice(0, 10);
+
+  const urgent =
+    data.prospects
+      .filter((prospect) => {
+        if (
+          !prospect.next_action_at ||
+          ["won", "lost"].includes(
+            prospect.status,
+          )
+        ) {
+          return false;
+        }
+
+        return (
+          prospect.next_action_at ===
+            today ||
+          prospect.next_action_at <
+            today
+        );
+      })
       .sort((a, b) =>
-        `${a.date} ${a.time}`.localeCompare(
-          `${b.date} ${b.time}`,
+        a.next_action_at.localeCompare(
+          b.next_action_at,
         ),
-      );
-  }, [data.bookings]);
+      )
+      .slice(0, 8);
 
   /* ==============================================================
      NAVIGATION
@@ -664,16 +548,6 @@ export default function AdminDashboard() {
       CalendarDays,
     ],
     [
-      "availability",
-      "Disponibilités",
-      Clock3,
-    ],
-    [
-    "social",
-    "Réseaux sociaux",
-    Instagram,
-  ],
-    [
       "grand-plus",
       "Grand+",
       Gift,
@@ -685,151 +559,10 @@ export default function AdminDashboard() {
     ],
   ] as const;
 
-  function navigate(
-    sectionName: string,
-  ) {
-    setSection(sectionName);
+  function navigate(name: string) {
+    setSection(name);
     setSelected(null);
-    setMobile(false);
-  }
-
-  /* ==============================================================
-     PROSPECT
-  ============================================================== */
-
-  async function saveProspect(
-    payload: Record<string, unknown>,
-  ) {
-    if (!selected) return;
-
-    try {
-      await api({
-        action: "update_prospect",
-        id: selected.id,
-        ...payload,
-      });
-
-      setToast(
-        "Prospect enregistré.",
-      );
-    } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Erreur.",
-      );
-    }
-  }
-
-  async function addInteraction(
-    text: string,
-    type: string,
-  ) {
-    if (!selected) return;
-
-    try {
-      await api({
-        action: "add_interaction",
-        id: selected.id,
-        text,
-        type,
-      });
-
-      setToast(
-        "Interaction ajoutée.",
-      );
-    } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Erreur.",
-      );
-    }
-  }
-
-  async function deleteProspect(
-    id: string,
-  ) {
-    const confirmed =
-      window.confirm(
-        "Supprimer définitivement ce prospect ?\n\nCette action supprimera également sa donnée source si elle provient d'un formulaire du site.\n\nCette action est irréversible.",
-      );
-
-    if (!confirmed) return;
-
-    try {
-      await api({
-        action: "delete_prospect",
-        id,
-      });
-
-      setSelected(null);
-
-      setToast(
-        "Prospect supprimé.",
-      );
-    } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Erreur.",
-      );
-    }
-  }
-
-  /* ==============================================================
-     RENDEZ-VOUS
-  ============================================================== */
-
-  async function updateBooking(
-    reference: string,
-    newStatus: string,
-  ) {
-    try {
-      await api({
-        action: "update_booking",
-        reference,
-        status: newStatus,
-      });
-
-      setToast(
-        "Rendez-vous mis à jour.",
-      );
-    } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Erreur.",
-      );
-    }
-  }
-
-  async function deleteBooking(
-    reference: string,
-  ) {
-    const confirmed =
-      window.confirm(
-        "Supprimer définitivement ce rendez-vous ?\n\nCette action est irréversible.",
-      );
-
-    if (!confirmed) return;
-
-    try {
-      await api({
-        action: "delete_booking",
-        reference,
-      });
-
-      setToast(
-        "Rendez-vous supprimé.",
-      );
-    } catch (error) {
-      setToast(
-        error instanceof Error
-          ? error.message
-          : "Erreur.",
-      );
-    }
+    setMobileMenu(false);
   }
 
   /* ==============================================================
@@ -837,188 +570,216 @@ export default function AdminDashboard() {
   ============================================================== */
 
   return (
-    <div className="vplus-admin min-h-screen bg-[#f4f4f1] text-[#080808]">
-      <AdminButtonStyles />
+    <div className="min-h-screen !bg-[#f5f5f3] !text-[#080808]">
+      {/* =========================================================
+          SIDEBAR
+      ========================================================= */}
 
-      {/* HEADER */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-[270px] border-r border-white/10 !bg-[#080808] !text-white transition-transform duration-300 ${
+          mobileMenu
+            ? "translate-x-0"
+            : "-translate-x-full lg:translate-x-0"
+        }`}
+      >
+        <div className="flex h-full flex-col p-5">
+          <div className="flex items-center justify-between px-2 py-3">
+            <div className="text-2xl font-black tracking-[-0.06em] !text-white">
+              Vitrine
+              <span className="!text-[#c8a45d]">
+                +
+              </span>
+            </div>
 
-      <header className="sticky top-0 z-30 border-b border-black/10 bg-[#f4f4f1]/95 backdrop-blur">
-        <div className="flex h-16 items-center justify-between px-5 lg:px-8">
-          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() =>
-                setMobile(true)
+                setMobileMenu(false)
               }
-              className="admin-white-button inline-flex items-center justify-center rounded-full border border-black/10 p-2 lg:hidden"
+              className="!inline-flex !items-center !justify-center !rounded-full !border-0 !bg-white/10 !p-2 !text-white hover:!bg-white/20 lg:hidden"
             >
-              <Menu size={18} />
+              <X size={20} />
             </button>
-
-            <div>
-              <div className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-black/35">
-                Vitrine+
-              </div>
-
-              <div className="font-extrabold">
-                Administration commerciale
-              </div>
-            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                load();
-                loadBlocks();
-              }}
-              className="admin-white-button hidden rounded-full border border-black/10 px-4 py-2 text-xs font-bold sm:inline-flex"
+          <div className="mt-8 px-2 text-[10px] font-bold uppercase tracking-[0.24em] !text-white/30">
+            Cockpit commercial
+          </div>
+
+          <nav className="mt-3 grid gap-1">
+            {menu.map(
+              ([key, label, Icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() =>
+                    navigate(key)
+                  }
+                  className={`flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left text-sm font-semibold transition ${
+                    section === key
+                      ? "!bg-white !text-[#080808]"
+                      : "!text-white/55 hover:!bg-white/5 hover:!text-white"
+                  }`}
+                >
+                  <Icon size={18} />
+                  {label}
+                </button>
+              ),
+            )}
+          </nav>
+
+          <div className="mt-auto grid gap-2 border-t border-white/10 pt-5">
+            <a
+              href="/"
+              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold !text-white/55 hover:!bg-white/5 hover:!text-white"
             >
-              Actualiser
-            </button>
+              <ArrowLeft size={18} />
+              Retour au site
+            </a>
 
             <a
-              href="/vitrine.fr/admin/logout.php"
-              className="admin-white-button inline-flex rounded-full border border-black/10 p-2"
+              href="/grand-plus-admin.php"
+              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold !text-white/55 hover:!bg-white/5 hover:!text-white"
             >
-              <LogOut size={16} />
+              <Gift size={18} />
+              Administration Grand+
+            </a>
+
+            <a
+              href="/grand-plus-admin.php?logout=1"
+              className="flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold !text-white/55 hover:!bg-white/5 hover:!text-white"
+            >
+              <LogOut size={18} />
+              Déconnexion
             </a>
           </div>
         </div>
-      </header>
+      </aside>
 
-      <div className="flex">
-        {/* SIDEBAR */}
+      {/* =========================================================
+          MAIN
+      ========================================================= */}
 
-        <aside
-          className={`${
-            mobile
-              ? "fixed inset-0 z-50"
-              : "hidden"
-          } w-72 shrink-0 border-r border-black/10 bg-[#080808] text-white lg:sticky lg:top-16 lg:block lg:h-[calc(100vh-4rem)]`}
-        >
-          <div className="flex h-full flex-col p-4">
-            <div className="mb-6 flex items-center justify-between px-3 pt-2">
-              <span className="text-xs font-extrabold uppercase tracking-[0.25em] text-white/40">
-                V+ Admin
-              </span>
+      <main className="min-h-screen lg:ml-[270px]">
+        <header className="sticky top-0 z-40 border-b border-black/10 !bg-[#f5f5f3]/90 backdrop-blur-xl">
+          <div className="flex h-[74px] items-center justify-between px-5 sm:px-8 lg:px-10">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setMobileMenu(true)
+                }
+                className="!inline-flex !items-center !justify-center !rounded-xl !border !border-black/10 !bg-white !p-2 !text-[#080808] lg:hidden"
+              >
+                <Menu size={20} />
+              </button>
+
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.24em] !text-black/35">
+                  Administration privée
+                </div>
+
+                <div className="mt-1 text-lg font-extrabold tracking-[-0.03em] !text-[#080808]">
+                  {section ===
+                  "dashboard"
+                    ? "Vue d'ensemble"
+                    : section ===
+                        "grand-plus"
+                      ? "Le Grand+"
+                      : section ===
+                          "stats"
+                        ? "Statistiques"
+                        : section ===
+                            "calendar"
+                          ? "Rendez-vous"
+                          : section ===
+                              "pipeline"
+                            ? "Pipeline commercial"
+                            : "Prospects"}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={load}
+                className={`${buttonLight} hidden px-4 py-2 text-xs sm:inline-flex`}
+              >
+                Actualiser
+              </button>
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-full !bg-[#080808] text-xs font-black !text-[#c8a45d]">
+                V+
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+          {toast && (
+            <div className="mb-5 flex items-center justify-between rounded-2xl border border-[#c8a45d]/30 !bg-[#c8a45d]/10 px-4 py-3 text-sm font-semibold !text-[#080808]">
+              <span>{toast}</span>
 
               <button
                 type="button"
                 onClick={() =>
-                  setMobile(false)
+                  setToast("")
                 }
-                className="text-white lg:hidden"
+                className="!inline-flex !items-center !justify-center !border-0 !bg-transparent !p-1 !text-[#080808]"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
+          )}
 
-            <nav className="space-y-1">
-              {menu.map(
-                ([
-                  key,
-                  label,
-                  Icon,
-                ]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() =>
-                      navigate(key)
-                    }
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${
-                      section === key
-                        ? "admin-sidebar-button-active"
-                        : "admin-sidebar-button hover:bg-white/5 hover:text-white"
-                    }`}
-                  >
-                    <Icon size={17} />
-
-                    <span>{label}</span>
-
-                    {key ===
-                      "calendar" &&
-                    data.stats
-                      .upcoming_bookings >
-                      0 ? (
-                      <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px]">
-                        {
-                          data.stats
-                            .upcoming_bookings
-                        }
-                      </span>
-                    ) : null}
-                  </button>
-                ),
-              )}
-            </nav>
-
-            <div className="mt-auto rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-xs text-white/45">
-              Les données sont lues
-              directement depuis les
-              fichiers réels du site.
-
-              <br />
-
-              <span className="text-white/70">
-                Dernière synchro :{" "}
-                {data.generated_at
-                  ? frDateTime(
-                      data.generated_at,
-                    )
-                  : "—"}
-              </span>
-            </div>
-          </div>
-        </aside>
-
-        {/* MAIN */}
-
-        <main className="min-w-0 flex-1 p-5 lg:p-8">
           {loading ? (
-            <div className="flex min-h-[60vh] items-center justify-center">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-[#c8a45d]" />
+            <div className="flex min-h-[50vh] items-center justify-center">
+              <div className="h-7 w-7 animate-spin rounded-full border-2 border-black/10 border-t-[#c8a45d]" />
             </div>
           ) : section ===
             "dashboard" ? (
             <Dashboard
               data={data}
-              onNavigate={navigate}
+              urgent={urgent}
               onOpen={setSelected}
+              onNavigate={navigate}
             />
           ) : section ===
             "prospects" ? (
             <Prospects
-              prospects={filtered}
+              data={data}
+              filtered={filtered}
               query={query}
               setQuery={setQuery}
-              source={source}
-              setSource={setSource}
-              status={status}
-              setStatus={setStatus}
+              source={sourceFilter}
+              setSource={
+                setSourceFilter
+              }
+              status={statusFilter}
+              setStatus={
+                setStatusFilter
+              }
               onOpen={setSelected}
               onNew={() =>
-                setNewOpen(true)
+                setNewProspect(true)
               }
             />
           ) : section ===
             "pipeline" ? (
             <Pipeline
-              prospects={data.prospects}
+              data={data}
               onOpen={setSelected}
               onMove={async (
                 id,
-                newStatus,
+                status,
               ) => {
                 try {
-                  await api({
+                  await action({
                     action:
                       "update_prospect",
                     id,
-                    status:
-                      newStatus,
+                    status,
                   });
 
                   setToast(
@@ -1029,7 +790,7 @@ export default function AdminDashboard() {
                     error instanceof
                       Error
                       ? error.message
-                      : "Erreur.",
+                      : "Erreur",
                   );
                 }
               }}
@@ -1037,129 +798,24 @@ export default function AdminDashboard() {
           ) : section ===
             "calendar" ? (
             <Calendar
-              bookings={upcoming}
-              onStatus={updateBooking}
-              onDelete={deleteBooking}
+              data={data}
+              onOpen={setSelected}
             />
-          ) : section ===
-            "availability" ? (
-            <Availability
-              blocks={blocks}
-              date={blockDate}
-              setDate={setBlockDate}
-              allDay={allDay}
-              setAllDay={setAllDay}
-              start={start}
-              setStart={setStart}
-              end={end}
-              setEnd={setEnd}
-              reason={reason}
-              setReason={setReason}
-              onAdd={async () => {
-                if (!blockDate) {
-                  setToast(
-                    "Choisissez une date.",
-                  );
-                  return;
-                }
-
-                if (
-                  !allDay &&
-                  start >= end
-                ) {
-                  setToast(
-                    "L'heure de début doit être avant l'heure de fin.",
-                  );
-                  return;
-                }
-
-                try {
-                  await availability(
-                    {
-                      action:
-                        "add_block",
-                      date: blockDate,
-                      all_day: allDay,
-                      start_time:
-                        allDay
-                          ? null
-                          : start,
-                      end_time:
-                        allDay
-                          ? null
-                          : end,
-                      reason:
-                        reason.trim() ||
-                        "Indisponible",
-                    },
-                  );
-
-                  setBlockDate("");
-
-                  setToast(
-                    "Indisponibilité ajoutée.",
-                  );
-                } catch (error) {
-                  setToast(
-                    error instanceof
-                      Error
-                      ? error.message
-                      : "Erreur.",
-                  );
-                }
-              }}
-              onDelete={async (id) => {
-                const confirmed =
-                  window.confirm(
-                    "Supprimer cette indisponibilité ?",
-                  );
-
-                if (!confirmed) {
-                  return;
-                }
-
-                try {
-                  await availability(
-                    {
-                      action:
-                        "delete_block",
-                      id,
-                    },
-                  );
-
-                  setToast(
-                    "Indisponibilité supprimée.",
-                  );
-                } catch (error) {
-                  setToast(
-                    error instanceof
-                      Error
-                      ? error.message
-                      : "Erreur.",
-                  );
-                }
-              }}
-            />
-
-            ) : section ===
-  "social" ? (
-  <SocialStudio
-    onToast={(message) => {
-      setToast(message);
-    }}
-  />
           ) : section ===
             "grand-plus" ? (
-            <GrandPlus
-              data={data.grand_plus}
+            <GrandPlusPanel
+              data={data}
+              onOpen={setSelected}
             />
           ) : (
             <Stats data={data} />
           )}
-        </main>
-      </div>
+        </div>
+      </main>
 
-      {/* FICHE PROSPECT */}
+      {/* =========================================================
+          PROSPECT MODAL
+      ========================================================= */}
 
       {selected && (
         <ProspectModal
@@ -1167,39 +823,87 @@ export default function AdminDashboard() {
           onClose={() =>
             setSelected(null)
           }
-          onSave={saveProspect}
-          onInteraction={
-            addInteraction
-          }
-          onDelete={
-            deleteProspect
-          }
-        />
-      )}
+          onSave={async (payload) => {
+            try {
+              await action({
+                action:
+                  "update_prospect",
+                id: selected.id,
+                ...payload,
+              });
 
-      {/* NOUVEAU PROSPECT */}
+              setToast(
+                "Prospect mis à jour.",
+              );
+            } catch (error) {
+              setToast(
+                error instanceof Error
+                  ? error.message
+                  : "Erreur",
+              );
+            }
+          }}
+          onInteraction={async (
+            text,
+            type,
+          ) => {
+            try {
+              await action({
+                action:
+                  "add_interaction",
+                id: selected.id,
+                text,
+                type,
+              });
 
-      {newOpen && (
-        <NewProspect
-          onClose={() =>
-            setNewOpen(false)
-          }
-          api={api}
-          onCreated={() => {
-            setNewOpen(false);
-            setToast(
-              "Prospect créé.",
-            );
+              setToast(
+                "Interaction ajoutée.",
+              );
+            } catch (error) {
+              setToast(
+                error instanceof Error
+                  ? error.message
+                  : "Erreur",
+              );
+            }
           }}
         />
       )}
 
-      {/* TOAST */}
+      {/* =========================================================
+          NEW PROSPECT
+      ========================================================= */}
 
-      {toast && (
-        <div className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-2xl bg-[#080808] px-5 py-4 text-sm font-bold text-white shadow-2xl">
-          {toast}
-        </div>
+      {newProspect && (
+        <NewProspectModal
+          onClose={() =>
+            setNewProspect(false)
+          }
+          onCreate={async (
+            prospect,
+          ) => {
+            try {
+              await action({
+                action:
+                  "create_prospect",
+                ...prospect,
+              });
+
+              setNewProspect(false);
+              setSection("prospects");
+
+              setToast(
+                "Prospect créé.",
+              );
+            } catch (error) {
+              setToast(
+                error instanceof Error
+                  ? error.message
+                  : "Erreur",
+              );
+            }
+          }}
+        />
       )}
     </div>
   );
@@ -1211,223 +915,357 @@ export default function AdminDashboard() {
 
 function Dashboard({
   data,
-  onNavigate,
+  urgent,
   onOpen,
+  onNavigate,
 }: {
   data: Data;
-  onNavigate: (section: string) => void;
-  onOpen: (prospect: Prospect) => void;
+  urgent: Prospect[];
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
+  onNavigate: (
+    section: string,
+  ) => void;
 }) {
-  const urgent =
-    data.prospects
-      .filter(
-        (prospect) =>
-          prospect.next_action_at &&
-          !["won", "lost"].includes(
-            prospect.status,
-          ),
-      )
-      .sort((a, b) =>
-        a.next_action_at.localeCompare(
-          b.next_action_at,
-        ),
-      )
-      .slice(0, 6);
+  const conversion =
+    data.stats.prospects > 0
+      ? (data.stats.won /
+          data.stats.prospects) *
+        100
+      : 0;
 
   return (
-    <div className="space-y-7">
-      <Title
-        eyebrow="Vue d'ensemble"
-        title="Pilotez Vitrine+ depuis un seul endroit."
-        text="Prospects, rendez-vous, pipeline et Grand+ sont réunis ici."
-      />
+    <div className="grid gap-8">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
+          Vitrine+ / Commercial
+        </div>
+
+        <h1 className="mt-3 text-4xl font-black tracking-[-0.06em] !text-[#080808] sm:text-6xl">
+          Pilotez votre
+          <br />
+          activité.
+        </h1>
+
+        <p className="mt-5 max-w-2xl text-base leading-7 !text-black/50">
+          Un seul cockpit pour
+          suivre vos prospects, vos
+          rendez-vous, votre pipeline
+          et votre chiffre d'affaires.
+        </p>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
+        <MetricCard
           icon={Users}
-          label="Prospects"
+          label="Prospects actifs"
           value={String(
-            data.stats.prospects ?? 0,
+            data.stats.prospects -
+              data.stats.won -
+              data.stats.lost,
           )}
         />
 
-        <Metric
-          icon={CalendarDays}
-          label="RDV à venir"
-          value={String(
-            data.stats
-              .upcoming_bookings ?? 0,
-          )}
-        />
-
-        <Metric
+        <MetricCard
           icon={CircleDollarSign}
           label="CA signé"
           value={euro(
-            data.stats
-              .signed_revenue ?? 0,
+            data.stats.signed_revenue,
           )}
         />
 
-        <Metric
+        <MetricCard
           icon={TrendingUp}
-          label="Potentiel"
+          label="CA potentiel"
           value={euro(
-            data.stats
-              .potential_revenue ?? 0,
+            data.stats.potential_revenue,
           )}
+        />
+
+        <MetricCard
+          icon={Target}
+          label="Conversion"
+          value={`${conversion.toFixed(
+            1,
+          )} %`}
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
-        <Panel
-          title="Prochains rendez-vous"
-          action={
+      <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+                Pipeline
+              </div>
+
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+                Opportunités commerciales
+              </h2>
+            </div>
+
             <button
               type="button"
               onClick={() =>
-                onNavigate("calendar")
+                onNavigate("pipeline")
               }
-              className="admin-white-button inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-extrabold"
+              className={`${buttonLight} px-4 py-2 text-xs`}
             >
-              Tout voir
-              <ChevronRight size={14} />
+              Voir le pipeline
             </button>
-          }
-        >
-          <div className="divide-y divide-black/10">
-            {data.bookings
-              .filter(
-                (booking) =>
-                  booking.status !==
-                  "cancelled",
-              )
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {statuses
               .slice(0, 6)
-              .map((booking) => (
+              .map(([key, label]) => (
                 <div
-                  key={
-                    booking.reference
-                  }
-                  className="flex items-center justify-between gap-4 py-4"
+                  key={key}
+                  className="rounded-2xl !bg-[#f5f5f3] p-4"
                 >
-                  <div>
-                    <div className="font-extrabold">
-                      {booking.name}
-
-                      {booking.company
-                        ? ` · ${booking.company}`
-                        : ""}
-                    </div>
-
-                    <div className="mt-1 text-xs text-black/45">
-                      {frDate(
-                        booking.date,
-                      )}{" "}
-                      à{" "}
-                      {booking.time}{" "}
-                      ·{" "}
-                      {
-                        booking.reference
-                      }
-                    </div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+                    {label}
                   </div>
 
-                  <StatusBadge
-                    status={
-                      booking.status ===
-                      "confirmed"
-                        ? "meeting"
-                        : "lost"
-                    }
-                  />
+                  <div className="mt-3 text-2xl font-black !text-[#080808]">
+                    {data.pipeline[
+                      key
+                    ] || 0}
+                  </div>
                 </div>
               ))}
-
-            {data.bookings.length ===
-              0 && (
-              <Empty text="Aucun rendez-vous enregistré." />
-            )}
           </div>
-        </Panel>
+        </div>
 
-        <Panel title="Pipeline">
-          <div className="space-y-3">
-            {STATUSES.map(
-              (pipelineStatus) => (
-                <div
-                  key={
-                    pipelineStatus
-                  }
-                  className="flex items-center gap-3"
-                >
-                  <span className="w-24 text-xs font-bold">
-                    {
-                      STATUS_LABEL[
-                        pipelineStatus
-                      ]
+        <div className="rounded-[30px] !bg-[#080808] p-6 !text-white sm:p-8">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-[#c8a45d]">
+            À traiter
+          </div>
+
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-white">
+            Relances
+          </h2>
+
+          <div className="mt-6 grid gap-3">
+            {urgent.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 p-4 text-sm !text-white/45">
+                Aucune relance urgente.
+              </div>
+            ) : (
+              urgent.map(
+                (prospect) => (
+                  <button
+                    type="button"
+                    key={prospect.id}
+                    onClick={() =>
+                      onOpen(
+                        prospect,
+                      )
                     }
-                  </span>
+                    className="!flex !w-full !items-start !justify-between !rounded-2xl !border !border-white/10 !bg-white/[0.04] !p-4 !text-left !text-white transition hover:!bg-white/[0.08]"
+                  >
+                    <div>
+                      <div className="font-bold !text-white">
+                        {prospect.company ||
+                          prospect.name}
+                      </div>
 
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-black/5">
-                    <div
-                      className="h-full rounded-full bg-[#c8a45d]"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (data.pipeline[
-                            pipelineStatus
-                          ] ?? 0) * 20,
-                        )}%`,
-                      }}
+                      <div className="mt-1 text-xs !text-white/40">
+                        {prospect.next_action ||
+                          "Relancer le prospect"}
+                      </div>
+                    </div>
+
+                    <ChevronRight
+                      size={17}
+                      className="!text-white/30"
                     />
-                  </div>
-
-                  <b className="w-5 text-right text-xs">
-                    {data.pipeline[
-                      pipelineStatus
-                    ] ?? 0}
-                  </b>
-                </div>
-              ),
+                  </button>
+                ),
+              )
             )}
           </div>
-        </Panel>
+        </div>
       </div>
 
-      <Panel title="Actions commerciales">
-        <div className="grid gap-3 sm:grid-cols-3">
-          {urgent.map((prospect) => (
-            <button
-              key={prospect.id}
-              type="button"
-              onClick={() =>
-                onOpen(prospect)
-              }
-              className="admin-white-button rounded-2xl border border-black/10 p-4 text-left hover:border-[#c8a45d]"
-            >
-              <div className="font-extrabold">
-                {prospect.name ||
-                  "Sans nom"}
-              </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-black/35">
+            Acquisition
+          </div>
 
-              <div className="mt-1 text-xs text-black/45">
-                {prospect.next_action ||
-                  "Action à définir"}
-              </div>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+            D'où viennent vos
+            prospects ?
+          </h2>
 
-              <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-black/35">
-                {frDate(
-                  prospect.next_action_at,
-                )}
-              </div>
-            </button>
-          ))}
+          <div className="mt-8 grid gap-5">
+            {Object.entries(
+              data.sources,
+            )
+              .sort(
+                (a, b) =>
+                  b[1] - a[1],
+              )
+              .map(
+                ([
+                  source,
+                  count,
+                ]) => {
+                  const total =
+                    data.stats
+                      .prospects ||
+                    1;
 
-          {urgent.length === 0 && (
-            <Empty text="Aucune relance urgente." />
-          )}
+                  return (
+                    <div
+                      key={source}
+                    >
+                      <div className="flex justify-between text-sm">
+                        <span className="font-bold !text-[#080808]">
+                          {sourceLabel(
+                            source,
+                          )}
+                        </span>
+
+                        <span className="!text-black/40">
+                          {count} lead
+                          {count >
+                          1
+                            ? "s"
+                            : ""}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 h-2 overflow-hidden rounded-full !bg-black/5">
+                        <div
+                          className="h-full rounded-full !bg-[#080808]"
+                          style={{
+                            width: `${Math.max(
+                              4,
+                              (count /
+                                total) *
+                                100,
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                },
+              )}
+
+            {Object.keys(
+              data.sources,
+            ).length === 0 && (
+              <div className="text-sm !text-black/35">
+                Aucune donnée pour
+                le moment.
+              </div>
+            )}
+          </div>
         </div>
-      </Panel>
+
+        <div className="rounded-[30px] border border-[#c8a45d]/30 !bg-[#080808] p-6 !text-white sm:p-8">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl !bg-[#c8a45d] !text-[#080808]">
+              <Gift size={21} />
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] !text-[#c8a45d]">
+                Acquisition
+              </div>
+
+              <h2 className="mt-1 text-2xl font-black !text-white">
+                Le Grand+
+              </h2>
+            </div>
+          </div>
+
+          <div className="mt-8 grid grid-cols-2 gap-3">
+            <DarkStat
+              label="Participants"
+              value={String(
+                data.grand_plus
+                  .length,
+              )}
+            />
+
+            <DarkStat
+              label="Ce mois"
+              value={String(
+                data.grand_plus.filter(
+                  (item) =>
+                    item.month_key ===
+                    new Date()
+                      .toISOString()
+                      .slice(
+                        0,
+                        7,
+                      ),
+                ).length,
+              )}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              onNavigate(
+                "grand-plus",
+              )
+            }
+            className={`${buttonLight} mt-5 !w-full px-5 py-3 text-sm`}
+          >
+            Voir les participants
+            <ChevronRight
+              size={16}
+            />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <QuickAction
+          icon={Plus}
+          title="Nouveau prospect"
+          text="Ajouter une opportunité manuellement"
+          onClick={() =>
+            onNavigate(
+              "prospects",
+            )
+          }
+        />
+
+        <QuickAction
+          icon={CalendarDays}
+          title="Rendez-vous"
+          text={`${data.stats.meetings} prospect${
+            data.stats.meetings >
+            1
+              ? "s"
+              : ""
+          } actuellement au stade rendez-vous`}
+          onClick={() =>
+            onNavigate(
+              "calendar",
+            )
+          }
+        />
+
+        <QuickAction
+          icon={Activity}
+          title="Relances"
+          text={`${data.stats.today_actions} à traiter aujourd'hui`}
+          onClick={() =>
+            onNavigate(
+              "prospects",
+            )
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -1437,7 +1275,8 @@ function Dashboard({
 ================================================================ */
 
 function Prospects({
-  prospects,
+  data,
+  filtered,
   query,
   setQuery,
   source,
@@ -1447,173 +1286,271 @@ function Prospects({
   onOpen,
   onNew,
 }: {
-  prospects: Prospect[];
+  data: Data;
+  filtered: Prospect[];
   query: string;
-  setQuery: (value: string) => void;
+  setQuery: (
+    value: string,
+  ) => void;
   source: string;
-  setSource: (value: string) => void;
+  setSource: (
+    value: string,
+  ) => void;
   status: string;
-  setStatus: (value: string) => void;
-  onOpen: (prospect: Prospect) => void;
+  setStatus: (
+    value: string,
+  ) => void;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
   onNew: () => void;
 }) {
   return (
-    <div className="space-y-6">
-      <Title
-        eyebrow="CRM"
-        title="Prospects"
-        text="Toutes les sources commerciales dans une même liste."
-        action={
-          <button
-            type="button"
-            onClick={onNew}
-            className="admin-dark-button inline-flex items-center rounded-full px-5 py-3 text-xs font-extrabold"
-          >
-            <Plus
-              size={15}
-              className="mr-2"
-            />
-            Nouveau prospect
-          </button>
-        }
-      />
+    <div className="grid gap-7">
+      <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
+            CRM
+          </div>
 
-      <div className="grid gap-2 md:grid-cols-[1fr_180px_180px]">
-        <div className="relative">
-          <Search
-            size={17}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-black/30"
-          />
+          <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+            Prospects
+          </h1>
 
-          <input
-            value={query}
-            onChange={(event) =>
-              setQuery(
-                event.target.value,
-              )
-            }
-            placeholder="Rechercher…"
-            className="w-full rounded-2xl border border-black/10 bg-white px-11 py-3.5 text-sm text-[#080808] outline-none focus:border-[#c8a45d]"
-          />
+          <p className="mt-3 text-sm !text-black/45">
+            {data.prospects.length}{" "}
+            prospect
+            {data.prospects
+              .length > 1
+              ? "s"
+              : ""}{" "}
+            dans votre base
+            commerciale.
+          </p>
         </div>
 
-        <select
-          value={source}
-          onChange={(event) =>
-            setSource(
-              event.target.value,
-            )
-          }
-          className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-[#080808]"
+        <button
+          type="button"
+          onClick={onNew}
+          className={`${buttonDark} px-5 py-3 text-sm`}
         >
-          <option value="all">
-            Toutes les sources
-          </option>
-
-          {Object.entries(
-            SOURCE_LABEL,
-          ).map(([key, label]) => (
-            <option
-              key={key}
-              value={key}
-            >
-              {label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={status}
-          onChange={(event) =>
-            setStatus(
-              event.target.value,
-            )
-          }
-          className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-[#080808]"
-        >
-          <option value="all">
-            Tous les statuts
-          </option>
-
-          {STATUSES.map(
-            (item) => (
-              <option
-                key={item}
-                value={item}
-              >
-                {STATUS_LABEL[item]}
-              </option>
-            ),
-          )}
-        </select>
+          <Plus size={17} />
+          Nouveau prospect
+        </button>
       </div>
 
-      <div className="overflow-hidden rounded-[1.5rem] border border-black/10 bg-white">
-        <div className="hidden grid-cols-[1.4fr_1fr_1fr_140px] gap-4 border-b border-black/10 bg-black/[0.02] px-5 py-3 text-[10px] font-extrabold uppercase tracking-wider text-black/35 md:grid">
-          <span>Prospect</span>
-          <span>Contact</span>
-          <span>Source</span>
-          <span>Statut</span>
-        </div>
+      <div className="rounded-[28px] border border-black/10 !bg-white p-4">
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+          <div className="flex items-center gap-3 rounded-2xl !bg-[#f5f5f3] px-4">
+            <Search
+              size={17}
+              className="!text-black/30"
+            />
 
-        {prospects.map(
-          (prospect) => (
-            <button
-              key={prospect.id}
-              type="button"
-              onClick={() =>
-                onOpen(prospect)
+            <input
+              value={query}
+              onChange={(event) =>
+                setQuery(
+                  event.target
+                    .value,
+                )
               }
-              className="admin-white-button grid w-full gap-2 border-b border-black/10 px-5 py-4 text-left hover:bg-black/[0.02] md:grid-cols-[1.4fr_1fr_1fr_140px] md:items-center"
-            >
-              <div>
-                <div className="font-extrabold">
-                  {prospect.name ||
-                    "Sans nom"}
-                </div>
+              placeholder="Rechercher un nom, une entreprise, un e-mail..."
+              className="w-full !bg-transparent py-3 text-sm font-medium !text-[#080808] outline-none placeholder:!text-black/30"
+            />
+          </div>
 
-                <div className="text-xs text-black/45">
-                  {prospect.company ||
-                    "Entreprise non renseignée"}
-                </div>
-              </div>
+          <select
+            value={source}
+            onChange={(event) =>
+              setSource(
+                event.target
+                  .value,
+              )
+            }
+            className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
+          >
+            <option value="all">
+              Toutes les sources
+            </option>
 
-              <div className="text-xs text-black/60">
-                {prospect.email ||
-                  prospect.phone ||
-                  "—"}
-              </div>
+            <option value="grand-plus">
+              Grand+
+            </option>
 
-              <div>
-                <span className="text-xs font-bold">
-                  {
-                    SOURCE_LABEL[
-                      prospect.source
-                    ]
-                  }
-                </span>
+            <option value="audit">
+              Audit
+            </option>
 
-                {prospect.booking_reference && (
-                  <div className="mt-1 text-[10px] text-black/35">
-                    {
-                      prospect.booking_reference
-                    }
-                  </div>
-                )}
-              </div>
+            <option value="booking">
+              Rendez-vous
+            </option>
 
-              <StatusBadge
-                status={
-                  prospect.status
-                }
-              />
-            </button>
-          ),
-        )}
+            <option value="contact">
+              Contact
+            </option>
 
-        {prospects.length === 0 && (
-          <Empty text="Aucun prospect ne correspond aux filtres." />
-        )}
+            <option value="manual">
+              Manuel
+            </option>
+          </select>
+
+          <select
+            value={status}
+            onChange={(event) =>
+              setStatus(
+                event.target
+                  .value,
+              )
+            }
+            className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
+          >
+            <option value="all">
+              Tous les statuts
+            </option>
+
+            {statuses.map(
+              ([key, label]) => (
+                <option
+                  key={key}
+                  value={key}
+                >
+                  {label}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[30px] border border-black/10 !bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px]">
+            <thead>
+              <tr className="border-b border-black/10 text-left">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Prospect
+                </th>
+
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Source
+                </th>
+
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Statut
+                </th>
+
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Valeur
+                </th>
+
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Créé
+                </th>
+
+                <th className="px-6 py-4" />
+              </tr>
+            </thead>
+
+            <tbody>
+              {filtered.map(
+                (prospect) => (
+                  <tr
+                    key={prospect.id}
+                    className="border-b border-black/5 transition hover:!bg-[#f8f8f6]"
+                  >
+                    <td className="px-6 py-5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpen(
+                            prospect,
+                          )
+                        }
+                        className="!border-0 !bg-transparent !p-0 !text-left"
+                      >
+                        <div className="font-extrabold !text-[#080808]">
+                          {prospect.company ||
+                            prospect.name}
+                        </div>
+
+                        <div className="mt-1 text-xs !text-black/40">
+                          {
+                            prospect.name
+                          }
+
+                          {prospect.email
+                            ? ` · ${prospect.email}`
+                            : ""}
+                        </div>
+                      </button>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <span className="rounded-full !bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-[#080808]">
+                        {sourceLabel(
+                          prospect.source,
+                        )}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <StatusBadge
+                        status={
+                          prospect.status
+                        }
+                      />
+                    </td>
+
+                    <td className="px-6 py-5 text-sm font-bold !text-[#080808]">
+                      {prospect.estimated_value
+                        ? euro(
+                            prospect.estimated_value,
+                          )
+                        : "—"}
+                    </td>
+
+                    <td className="px-6 py-5 text-sm !text-black/45">
+                      {dateFr(
+                        prospect.created_at,
+                      )}
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpen(
+                            prospect,
+                          )
+                        }
+                        className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808] hover:!bg-[#f5f5f3]"
+                      >
+                        <ChevronRight
+                          size={16}
+                        />
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
+
+              {filtered.length ===
+                0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-6 py-20 text-center text-sm !text-black/35"
+                  >
+                    Aucun prospect ne
+                    correspond à votre
+                    recherche.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1624,471 +1561,300 @@ function Prospects({
 ================================================================ */
 
 function Pipeline({
-  prospects,
+  data,
   onOpen,
   onMove,
 }: {
-  prospects: Prospect[];
-  onOpen: (prospect: Prospect) => void;
+  data: Data;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
   onMove: (
     id: string,
     status: string,
   ) => Promise<void>;
 }) {
   return (
-    <div className="space-y-6">
-      <Title
-        eyebrow="Commercial"
-        title="Pipeline"
-        text="Déplacez chaque opportunité jusqu'à la signature."
-      />
+    <div className="grid gap-7">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
+          CRM
+        </div>
 
-      <div className="flex gap-4 overflow-x-auto pb-3">
-        {STATUSES.map(
-          (pipelineStatus) => (
-            <div
-              key={
-                pipelineStatus
-              }
-              className="min-w-[270px] flex-1 rounded-[1.5rem] border border-black/10 bg-white p-3"
-            >
-              <div className="flex items-center justify-between px-2 py-2">
-                <b>
-                  {
-                    STATUS_LABEL[
-                      pipelineStatus
-                    ]
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+          Pipeline commercial
+        </h1>
+
+        <p className="mt-3 max-w-2xl text-sm leading-6 !text-black/45">
+          Visualisez chaque
+          opportunité de la première
+          prise de contact jusqu'à la
+          signature.
+        </p>
+      </div>
+
+      <div className="overflow-x-auto pb-4">
+        <div className="flex min-w-[1500px] gap-4">
+          {statuses.map(
+            ([status, label]) => {
+              const prospects =
+                data.prospects.filter(
+                  (prospect) =>
+                    prospect.status ===
+                    status,
+                );
+
+              const value =
+                prospects.reduce(
+                  (
+                    sum,
+                    prospect,
+                  ) =>
+                    sum +
+                    Number(
+                      prospect.estimated_value ||
+                        0,
+                    ),
+                  0,
+                );
+
+              return (
+                <div
+                  key={status}
+                  className="flex w-[180px] shrink-0 flex-col rounded-[26px] border border-black/10 !bg-white p-3"
+                  onDragOver={(
+                    event,
+                  ) =>
+                    event.preventDefault()
                   }
-                </b>
+                  onDrop={async (
+                    event,
+                  ) => {
+                    const id =
+                      event.dataTransfer.getData(
+                        "prospect-id",
+                      );
 
-                <span className="rounded-full bg-black/5 px-2 py-1 text-xs">
-                  {
-                    prospects.filter(
-                      (prospect) =>
-                        prospect.status ===
-                        pipelineStatus,
-                    ).length
-                  }
-                </span>
-              </div>
+                    if (id) {
+                      await onMove(
+                        id,
+                        status,
+                      );
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-between px-2 py-2">
+                    <div className="text-xs font-extrabold !text-[#080808]">
+                      {label}
+                    </div>
 
-              <div className="space-y-2">
-                {prospects
-                  .filter(
-                    (prospect) =>
-                      prospect.status ===
-                      pipelineStatus,
-                  )
-                  .map(
-                    (prospect) => (
-                      <div
-                        key={
-                          prospect.id
-                        }
-                        className="rounded-2xl border border-black/10 p-4"
-                      >
+                    <span className="rounded-full !bg-black/5 px-2 py-1 text-[10px] font-bold !text-[#080808]">
+                      {
+                        prospects.length
+                      }
+                    </span>
+                  </div>
+
+                  <div className="px-2 pb-2 text-[10px] font-semibold !text-black/35">
+                    {euro(value)}
+                  </div>
+
+                  <div className="grid min-h-[180px] gap-2">
+                    {prospects.map(
+                      (prospect) => (
                         <button
                           type="button"
+                          key={prospect.id}
+                          draggable
+                          onDragStart={(
+                            event,
+                          ) =>
+                            event.dataTransfer.setData(
+                              "prospect-id",
+                              prospect.id,
+                            )
+                          }
                           onClick={() =>
                             onOpen(
                               prospect,
                             )
                           }
-                          className="admin-white-button w-full rounded-xl p-1 text-left"
+                          className="!block !rounded-2xl !border !border-black/10 !bg-[#f7f7f5] !p-3 !text-left !text-[#080808] transition hover:!border-[#c8a45d]/50 hover:!bg-white"
                         >
-                          <b>
-                            {prospect.name ||
-                              "Sans nom"}
-                          </b>
-
-                          <div className="mt-1 text-xs text-black/45">
+                          <div className="truncate text-sm font-extrabold !text-[#080808]">
                             {prospect.company ||
-                              "—"}
+                              prospect.name}
                           </div>
 
-                          <div className="mt-3 font-extrabold">
-                            {euro(
-                              prospect.estimated_value,
-                            )}
+                          <div className="mt-1 truncate text-[11px] !text-black/40">
+                            {
+                              prospect.name
+                            }
                           </div>
-                        </button>
 
-                        <select
-                          value={
-                            prospect.status
-                          }
-                          onChange={(
-                            event,
-                          ) =>
-                            onMove(
-                              prospect.id,
-                              event.target
-                                .value,
-                            )
-                          }
-                          className="mt-3 w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-[#080808]"
-                        >
-                          {STATUSES.map(
-                            (item) => (
-                              <option
-                                key={item}
-                                value={item}
-                              >
-                                {
-                                  STATUS_LABEL[
-                                    item
-                                  ]
-                                }
-                              </option>
-                            ),
+                          {prospect.estimated_value >
+                            0 && (
+                            <div className="mt-3 text-xs font-bold !text-[#080808]">
+                              {euro(
+                                prospect.estimated_value,
+                              )}
+                            </div>
                           )}
-                        </select>
+
+                          {prospect.next_action && (
+                            <div className="mt-3 border-t border-black/5 pt-2 text-[10px] leading-4 !text-black/40">
+                              {
+                                prospect.next_action
+                              }
+                            </div>
+                          )}
+                        </button>
+                      ),
+                    )}
+
+                    {prospects.length ===
+                      0 && (
+                      <div className="flex items-center justify-center rounded-2xl border border-dashed border-black/10 p-5 text-center text-[10px] font-semibold !text-black/25">
+                        Déposer ici
                       </div>
-                    ),
-                  )}
-              </div>
-            </div>
-          ),
-        )}
+                    )}
+                  </div>
+                </div>
+              );
+            },
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 /* ================================================================
-   CALENDRIER / RENDEZ-VOUS
+   CALENDAR
 ================================================================ */
 
 function Calendar({
-  bookings,
-  onStatus,
-  onDelete,
+  data,
+  onOpen,
 }: {
-  bookings: Booking[];
-  onStatus: (
-    reference: string,
-    status: string,
-  ) => Promise<void>;
-  onDelete: (
-    reference: string,
-  ) => Promise<void>;
+  data: Data;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
 }) {
+  const bookings = [
+    ...data.bookings,
+  ].sort((a, b) =>
+    `${a.date || ""} ${a.time || ""}`.localeCompare(
+      `${b.date || ""} ${b.time || ""}`,
+    ),
+  );
+
   return (
-    <div className="space-y-6">
-      <Title
-        eyebrow="Agenda"
-        title="Rendez-vous"
-        text="Cette vue est alimentée directement par bookings.json, la même source utilisée par le formulaire public."
-      />
+    <div className="grid gap-7">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
+          Agenda
+        </div>
 
-      <div className="space-y-3">
-        {bookings.map(
-          (booking) => (
-            <div
-              key={
-                booking.reference
-              }
-              className="rounded-[1.5rem] border border-black/10 bg-white p-5"
-            >
-              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-                <div className="flex gap-4">
-                  <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-[#080808] text-white">
-                    <span className="text-[10px] font-bold uppercase">
-                      {new Date(
-                        `${booking.date}T12:00:00`,
-                      ).toLocaleDateString(
-                        "fr-FR",
-                        {
-                          weekday:
-                            "short",
-                        },
-                      )}
-                    </span>
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+          Rendez-vous
+        </h1>
+      </div>
 
-                    <b>
-                      {new Date(
-                        `${booking.date}T12:00:00`,
-                      ).getDate()}
-                    </b>
+      <div className="grid gap-3">
+        {bookings.length === 0 ? (
+          <div className="rounded-[30px] border border-black/10 !bg-white p-16 text-center text-sm !text-black/35">
+            Aucun rendez-vous
+            enregistré.
+          </div>
+        ) : (
+          bookings.map(
+            (booking, index) => {
+              const matchingProspect =
+                data.prospects.find(
+                  (prospect) =>
+                    prospect.booking_reference ===
+                      booking.reference ||
+                    (prospect.name ===
+                      booking.name &&
+                      prospect.phone ===
+                        booking.phone),
+                );
+
+              return (
+                <button
+                  type="button"
+                  key={
+                    booking.reference ||
+                    `${booking.name}-${index}`
+                  }
+                  onClick={() => {
+                    if (
+                      matchingProspect
+                    ) {
+                      onOpen(
+                        matchingProspect,
+                      );
+                    }
+                  }}
+                  className="grid gap-5 !rounded-[28px] !border !border-black/10 !bg-white !p-5 !text-left !text-[#080808] transition hover:!border-[#c8a45d]/50 sm:grid-cols-[150px_1fr_auto] sm:items-center sm:!p-6"
+                >
+                  <div>
+                    <div className="text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+                      {booking.time ||
+                        "—"}
+                    </div>
+
+                    <div className="mt-1 text-xs font-bold !text-black/35">
+                      {booking.date ||
+                        "—"}
+                    </div>
                   </div>
 
                   <div>
-                    <div className="font-extrabold">
+                    <div className="font-extrabold !text-[#080808]">
+                      {booking.company ||
+                        booking.name ||
+                        "Sans nom"}
+                    </div>
+
+                    <div className="mt-1 text-sm !text-black/45">
                       {
                         booking.name
                       }
 
-                      {booking.company
-                        ? ` · ${booking.company}`
-                        : ""}
-                    </div>
-
-                    <div className="mt-1 text-sm text-black/55">
-                      {frDate(
-                        booking.date,
-                      )}{" "}
-                      ·{" "}
-                      <b>
-                        {
-                          booking.time
-                        }
-                      </b>{" "}
-                      ·{" "}
-                      {
-                        booking.reference
-                      }
-                    </div>
-
-                    <div className="mt-2 text-xs text-black/45">
-                      {
-                        booking.phone
-                      }
-
-                      {booking.email
-                        ? ` · ${booking.email}`
+                      {booking.phone
+                        ? ` · ${booking.phone}`
                         : ""}
                     </div>
 
                     {booking.reason && (
-                      <div className="mt-2 text-sm text-black/65">
+                      <div className="mt-3 text-xs leading-5 !text-black/40">
                         {
                           booking.reason
                         }
                       </div>
                     )}
                   </div>
-                </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={
-                      booking.status
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      onStatus(
-                        booking.reference,
-                        event.target
-                          .value,
-                      )
-                    }
-                    className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-bold text-[#080808]"
-                  >
-                    <option value="confirmed">
-                      Confirmé
-                    </option>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full !bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-emerald-700">
+                      {booking.status ||
+                        "confirmé"}
+                    </span>
 
-                    <option value="cancelled">
-                      Annulé
-                    </option>
-
-                    <option value="done">
-                      Terminé
-                    </option>
-
-                    <option value="no_show">
-                      Absent
-                    </option>
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onDelete(
-                        booking.reference,
-                      )
-                    }
-                    className="admin-danger-button rounded-full border border-red-200 px-4 py-2 text-xs font-bold"
-                  >
-                    Supprimer
-                  </button>
-                </div>
-              </div>
-            </div>
-          ),
-        )}
-
-        {bookings.length === 0 && (
-          <Empty text="Aucun rendez-vous enregistré." />
+                    <ChevronRight
+                      size={17}
+                      className="!text-black/25"
+                    />
+                  </div>
+                </button>
+              );
+            },
+          )
         )}
       </div>
-    </div>
-  );
-}
-
-/* ================================================================
-   DISPONIBILITÉS
-================================================================ */
-
-function Availability({
-  blocks,
-  date,
-  setDate,
-  allDay,
-  setAllDay,
-  start,
-  setStart,
-  end,
-  setEnd,
-  reason,
-  setReason,
-  onAdd,
-  onDelete,
-}: {
-  blocks: AvailabilityBlock[];
-  date: string;
-  setDate: (value: string) => void;
-  allDay: boolean;
-  setAllDay: (value: boolean) => void;
-  start: string;
-  setStart: (value: string) => void;
-  end: string;
-  setEnd: (value: string) => void;
-  reason: string;
-  setReason: (value: string) => void;
-  onAdd: () => Promise<void>;
-  onDelete: (
-    id: string,
-  ) => Promise<void>;
-}) {
-  const sortedBlocks =
-    [...blocks].sort(
-      (a, b) =>
-        `${a.date}${a.start_time ?? ""}`.localeCompare(
-          `${b.date}${b.start_time ?? ""}`,
-        ),
-    );
-
-  return (
-    <div className="space-y-6">
-      <Title
-        eyebrow="Agenda"
-        title="Disponibilités"
-        text="Bloquez une journée ou une plage horaire. Le formulaire public respecte immédiatement ces blocages."
-      />
-
-      <Panel title="Ajouter une indisponibilité">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <input
-            type="date"
-            value={date}
-            onChange={(event) =>
-              setDate(
-                event.target.value,
-              )
-            }
-            className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
-          />
-
-          <label className="flex items-center gap-2 rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-bold text-[#080808]">
-            <input
-              type="checkbox"
-              checked={allDay}
-              onChange={(event) =>
-                setAllDay(
-                  event.target
-                    .checked,
-                )
-              }
-            />
-
-            Journée entière
-          </label>
-
-          {!allDay && (
-            <>
-              <input
-                type="time"
-                value={start}
-                onChange={(event) =>
-                  setStart(
-                    event.target
-                      .value,
-                  )
-                }
-                className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
-              />
-
-              <input
-                type="time"
-                value={end}
-                onChange={(event) =>
-                  setEnd(
-                    event.target
-                      .value,
-                  )
-                }
-                className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
-              />
-            </>
-          )}
-
-          <input
-            value={reason}
-            onChange={(event) =>
-              setReason(
-                event.target.value,
-              )
-            }
-            placeholder="Motif"
-            className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#080808]"
-          />
-
-          <button
-            type="button"
-            onClick={onAdd}
-            className="admin-dark-button rounded-full px-5 py-3 text-sm font-extrabold"
-          >
-            Bloquer
-          </button>
-        </div>
-      </Panel>
-
-      <Panel title="Blocages actuels">
-        <div className="space-y-2">
-          {sortedBlocks.map(
-            (block) => (
-              <div
-                key={block.id}
-                className="flex flex-col justify-between gap-3 rounded-2xl border border-black/10 p-4 sm:flex-row sm:items-center"
-              >
-                <div>
-                  <b>
-                    {frDate(
-                      block.date,
-                    )}
-                  </b>
-
-                  <div className="mt-1 text-xs text-black/45">
-                    {block.all_day
-                      ? "Journée entière"
-                      : `${block.start_time} → ${block.end_time}`}
-                    {" · "}
-                    {block.reason}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    onDelete(
-                      block.id,
-                    )
-                  }
-                  className="admin-danger-button rounded-full border border-red-200 px-4 py-2 text-xs font-bold"
-                >
-                  Supprimer
-                </button>
-              </div>
-            ),
-          )}
-
-          {blocks.length === 0 && (
-            <Empty text="Aucune indisponibilité." />
-          )}
-        </div>
-      </Panel>
     </div>
   );
 }
@@ -2097,65 +1863,206 @@ function Availability({
    GRAND+
 ================================================================ */
 
-function GrandPlus({
+function GrandPlusPanel({
   data,
+  onOpen,
 }: {
-  data: GrandPlusParticipant[];
+  data: Data;
+  onOpen: (
+    prospect: Prospect,
+  ) => void;
 }) {
+  const currentMonth =
+    new Date()
+      .toISOString()
+      .slice(0, 7);
+
+  const current =
+    data.grand_plus.filter(
+      (participant) =>
+        participant.month_key ===
+        currentMonth,
+    );
+
   return (
-    <div className="space-y-6">
-      <Title
-        eyebrow="Grand+"
-        title="Participants"
-        text="Les participations enregistrées par le formulaire Grand+ sont visibles ici."
-      />
-
-      <Panel
-        title={`${data.length} participation${
-          data.length > 1
-            ? "s"
-            : ""
-        }`}
-      >
-        <div className="divide-y divide-black/10">
-          {data.map(
-            (participant, index) => (
-              <div
-                key={
-                  participant.id ??
-                  index
-                }
-                className="py-4"
-              >
-                <div className="font-extrabold">
-                  {participant.name ||
-                    "Sans nom"}
-
-                  {participant.company
-                    ? ` · ${participant.company}`
-                    : ""}
-                </div>
-
-                <div className="mt-1 text-xs text-black/45">
-                  {participant.email ||
-                    "—"}
-                  {" · "}
-                  {participant.phone ||
-                    "—"}
-                  {" · "}
-                  {participant.month_label ||
-                    participant.month_key ||
-                    "—"}
-                </div>
-              </div>
-            ),
-          )}
-
-          {data.length === 0 && (
-            <Empty text="Aucune participation." />
-          )}
+    <div className="grid gap-7">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
+          Acquisition
         </div>
-      </Panel>
+
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+          Le Grand+
+        </h1>
+
+        <p className="mt-3 text-sm !text-black/45">
+          Participants et historique
+          de l'opération.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <MetricCard
+          icon={Gift}
+          label="Participants ce mois"
+          value={String(
+            current.length,
+          )}
+        />
+
+        <MetricCard
+          icon={Users}
+          label="Participants historiques"
+          value={String(
+            data.grand_plus
+              .length,
+          )}
+        />
+
+        <MetricCard
+          icon={TrendingUp}
+          label="Avec consentement marketing"
+          value={String(
+            data.grand_plus.filter(
+              (item) =>
+                item.marketing_consent,
+            ).length,
+          )}
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-[30px] border border-black/10 !bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px]">
+            <thead>
+              <tr className="border-b border-black/10 text-left">
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Participant
+                </th>
+
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Mois
+                </th>
+
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Marketing
+                </th>
+
+                <th className="px-6 py-4 text-[10px] font-extrabold uppercase tracking-[0.15em] !text-black/35">
+                  Statut
+                </th>
+
+                <th className="px-6 py-4" />
+              </tr>
+            </thead>
+
+            <tbody>
+              {data.grand_plus.map(
+                (
+                  participant,
+                  index,
+                ) => {
+                  const prospect =
+                    data.prospects.find(
+                      (item) =>
+                        item.source ===
+                          "grand-plus" &&
+                        item.email ===
+                          participant.email,
+                    );
+
+                  return (
+                    <tr
+                      key={
+                        participant.id ||
+                        `${participant.email}-${index}`
+                      }
+                      className="border-b border-black/5"
+                    >
+                      <td className="px-6 py-5">
+                        <div className="font-extrabold !text-[#080808]">
+                          {participant.company ||
+                            participant.name}
+                        </div>
+
+                        <div className="mt-1 text-xs !text-black/40">
+                          {
+                            participant.name
+                          }{" "}
+                          ·{" "}
+                          {
+                            participant.email
+                          }
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-5 text-sm !text-[#080808]">
+                        {participant.month_label ||
+                          participant.month_key ||
+                          "—"}
+                      </td>
+
+                      <td className="px-6 py-5">
+                        {participant.marketing_consent ? (
+                          <span className="rounded-full !bg-emerald-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-emerald-700">
+                            Oui
+                          </span>
+                        ) : (
+                          <span className="rounded-full !bg-black/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] !text-black/40">
+                            Non
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-6 py-5">
+                        <StatusBadge
+                          status={
+                            participant.status ||
+                            "new"
+                          }
+                        />
+                      </td>
+
+                      <td className="px-6 py-5">
+                        {prospect && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpen(
+                                prospect,
+                              )
+                            }
+                            className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808] hover:!bg-[#f5f5f3]"
+                          >
+                            <ChevronRight
+                              size={
+                                16
+                              }
+                            />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                },
+              )}
+
+              {data.grand_plus
+                .length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-6 py-20 text-center text-sm !text-black/35"
+                  >
+                    Aucun participant
+                    enregistré.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2169,88 +2076,261 @@ function Stats({
 }: {
   data: Data;
 }) {
-  const sources =
-    Object.entries(
-      data.sources,
-    );
+  const conversion =
+    data.stats.prospects > 0
+      ? (data.stats.won /
+          data.stats.prospects) *
+        100
+      : 0;
+
+  const averageWon =
+    data.stats.won > 0
+      ? data.stats.signed_revenue /
+        data.stats.won
+      : 0;
+
+  const total =
+    data.stats.prospects || 1;
 
   return (
-    <div className="space-y-6">
-      <Title
-        eyebrow="Statistiques"
-        title="Performance commerciale"
-        text="Lecture des données actuelles du CRM et des réservations."
-      />
+    <div className="grid gap-7">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.28em] !text-[#c8a45d]">
+          Pilotage
+        </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric
-          icon={Activity}
-          label="Nouveaux"
-          value={String(
-            data.stats.new ?? 0,
-          )}
-        />
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] !text-[#080808]">
+          Statistiques commerciales
+        </h1>
+      </div>
 
-        <Metric
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
           icon={Target}
-          label="Qualifiés"
-          value={String(
-            data.stats
-              .qualified ?? 0,
+          label="Conversion"
+          value={`${conversion.toFixed(
+            1,
+          )} %`}
+        />
+
+        <MetricCard
+          icon={CircleDollarSign}
+          label="Panier moyen gagné"
+          value={euro(
+            averageWon,
           )}
         />
 
-        <Metric
-          icon={CalendarDays}
-          label="RDV confirmés"
-          value={String(
-            data.stats
-              .confirmed_bookings ??
-              0,
-          )}
-        />
-
-        <Metric
+        <MetricCard
           icon={TrendingUp}
-          label="Taux gagné"
-          value={`${
-            data.stats.prospects
-              ? Math.round(
-                  ((data.stats.won ??
-                    0) /
-                    data.stats.prospects) *
-                    100,
-                )
-              : 0
-          }%`}
+          label="CA signé"
+          value={euro(
+            data.stats.signed_revenue,
+          )}
+        />
+
+        <MetricCard
+          icon={Activity}
+          label="CA potentiel"
+          value={euro(
+            data.stats.potential_revenue,
+          )}
         />
       </div>
 
-      <Panel title="Sources">
-        <div className="space-y-4">
-          {sources.map(
-            ([key, value]) => (
-              <div
-                key={key}
-                className="flex items-center justify-between"
-              >
-                <span className="font-bold">
-                  {SOURCE_LABEL[key] ??
-                    key}
-                </span>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <h2 className="text-xl font-black !text-[#080808]">
+            Sources d'acquisition
+          </h2>
 
-                <b>{value}</b>
+          <div className="mt-7 grid gap-5">
+            {Object.entries(
+              data.sources,
+            )
+              .sort(
+                (a, b) =>
+                  b[1] - a[1],
+              )
+              .map(
+                ([
+                  source,
+                  count,
+                ]) => (
+                  <div
+                    key={source}
+                  >
+                    <div className="flex justify-between text-sm">
+                      <b className="!text-[#080808]">
+                        {sourceLabel(
+                          source,
+                        )}
+                      </b>
+
+                      <span className="!text-black/45">
+                        {count} lead
+                        {count >
+                        1
+                          ? "s"
+                          : ""}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 h-3 rounded-full !bg-[#f0f0ed]">
+                      <div
+                        className="h-full rounded-full !bg-[#080808]"
+                        style={{
+                          width: `${Math.max(
+                            3,
+                            (count /
+                              total) *
+                              100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ),
+              )}
+
+            {Object.keys(
+              data.sources,
+            ).length ===
+              0 && (
+              <div className="text-sm !text-black/35">
+                Aucune donnée.
               </div>
-            ),
-          )}
+            )}
+          </div>
         </div>
-      </Panel>
+
+        <div className="rounded-[30px] border border-black/10 !bg-white p-6 sm:p-8">
+          <h2 className="text-xl font-black !text-[#080808]">
+            Répartition du
+            pipeline
+          </h2>
+
+          <div className="mt-7 grid gap-3">
+            {statuses.map(
+              ([status, label]) => (
+                <div
+                  key={status}
+                  className="flex items-center justify-between rounded-2xl !bg-[#f5f5f3] px-4 py-3"
+                >
+                  <span className="text-sm font-semibold !text-[#080808]">
+                    {label}
+                  </span>
+
+                  <b className="!text-[#080808]">
+                    {data.pipeline[
+                      status
+                    ] || 0}
+                  </b>
+                </div>
+              ),
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ================================================================
-   FICHE PROSPECT
+   METRIC CARD
+================================================================ */
+
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[26px] border border-black/10 !bg-white p-6">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-bold uppercase tracking-[0.13em] !text-black/35">
+          {label}
+        </div>
+
+        <Icon
+          size={18}
+          className="!text-[#c8a45d]"
+        />
+      </div>
+
+      <div className="mt-7 text-3xl font-black tracking-[-0.04em] !text-[#080808]">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   DARK STAT
+================================================================ */
+
+function DarkStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 !bg-white/[0.04] p-4">
+      <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-white/35">
+        {label}
+      </div>
+
+      <div className="mt-2 text-2xl font-black !text-white">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   QUICK ACTION
+================================================================ */
+
+function QuickAction({
+  icon: Icon,
+  title,
+  text,
+  onClick,
+}: {
+  icon: typeof Plus;
+  title: string;
+  text: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group rounded-[26px] !border !border-black/10 !bg-white !p-5 !text-left !text-[#080808] transition hover:-translate-y-0.5 hover:!border-[#c8a45d]/40"
+    >
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl !bg-[#080808] !text-[#c8a45d]">
+        <Icon size={18} />
+      </div>
+
+      <div className="mt-5 font-black !text-[#080808]">
+        {title}
+      </div>
+
+      <div className="mt-1 text-sm leading-6 !text-black/40">
+        {text}
+      </div>
+    </button>
+  );
+}
+
+/* ================================================================
+   PROSPECT MODAL
 ================================================================ */
 
 function ProspectModal({
@@ -2258,7 +2338,6 @@ function ProspectModal({
   onClose,
   onSave,
   onInteraction,
-  onDelete,
 }: {
   prospect: Prospect;
   onClose: () => void;
@@ -2272,332 +2351,584 @@ function ProspectModal({
     text: string,
     type: string,
   ) => Promise<void>;
-  onDelete: (
-    id: string,
-  ) => Promise<void>;
 }) {
   const [form, setForm] =
     useState({
-      name: prospect.name,
-      company: prospect.company,
-      email: prospect.email,
-      phone: prospect.phone,
-      website: prospect.website,
       status: prospect.status,
       offer: prospect.offer,
+
       estimated_value: String(
-        prospect.estimated_value ??
-          0,
+        prospect.estimated_value ||
+          "",
       ),
+
       recurring_value: String(
-        prospect.recurring_value ??
-          0,
+        prospect.recurring_value ||
+          "",
       ),
+
+      last_contact_at:
+        prospect.last_contact_at ||
+        "",
+
       next_action:
-        prospect.next_action,
+        prospect.next_action ||
+        "",
+
       next_action_at:
-        prospect.next_action_at,
-      notes: prospect.notes,
+        prospect.next_action_at ||
+        "",
+
+      notes: prospect.notes || "",
     });
 
   const [interaction, setInteraction] =
     useState("");
 
+  const [type, setType] =
+    useState("Note");
+
   return (
-    <Overlay>
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-[2rem] bg-[#f4f4f1] p-6 shadow-2xl sm:p-8">
-        <div className="flex items-start justify-between">
+    <div className="fixed inset-0 z-[100] overflow-y-auto !bg-black/50 p-4 backdrop-blur-sm">
+      <div className="mx-auto my-6 max-w-5xl rounded-[30px] !bg-[#f5f5f3] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-black/10 px-6 py-5 sm:px-8">
           <div>
-            <div className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-black/35">
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] !text-[#c8a45d]">
               Fiche prospect
             </div>
 
-            <h2 className="mt-2 text-2xl font-extrabold">
-              {prospect.name ||
-                "Prospect"}
+            <h2 className="mt-1 text-2xl font-black tracking-[-0.04em] !text-[#080808]">
+              {prospect.company ||
+                prospect.name}
             </h2>
+          </div>
 
-            <div className="mt-1 text-sm text-black/45">
-              {SOURCE_LABEL[
-                prospect.source
-              ] ??
-                prospect.source}
+          <button
+            type="button"
+            onClick={onClose}
+            className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808]"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid gap-5 p-5 sm:p-8 lg:grid-cols-[1.1fr_.9fr]">
+          <div className="grid gap-5">
+            <div className="rounded-[24px] !bg-white p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="font-bold !text-[#080808]">
+                    {prospect.name}
+                  </div>
+
+                  <div className="mt-2 text-xs !text-black/45">
+                    {sourceLabel(
+                      prospect.source,
+                    )}{" "}
+                    ·{" "}
+                    {dateFr(
+                      prospect.created_at,
+                    )}
+                  </div>
+                </div>
+
+                <StatusBadge
+                  status={
+                    form.status
+                  }
+                />
+              </div>
+
+              <div className="mt-6 grid gap-3 text-sm">
+                {prospect.email && (
+                  <a
+                    href={`mailto:${prospect.email}`}
+                    className="flex items-center gap-3 font-semibold !text-[#080808]"
+                  >
+                    <Mail size={16} />
+                    {prospect.email}
+                  </a>
+                )}
+
+                {prospect.phone && (
+                  <a
+                    href={`tel:${prospect.phone}`}
+                    className="flex items-center gap-3 font-semibold !text-[#080808]"
+                  >
+                    <Phone size={16} />
+                    {prospect.phone}
+                  </a>
+                )}
+
+                {prospect.website && (
+                  <a
+                    href={
+                      prospect.website.startsWith(
+                        "http",
+                      )
+                        ? prospect.website
+                        : `https://${prospect.website}`
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 font-semibold !text-[#080808]"
+                  >
+                    <FileSearch
+                      size={16}
+                    />
+                    {prospect.website}
+                  </a>
+                )}
+              </div>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {prospect.sector && (
+                  <InfoBox
+                    label="Secteur"
+                    value={
+                      prospect.sector
+                    }
+                  />
+                )}
+
+                {prospect.reason && (
+                  <InfoBox
+                    label="Motif"
+                    value={
+                      prospect.reason
+                    }
+                  />
+                )}
+              </div>
+
+              {prospect.problem && (
+                <div className="mt-4 rounded-2xl !bg-[#f5f5f3] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+                    Problématique
+                    déclarée
+                  </div>
+
+                  <div className="mt-2 text-sm leading-6 !text-black/60">
+                    {
+                      prospect.problem
+                    }
+                  </div>
+                </div>
+              )}
+
+              {prospect.audit_score !=
+                null && (
+                <div className="mt-6 rounded-2xl !bg-[#080808] p-4 !text-white">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] !text-[#c8a45d]">
+                    Score Audit
+                  </div>
+
+                  <div className="mt-2 text-3xl font-black !text-white">
+                    {
+                      prospect.audit_score
+                    }
+
+                    <span className="text-base !text-white/35">
+                      /100
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {prospect.recommendations &&
+                prospect
+                  .recommendations
+                  .length >
+                  0 && (
+                  <div className="mt-6">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
+                      Recommandations
+                      Audit
+                    </div>
+
+                    <div className="mt-3 grid gap-2">
+                      {prospect.recommendations
+                        .slice(
+                          0,
+                          3,
+                        )
+                        .map(
+                          (
+                            recommendation,
+                            index,
+                          ) => (
+                            <div
+                              key={
+                                index
+                              }
+                              className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm !text-black/60"
+                            >
+                              {
+                                recommendation
+                              }
+                            </div>
+                          ),
+                        )}
+                    </div>
+                  </div>
+                )}
+            </div>
+
+            <div className="rounded-[24px] !bg-white p-6">
+              <h3 className="font-black !text-[#080808]">
+                Suivi commercial
+              </h3>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <Field label="Statut">
+                  <select
+                    value={
+                      form.status
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForm({
+                        ...form,
+                        status:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                  >
+                    {statuses.map(
+                      ([
+                        key,
+                        label,
+                      ]) => (
+                        <option
+                          key={
+                            key
+                          }
+                          value={
+                            key
+                          }
+                        >
+                          {
+                            label
+                          }
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </Field>
+
+                <Field label="Offre">
+                  <select
+                    value={
+                      form.offer
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForm({
+                        ...form,
+                        offer:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                  >
+                    <option value="">
+                      À définir
+                    </option>
+
+                    {offers.map(
+                      (offer) => (
+                        <option
+                          key={
+                            offer
+                          }
+                          value={
+                            offer
+                          }
+                        >
+                          {
+                            offer
+                          }
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </Field>
+
+                <Field label="Valeur du projet">
+                  <input
+                    type="number"
+                    min="0"
+                    value={
+                      form.estimated_value
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForm({
+                        ...form,
+                        estimated_value:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                    placeholder="1990"
+                  />
+                </Field>
+
+                <Field label="Récurrent / mois">
+                  <input
+                    type="number"
+                    min="0"
+                    value={
+                      form.recurring_value
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForm({
+                        ...form,
+                        recurring_value:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                    placeholder="49"
+                  />
+                </Field>
+
+                <Field label="Prochaine action">
+                  <input
+                    value={
+                      form.next_action
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForm({
+                        ...form,
+                        next_action:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                    placeholder="Relancer le prospect"
+                  />
+                </Field>
+
+                <Field label="Date de relance">
+                  <input
+                    type="date"
+                    value={
+                      form.next_action_at
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForm({
+                        ...form,
+                        next_action_at:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+
+              <div className="mt-4">
+                <Field label="Notes">
+                  <textarea
+                    rows={5}
+                    value={
+                      form.notes
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setForm({
+                        ...form,
+                        notes:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onSave({
+                    ...form,
+                    estimated_value:
+                      Number(
+                        form.estimated_value,
+                      ) || 0,
+                    recurring_value:
+                      Number(
+                        form.recurring_value,
+                      ) || 0,
+                  })
+                }
+                className={`${buttonDark} mt-5 px-5 py-3 text-sm`}
+              >
+                <Check size={16} />
+                Enregistrer
+              </button>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="admin-white-button rounded-full p-2"
-          >
-            <X />
-          </button>
-        </div>
+          <div className="rounded-[24px] !bg-white p-6">
+            <h3 className="font-black !text-[#080808]">
+              Ajouter une
+              interaction
+            </h3>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {[
-            ["name", "Nom"],
-            [
-              "company",
-              "Entreprise",
-            ],
-            ["email", "E-mail"],
-            [
-              "phone",
-              "Téléphone",
-            ],
-            [
-              "website",
-              "Site internet",
-            ],
-            ["offer", "Offre"],
-            [
-              "estimated_value",
-              "Valeur",
-            ],
-            [
-              "recurring_value",
-              "Récurrent",
-            ],
-            [
-              "next_action",
-              "Prochaine action",
-            ],
-            [
-              "next_action_at",
-              "Date de relance",
-            ],
-          ].map(
-            ([key, label]) => (
-              <label
-                key={key}
-                className="text-xs font-bold text-[#080808]"
-              >
-                <span className="mb-2 block text-black/45">
-                  {label}
-                </span>
-
-                <input
-                  type={
-                    key.includes(
-                      "value",
-                    )
-                      ? "number"
-                      : key.includes(
-                            "at",
-                          )
-                        ? "date"
-                        : "text"
-                  }
-                  value={
-                    (
-                      form as Record<
-                        string,
-                        string
-                      >
-                    )[key]
-                  }
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      [key]:
-                        event.target
-                          .value,
-                    })
-                  }
-                  className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808] outline-none focus:border-[#c8a45d]"
-                />
-              </label>
-            ),
-          )}
-
-          <label className="text-xs font-bold text-[#080808]">
-            <span className="mb-2 block text-black/45">
-              Statut
-            </span>
-
-            <select
-              value={form.status}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  status:
+            <div className="mt-4 grid gap-3">
+              <select
+                value={type}
+                onChange={(
+                  event,
+                ) =>
+                  setType(
                     event.target
                       .value,
-                })
-              }
-              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808]"
-            >
-              {STATUSES.map(
-                (item) => (
-                  <option
-                    key={item}
-                    value={item}
-                  >
-                    {
-                      STATUS_LABEL[
-                        item
-                      ]
-                    }
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-
-          <label className="text-xs font-bold text-[#080808] sm:col-span-2">
-            <span className="mb-2 block text-black/45">
-              Notes
-            </span>
-
-            <textarea
-              value={form.notes}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  notes:
-                    event.target
-                      .value,
-                })
-              }
-              rows={4}
-              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808] outline-none focus:border-[#c8a45d]"
-            />
-          </label>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          {prospect.phone && (
-            <a
-              href={`tel:${prospect.phone}`}
-              className="admin-dark-button inline-flex items-center rounded-full px-4 py-2 text-xs font-bold"
-            >
-              <Phone
-                size={14}
-                className="mr-2"
-              />
-              Appeler
-            </a>
-          )}
-
-          {prospect.email && (
-            <a
-              href={`mailto:${prospect.email}`}
-              className="admin-white-button inline-flex items-center rounded-full border border-black/10 px-4 py-2 text-xs font-bold"
-            >
-              <Mail
-                size={14}
-                className="mr-2"
-              />
-              E-mail
-            </a>
-          )}
-        </div>
-
-        <div className="mt-7 border-t border-black/10 pt-6">
-          <b>
-            Ajouter une interaction
-          </b>
-
-          <div className="mt-3 flex gap-2">
-            <input
-              value={interaction}
-              onChange={(event) =>
-                setInteraction(
-                  event.target
-                    .value,
-                )
-              }
-              placeholder="Note, appel, message…"
-              className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808]"
-            />
-
-            <button
-              type="button"
-              onClick={async () => {
-                if (
-                  !interaction.trim()
-                ) {
-                  return;
+                  )
                 }
+                className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm font-semibold !text-[#080808] outline-none"
+              >
+                <option>
+                  Note
+                </option>
+                <option>
+                  Appel
+                </option>
+                <option>
+                  E-mail
+                </option>
+                <option>
+                  Rendez-vous
+                </option>
+                <option>
+                  Proposition
+                </option>
+                <option>
+                  Relance
+                </option>
+              </select>
 
-                await onInteraction(
-                  interaction,
-                  "note",
-                );
+              <textarea
+                rows={4}
+                value={interaction}
+                onChange={(
+                  event,
+                ) =>
+                  setInteraction(
+                    event.target
+                      .value,
+                  )
+                }
+                placeholder="Ex. Prospect intéressé par une refonte GROW…"
+                className="rounded-2xl !bg-[#f5f5f3] px-4 py-3 text-sm !text-[#080808] outline-none placeholder:!text-black/30"
+              />
 
-                setInteraction("");
-              }}
-              className="admin-gold-button rounded-full px-5 py-3 text-xs font-extrabold"
-            >
-              Ajouter
-            </button>
+              <button
+                type="button"
+                disabled={
+                  !interaction.trim()
+                }
+                onClick={async () => {
+                  await onInteraction(
+                    interaction,
+                    type,
+                  );
+
+                  setInteraction("");
+                }}
+                className={`${buttonLight} px-5 py-3 text-sm`}
+              >
+                Ajouter à
+                l'historique
+              </button>
+            </div>
+
+            <div className="mt-7 border-t border-black/10 pt-5">
+              <h3 className="font-black !text-[#080808]">
+                Historique
+              </h3>
+
+              <div className="mt-5 grid gap-5">
+                {prospect.interactions
+                  ?.length ? (
+                  prospect.interactions.map(
+                    (
+                      interaction,
+                    ) => (
+                      <div
+                        key={
+                          interaction.id
+                        }
+                        className="border-l-2 border-[#c8a45d] pl-4"
+                      >
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] !text-black/35">
+                          {
+                            interaction.type
+                          }{" "}
+                          ·{" "}
+                          {dateTimeFr(
+                            interaction.created_at,
+                          )}
+                        </div>
+
+                        <div className="mt-1 text-sm leading-6 !text-black/65">
+                          {
+                            interaction.text
+                          }
+                        </div>
+                      </div>
+                    ),
+                  )
+                ) : (
+                  <div className="text-sm !text-black/35">
+                    Aucune interaction
+                    enregistrée.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="mt-7 flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              onDelete(
-                prospect.id,
-              )
-            }
-            className="admin-danger-button rounded-full border border-red-200 px-5 py-3 text-xs font-bold"
-          >
-            Supprimer
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="admin-white-button rounded-full border border-black/10 px-5 py-3 text-xs font-bold"
-          >
-            Fermer
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              onSave({
-                ...form,
-                estimated_value:
-                  Number(
-                    form.estimated_value,
-                  ),
-                recurring_value:
-                  Number(
-                    form.recurring_value,
-                  ),
-              })
-            }
-            className="admin-dark-button rounded-full px-5 py-3 text-xs font-extrabold"
-          >
-            Enregistrer
-          </button>
-        </div>
       </div>
-    </Overlay>
+    </div>
   );
 }
 
 /* ================================================================
-   NOUVEAU PROSPECT
+   NEW PROSPECT MODAL
 ================================================================ */
 
-function NewProspect({
+function NewProspectModal({
   onClose,
-  onCreated,
-  api,
+  onCreate,
 }: {
   onClose: () => void;
-  onCreated: () => void;
-  api: (
-    payload: Record<
+  onCreate: (
+    prospect: Record<
       string,
-      unknown
+      string
     >,
-  ) => Promise<unknown>;
+  ) => Promise<void>;
 }) {
   const [form, setForm] =
     useState({
@@ -2609,254 +2940,216 @@ function NewProspect({
       notes: "",
     });
 
-  const [busy, setBusy] =
-    useState(false);
-
   return (
-    <Overlay>
-      <div className="w-full max-w-xl rounded-[2rem] bg-[#f4f4f1] p-7 shadow-2xl">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-extrabold">
-            Nouveau prospect
-          </h2>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center !bg-black/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-[30px] !bg-[#f5f5f3] p-6 shadow-2xl sm:p-8">
+        <div className="flex justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] !text-[#c8a45d]">
+              Nouveau
+            </div>
+
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.05em] !text-[#080808]">
+              Ajouter un
+              prospect
+            </h2>
+          </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="admin-white-button rounded-full p-2"
+            className="!inline-flex !items-center !justify-center !rounded-full !border !border-black/10 !bg-white !p-2 !text-[#080808]"
           >
-            <X />
+            <X size={18} />
           </button>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {[
-            ["name", "Nom"],
-            [
-              "company",
-              "Entreprise",
-            ],
-            ["email", "E-mail"],
-            [
-              "phone",
-              "Téléphone",
-            ],
-            [
-              "website",
-              "Site internet",
-            ],
-          ].map(
-            ([key, label]) => (
-              <label
-                key={key}
-                className="text-xs font-bold text-[#080808]"
-              >
-                <span className="mb-2 block text-black/45">
-                  {label}
-                </span>
-
-                <input
-                  type="text"
-                  inputMode={
-                    key === "email"
-                      ? "email"
-                      : key === "phone"
-                        ? "tel"
-                        : undefined
-                  }
-                  value={
-                    (
-                      form as Record<
-                        string,
-                        string
-                      >
-                    )[key]
-                  }
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      [key]:
-                        event.target
-                          .value,
-                    })
-                  }
-                  className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808] outline-none focus:border-[#c8a45d]"
-                />
-              </label>
-            ),
-          )}
-
-          <label className="text-xs font-bold text-[#080808] sm:col-span-2">
-            <span className="mb-2 block text-black/45">
-              Notes
-            </span>
-
-            <textarea
-              value={form.notes}
-              onChange={(event) =>
+        <div className="mt-7 grid gap-4 sm:grid-cols-2">
+          <Field label="Nom">
+            <input
+              value={
+                form.name
+              }
+              onChange={(
+                event,
+              ) =>
                 setForm({
                   ...form,
-                  notes:
-                    event.target
+                  name: event
+                    .target
+                    .value,
+                })
+              }
+            />
+          </Field>
+
+          <Field label="Entreprise">
+            <input
+              value={
+                form.company
+              }
+              onChange={(
+                event,
+              ) =>
+                setForm({
+                  ...form,
+                  company:
+                    event
+                      .target
                       .value,
                 })
               }
-              rows={4}
-              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-[#080808]"
             />
-          </label>
+          </Field>
+
+          <Field label="E-mail">
+            <input
+              type="email"
+              value={
+                form.email
+              }
+              onChange={(
+                event,
+              ) =>
+                setForm({
+                  ...form,
+                  email:
+                    event
+                      .target
+                      .value,
+                })
+              }
+            />
+          </Field>
+
+          <Field label="Téléphone">
+            <input
+              value={
+                form.phone
+              }
+              onChange={(
+                event,
+              ) =>
+                setForm({
+                  ...form,
+                  phone:
+                    event
+                      .target
+                      .value,
+                })
+              }
+            />
+          </Field>
+
+          <Field label="Site internet">
+            <input
+              value={
+                form.website
+              }
+              onChange={(
+                event,
+              ) =>
+                setForm({
+                  ...form,
+                  website:
+                    event
+                      .target
+                      .value,
+                })
+              }
+            />
+          </Field>
+
+          <Field label="Notes">
+            <input
+              value={
+                form.notes
+              }
+              onChange={(
+                event,
+              ) =>
+                setForm({
+                  ...form,
+                  notes:
+                    event
+                      .target
+                      .value,
+                })
+              }
+            />
+          </Field>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-7 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="admin-white-button rounded-full border border-black/10 px-5 py-3 text-xs font-bold"
+            className={`${buttonLight} px-5 py-3 text-sm`}
           >
             Annuler
           </button>
 
           <button
             type="button"
-            disabled={busy}
-            onClick={async () => {
-              if (!form.name.trim()) {
-                return;
-              }
-
-              setBusy(true);
-
-              try {
-                await api({
-                  action:
-                    "create_prospect",
-                  ...form,
-                });
-
-                onCreated();
-              } finally {
-                setBusy(false);
-              }
-            }}
-            className="admin-dark-button rounded-full px-5 py-3 text-xs font-extrabold disabled:opacity-40"
+            disabled={
+              !form.name &&
+              !form.company
+            }
+            onClick={() =>
+              onCreate(form)
+            }
+            className={`${buttonDark} px-5 py-3 text-sm`}
           >
-            {busy
-              ? "Création…"
-              : "Créer le prospect"}
+            Créer le prospect
           </button>
         </div>
       </div>
-    </Overlay>
+    </div>
   );
 }
 
 /* ================================================================
-   COMPOSANTS UI
+   FIELD
 ================================================================ */
 
-function Title({
-  eyebrow,
-  title,
-  text,
-  action,
+function Field({
+  label,
+  children,
 }: {
-  eyebrow: string;
-  title: string;
-  text: string;
-  action?: ReactNode;
+  label: string;
+  children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-      <div>
-        <div className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-[#a17e32]">
-          {eyebrow}
-        </div>
+    <label className="grid gap-2 text-xs font-bold !text-black/45">
+      {label}
 
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-          {title}
-        </h1>
-
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-black/45">
-          {text}
-        </p>
+      <div className="[&_input]:w-full [&_input]:rounded-2xl [&_input]:!bg-[#f5f5f3] [&_input]:px-4 [&_input]:py-3 [&_input]:text-sm [&_input]:font-medium [&_input]:!text-[#080808] [&_input]:outline-none [&_input]:placeholder:!text-black/30 [&_select]:w-full [&_select]:rounded-2xl [&_select]:!bg-[#f5f5f3] [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:font-medium [&_select]:!text-[#080808] [&_select]:outline-none [&_textarea]:w-full [&_textarea]:rounded-2xl [&_textarea]:!bg-[#f5f5f3] [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:font-medium [&_textarea]:!text-[#080808] [&_textarea]:outline-none">
+        {children}
       </div>
-
-      {action}
-    </div>
+    </label>
   );
 }
 
-function Metric({
-  icon: Icon,
+/* ================================================================
+   INFO BOX
+================================================================ */
+
+function InfoBox({
   label,
   value,
 }: {
-  icon: typeof Users;
   label: string;
   value: string;
 }) {
   return (
-    <div className="rounded-[1.5rem] border border-black/10 bg-white p-5">
-      <Icon
-        size={18}
-        className="text-[#c8a45d]"
-      />
-
-      <div className="mt-5 text-xs font-bold text-black/40">
+    <div className="rounded-2xl !bg-[#f5f5f3] p-4">
+      <div className="text-[10px] font-bold uppercase tracking-[0.13em] !text-black/35">
         {label}
       </div>
 
-      <div className="mt-1 text-2xl font-extrabold">
+      <div className="mt-2 text-sm font-semibold !text-black/65">
         {value}
       </div>
-    </div>
-  );
-}
-
-function Panel({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-[1.5rem] border border-black/10 bg-white p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="font-extrabold">
-          {title}
-        </h2>
-
-        {action}
-      </div>
-
-      {children}
-    </section>
-  );
-}
-
-function Empty({
-  text,
-}: {
-  text: string;
-}) {
-  return (
-    <div className="py-10 text-center text-sm text-black/35">
-      {text}
-    </div>
-  );
-}
-
-function Overlay({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      {children}
     </div>
   );
 }

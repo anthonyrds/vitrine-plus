@@ -2,28 +2,54 @@
 
 declare(strict_types=1);
 
+/*
+|--------------------------------------------------------------------------
+| Vitrine+ — CRM commercial API
+|--------------------------------------------------------------------------
+|
+| Sources :
+| - Grand+
+| - Audit
+| - Contact
+| - Rendez-vous
+|
+| Stockage :
+| /vitrine-data/crm/crm.json
+|
+|--------------------------------------------------------------------------
+*/
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('X-Content-Type-Options: nosniff');
 
-const BASE = __DIR__;
+const BASE_DIR = __DIR__;
 
-const CONFIG_FILE = BASE . '/vitrine-mail-config.php';
+const CONFIG_FILE =
+    BASE_DIR . '/vitrine-mail-config.php';
 
-const CRM_FILE = BASE . '/vitrine-data/crm/crm.json';
+const CRM_DIR =
+    BASE_DIR . '/vitrine-data/crm';
 
-const AUDIT_FILE = BASE . '/vitrine-data/audit-leads.json';
+const CRM_FILE =
+    CRM_DIR . '/crm.json';
 
-const CONTACT_FILE = BASE . '/vitrine-data/contact-leads.json';
+const AUDIT_FILE =
+    BASE_DIR . '/vitrine-data/audit-leads.json';
 
-const GRAND_FILE = BASE . '/vitrine-data/grand-plus/participations.json';
+const CONTACT_FILE =
+    BASE_DIR . '/vitrine-data/contact-leads.json';
 
-const BOOKINGS_FILE = BASE . '/vitrine-data/bookings.json';
+const GRAND_PLUS_FILE =
+    BASE_DIR . '/vitrine-data/grand-plus/participations.json';
 
+const BOOKINGS_FILE =
+    BASE_DIR . '/vitrine-data/bookings.json';
 
-/* ================================================================
-   RESPONSE
-================================================================ */
+/*
+|--------------------------------------------------------------------------
+| Réponse JSON
+|--------------------------------------------------------------------------
+*/
 
 function respond(
     array $data,
@@ -40,12 +66,13 @@ function respond(
     exit;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Configuration
+|--------------------------------------------------------------------------
+*/
 
-/* ================================================================
-   CONFIG
-================================================================ */
-
-function config(): array
+function load_config(): array
 {
     if (!is_file(CONFIG_FILE)) {
         return [];
@@ -58,47 +85,58 @@ function config(): array
         : [];
 }
 
+/*
+|--------------------------------------------------------------------------
+| Authentification
+|--------------------------------------------------------------------------
+*/
 
-/* ================================================================
-   AUTHENTIFICATION
-================================================================ */
-
-function requireAuth(): void
+function require_auth(): void
 {
-    $config = config();
+    $config = load_config();
 
-    $username = trim(
+    $expectedUser = trim(
         (string) (
             $config['grand_plus_admin_user']
             ?? ''
         )
     );
 
-    $password = (string) (
+    $expectedPassword = (string) (
         $config['grand_plus_admin_password']
         ?? ''
     );
 
-    $authUser = (string) (
-        $_SERVER['PHP_AUTH_USER']
-        ?? ''
-    );
+    if (
+        $expectedUser === '' ||
+        $expectedPassword === ''
+    ) {
+        respond(
+            [
+                'success' => false,
+                'message' =>
+                    'Configuration administrateur absente.',
+            ],
+            500
+        );
+    }
 
-    $authPassword = (string) (
+    $user =
+        $_SERVER['PHP_AUTH_USER']
+        ?? '';
+
+    $password =
         $_SERVER['PHP_AUTH_PW']
-        ?? ''
-    );
+        ?? '';
 
     if (
-        $username === '' ||
-        $password === '' ||
         !hash_equals(
-            $username,
-            $authUser
+            $expectedUser,
+            (string) $user
         ) ||
         !hash_equals(
-            $password,
-            $authPassword
+            $expectedPassword,
+            (string) $password
         )
     ) {
         header(
@@ -116,88 +154,50 @@ function requireAuth(): void
     }
 }
 
+require_auth();
 
-/* ================================================================
-   HELPERS
-================================================================ */
+/*
+|--------------------------------------------------------------------------
+| Lecture JSON
+|--------------------------------------------------------------------------
+*/
 
-function clean(
-    mixed $value,
-    int $max = 2000
-): string {
-    $value = trim(
-        (string) $value
-    );
-
-    $value =
-        preg_replace(
-            '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u',
-            '',
-            $value
-        ) ?? '';
-
-    if (
-        function_exists(
-            'mb_substr'
-        )
-    ) {
-        return mb_substr(
-            $value,
-            0,
-            $max,
-            'UTF-8'
-        );
-    }
-
-    return substr(
-        $value,
-        0,
-        $max
-    );
-}
-
-
-function readJson(
+function read_json(
     string $file,
-    mixed $fallback = []
+    mixed $default = []
 ): mixed {
     if (!is_file($file)) {
-        return $fallback;
+        return $default;
     }
 
-    $raw =
-        @file_get_contents(
-            $file
-        );
+    $contents =
+        @file_get_contents($file);
 
-    if (
-        !is_string($raw) ||
-        trim($raw) === ''
-    ) {
-        return $fallback;
+    if ($contents === false) {
+        return $default;
     }
 
     $data =
         json_decode(
-            $raw,
+            $contents,
             true
         );
 
-    if (
-        json_last_error() !==
-        JSON_ERROR_NONE
-    ) {
-        return $fallback;
-    }
-
-    return $data;
+    return json_last_error() === JSON_ERROR_NONE
+        ? $data
+        : $default;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Écriture JSON
+|--------------------------------------------------------------------------
+*/
 
-function writeJson(
+function write_json(
     string $file,
     mixed $data
-): void {
+): bool {
     $directory =
         dirname($file);
 
@@ -209,590 +209,530 @@ function writeJson(
             true
         )
     ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Impossible de créer le stockage.',
-            ],
-            500
-        );
+        return false;
     }
 
     $json =
         json_encode(
             $data,
+            JSON_PRETTY_PRINT |
             JSON_UNESCAPED_UNICODE |
-            JSON_UNESCAPED_SLASHES |
-            JSON_PRETTY_PRINT
+            JSON_UNESCAPED_SLASHES
         );
 
-    if (
-        !is_string($json) ||
-        @file_put_contents(
-            $file,
-            $json,
-            LOCK_EX
-        ) === false
-    ) {
-        respond(
-            [
-                'success' => false,
-                'message' =>
-                    'Impossible d’enregistrer les données.',
-            ],
-            500
-        );
+    if ($json === false) {
+        return false;
     }
+
+    return @file_put_contents(
+        $file,
+        $json,
+        LOCK_EX
+    ) !== false;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Nettoyage
+|--------------------------------------------------------------------------
+*/
 
-function arr(
-    string $file
-): array {
-    $data =
-        readJson(
-            $file,
+function clean(mixed $value): string
+{
+    if (!is_string($value)) {
+        return '';
+    }
+
+    return trim(
+        preg_replace(
+            '/[\x00-\x1F\x7F]/u',
+            '',
+            $value
+        ) ?? ''
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sources commerciales
+|--------------------------------------------------------------------------
+*/
+
+function source_leads(): array
+{
+    $all = [];
+
+    /*
+    |--------------------------------------------------------------------------
+    | AUDIT
+    |--------------------------------------------------------------------------
+    */
+
+    $audits =
+        read_json(
+            AUDIT_FILE,
             []
         );
 
-    if (!is_array($data)) {
-        return [];
-    }
+    if (is_array($audits)) {
+        foreach ($audits as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
 
-    return array_values(
-        array_filter(
-            $data,
-            'is_array'
-        )
-    );
-}
+            $rawId =
+                (string) (
+                    $item['id']
+                    ?? hash(
+                        'sha256',
+                        json_encode($item)
+                    )
+                );
 
+            $id =
+                'audit-' . $rawId;
 
-function idFor(
-    string $prefix,
-    mixed $raw
-): string {
-    $raw =
-        (string) $raw;
+            $all[$id] = [
+                'id' => $id,
+                'source' => 'audit',
 
-    if ($raw === '') {
-        $raw =
-            bin2hex(
-                random_bytes(8)
-            );
-    }
+                'created_at' =>
+                    (string) (
+                        $item['created_at']
+                        ?? ''
+                    ),
 
-    return $prefix . $raw;
-}
+                'name' =>
+                    (string) (
+                        $item['name']
+                        ?? ''
+                    ),
 
+                'company' =>
+                    (string) (
+                        $item['company']
+                        ?? ''
+                    ),
 
-/* ================================================================
-   DEFAULT CRM
-================================================================ */
+                'email' =>
+                    (string) (
+                        $item['email']
+                        ?? ''
+                    ),
 
-function statusDefaults(
-    array $prospect
-): array {
-    $defaults = [
-        'status' => 'new',
-        'offer' => '',
-        'estimated_value' => 0,
-        'recurring_value' => 0,
-        'last_contact_at' => '',
-        'next_action' => '',
-        'next_action_at' => '',
-        'notes' => '',
-        'interactions' => [],
-    ];
+                'phone' =>
+                    (string) (
+                        $item['phone']
+                        ?? ''
+                    ),
 
-    foreach (
-        $defaults as $key => $value
-    ) {
-        if (
-            !array_key_exists(
-                $key,
-                $prospect
-            )
-        ) {
-            $prospect[$key] =
-                $value;
+                'website' =>
+                    (string) (
+                        $item['website']
+                        ?? ''
+                    ),
+
+                'audit_score' =>
+                    isset($item['score'])
+                        ? (int) $item['score']
+                        : null,
+
+                'recommendations' =>
+                    is_array(
+                        $item['recommendations']
+                        ?? null
+                    )
+                        ? $item['recommendations']
+                        : [],
+            ];
         }
     }
 
-    if (
-        !is_array(
-            $prospect['interactions']
-        )
-    ) {
-        $prospect['interactions'] =
-            [];
+    /*
+    |--------------------------------------------------------------------------
+    | CONTACT
+    |--------------------------------------------------------------------------
+    */
+
+    $contacts =
+        read_json(
+            CONTACT_FILE,
+            []
+        );
+
+    if (is_array($contacts)) {
+        foreach ($contacts as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $rawId =
+                (string) (
+                    $item['id']
+                    ?? hash(
+                        'sha256',
+                        json_encode($item)
+                    )
+                );
+
+            $id =
+                'contact-' . $rawId;
+
+            $all[$id] = [
+                'id' => $id,
+                'source' => 'contact',
+
+                'created_at' =>
+                    (string) (
+                        $item['created_at']
+                        ?? ''
+                    ),
+
+                'name' =>
+                    (string) (
+                        $item['name']
+                        ?? ''
+                    ),
+
+                'company' =>
+                    (string) (
+                        $item['company']
+                        ?? ''
+                    ),
+
+                'email' =>
+                    (string) (
+                        $item['email']
+                        ?? ''
+                    ),
+
+                'phone' =>
+                    (string) (
+                        $item['phone']
+                        ?? ''
+                    ),
+
+                'website' => '',
+
+                'budget' =>
+                    (string) (
+                        $item['budget']
+                        ?? ''
+                    ),
+
+                'message' =>
+                    (string) (
+                        $item['message']
+                        ?? ''
+                    ),
+            ];
+        }
     }
 
-    return $prospect;
+    /*
+    |--------------------------------------------------------------------------
+    | GRAND+
+    |--------------------------------------------------------------------------
+    */
+
+    $grand =
+        read_json(
+            GRAND_PLUS_FILE,
+            []
+        );
+
+    if (is_array($grand)) {
+        foreach ($grand as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $rawId =
+                (string) (
+                    $item['id']
+                    ?? hash(
+                        'sha256',
+                        json_encode($item)
+                    )
+                );
+
+            $id =
+                'grand-plus-' . $rawId;
+
+            $all[$id] = [
+                'id' => $id,
+                'source' => 'grand-plus',
+
+                'created_at' =>
+                    (string) (
+                        $item['created_at']
+                        ?? ''
+                    ),
+
+                'name' =>
+                    (string) (
+                        $item['name']
+                        ?? ''
+                    ),
+
+                'company' =>
+                    (string) (
+                        $item['company']
+                        ?? ''
+                    ),
+
+                'email' =>
+                    (string) (
+                        $item['email']
+                        ?? ''
+                    ),
+
+                'phone' =>
+                    (string) (
+                        $item['phone']
+                        ?? ''
+                    ),
+
+                'website' =>
+                    (string) (
+                        $item['website']
+                        ?? ''
+                    ),
+
+                'sector' =>
+                    (string) (
+                        $item['sector']
+                        ?? ''
+                    ),
+
+                'problem' =>
+                    (string) (
+                        $item['problem']
+                        ?? ''
+                    ),
+
+                'marketing_consent' =>
+                    !empty(
+                        $item['marketing_consent']
+                    ),
+
+                'grand_plus_status' =>
+                    (string) (
+                        $item['status']
+                        ?? 'pending'
+                    ),
+
+                'month_key' =>
+                    (string) (
+                        $item['month_key']
+                        ?? ''
+                    ),
+            ];
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | RENDEZ-VOUS
+    |--------------------------------------------------------------------------
+    */
+
+    $bookings =
+        read_json(
+            BOOKINGS_FILE,
+            []
+        );
+
+    if (is_array($bookings)) {
+        foreach ($bookings as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $rawId =
+                (string) (
+                    $item['reference']
+                    ?? hash(
+                        'sha256',
+                        json_encode($item)
+                    )
+                );
+
+            $id =
+                'booking-' . $rawId;
+
+            $all[$id] = [
+                'id' => $id,
+                'source' => 'booking',
+
+                'created_at' =>
+                    (string) (
+                        $item['created_at']
+                        ?? ''
+                    ),
+
+                'name' =>
+                    (string) (
+                        $item['name']
+                        ?? ''
+                    ),
+
+                'company' =>
+                    (string) (
+                        $item['company']
+                        ?? ''
+                    ),
+
+                'email' => '',
+
+                'phone' =>
+                    (string) (
+                        $item['phone']
+                        ?? ''
+                    ),
+
+                'website' => '',
+
+                'booking_reference' =>
+                    (string) (
+                        $item['reference']
+                        ?? ''
+                    ),
+
+                'booking_date' =>
+                    (string) (
+                        $item['date']
+                        ?? ''
+                    ),
+
+                'booking_time' =>
+                    (string) (
+                        $item['time']
+                        ?? ''
+                    ),
+
+                'booking_status' =>
+                    (string) (
+                        $item['status']
+                        ?? 'confirmed'
+                    ),
+
+                'reason' =>
+                    (string) (
+                        $item['reason']
+                        ?? ''
+                    ),
+            ];
+        }
+    }
+
+    return array_values($all);
 }
 
+/*
+|--------------------------------------------------------------------------
+| Enrichissement CRM
+|--------------------------------------------------------------------------
+*/
 
-/* ================================================================
-   SOURCES
-================================================================ */
+function enrich(
+    array $base,
+    array $crm
+): array {
+    $meta =
+        $crm[$base['id']]
+        ?? [];
 
-function bookings(): array
-{
-    return arr(
-        BOOKINGS_FILE
-    );
+    if (is_array($meta)) {
+        $base =
+            array_merge(
+                $base,
+                $meta
+            );
+    }
+
+    if (
+        !isset($base['status']) ||
+        !is_string($base['status']) ||
+        $base['status'] === ''
+    ) {
+        $base['status'] =
+            'new';
+    }
+
+    if (!isset($base['offer'])) {
+        $base['offer'] = '';
+    }
+
+    if (!isset($base['estimated_value'])) {
+        $base['estimated_value'] = 0;
+    }
+
+    if (!isset($base['recurring_value'])) {
+        $base['recurring_value'] = 0;
+    }
+
+    if (!isset($base['last_contact_at'])) {
+        $base['last_contact_at'] = '';
+    }
+
+    if (!isset($base['next_action'])) {
+        $base['next_action'] = '';
+    }
+
+    if (!isset($base['next_action_at'])) {
+        $base['next_action_at'] = '';
+    }
+
+    if (!isset($base['notes'])) {
+        $base['notes'] = '';
+    }
+
+    if (
+        !isset($base['interactions']) ||
+        !is_array($base['interactions'])
+    ) {
+        $base['interactions'] = [];
+    }
+
+    return $base;
 }
 
+/*
+|--------------------------------------------------------------------------
+| GET — Tableau de bord
+|--------------------------------------------------------------------------
+*/
 
-function crm(): array
-{
-    $data =
-        readJson(
+$method =
+    $_SERVER['REQUEST_METHOD']
+    ?? 'GET';
+
+if ($method === 'GET') {
+    $crm =
+        read_json(
             CRM_FILE,
             []
         );
 
-    return is_array($data)
-        ? $data
-        : [];
-}
-
-
-/* ================================================================
-   CONSTRUCTION DES PROSPECTS
-================================================================ */
-
-function buildProspects(): array
-{
-    $metadata =
-        crm();
-
-    $all = [];
-
-
-    /* AUDIT */
-
-    foreach (
-        arr(AUDIT_FILE)
-        as $item
-    ) {
-        $id =
-            idFor(
-                'audit-',
-                $item['id']
-                    ?? hash(
-                        'sha256',
-                        json_encode(
-                            $item
-                        )
-                    )
-            );
-
-        $all[$id] =
-            statusDefaults(
-                [
-                    'id' =>
-                        $id,
-
-                    'source' =>
-                        'audit',
-
-                    'created_at' =>
-                        (string) (
-                            $item['created_at']
-                            ?? ''
-                        ),
-
-                    'name' =>
-                        (string) (
-                            $item['name']
-                            ?? ''
-                        ),
-
-                    'company' =>
-                        (string) (
-                            $item['company']
-                            ?? ''
-                        ),
-
-                    'email' =>
-                        (string) (
-                            $item['email']
-                            ?? ''
-                        ),
-
-                    'phone' =>
-                        (string) (
-                            $item['phone']
-                            ?? ''
-                        ),
-
-                    'website' =>
-                        (string) (
-                            $item['website']
-                            ?? ''
-                        ),
-
-                    'audit_score' =>
-                        isset(
-                            $item['score']
-                        )
-                            ? (int) $item['score']
-                            : null,
-
-                    'recommendations' =>
-                        is_array(
-                            $item['recommendations']
-                            ?? null
-                        )
-                            ? $item['recommendations']
-                            : [],
-                ]
-            );
+    if (!is_array($crm)) {
+        $crm = [];
     }
 
-
-    /* CONTACT */
-
-    foreach (
-        arr(CONTACT_FILE)
-        as $item
-    ) {
-        $id =
-            idFor(
-                'contact-',
-                $item['id']
-                    ?? hash(
-                        'sha256',
-                        json_encode(
-                            $item
-                        )
-                    )
-            );
-
-        $all[$id] =
-            statusDefaults(
-                [
-                    'id' =>
-                        $id,
-
-                    'source' =>
-                        'contact',
-
-                    'created_at' =>
-                        (string) (
-                            $item['created_at']
-                            ?? ''
-                        ),
-
-                    'name' =>
-                        (string) (
-                            $item['name']
-                            ?? ''
-                        ),
-
-                    'company' =>
-                        (string) (
-                            $item['company']
-                            ?? ''
-                        ),
-
-                    'email' =>
-                        (string) (
-                            $item['email']
-                            ?? ''
-                        ),
-
-                    'phone' =>
-                        (string) (
-                            $item['phone']
-                            ?? ''
-                        ),
-
-                    'website' => '',
-
-                    'budget' =>
-                        (string) (
-                            $item['budget']
-                            ?? ''
-                        ),
-
-                    'message' =>
-                        (string) (
-                            $item['message']
-                            ?? ''
-                        ),
-                ]
-            );
-    }
-
-
-    /* GRAND+ */
-
-    foreach (
-        arr(GRAND_FILE)
-        as $item
-    ) {
-        $id =
-            idFor(
-                'grand-plus-',
-                $item['id']
-                    ?? hash(
-                        'sha256',
-                        json_encode(
-                            $item
-                        )
-                    )
-            );
-
-        $all[$id] =
-            statusDefaults(
-                [
-                    'id' =>
-                        $id,
-
-                    'source' =>
-                        'grand-plus',
-
-                    'created_at' =>
-                        (string) (
-                            $item['created_at']
-                            ?? ''
-                        ),
-
-                    'name' =>
-                        (string) (
-                            $item['name']
-                            ?? ''
-                        ),
-
-                    'company' =>
-                        (string) (
-                            $item['company']
-                            ?? ''
-                        ),
-
-                    'email' =>
-                        (string) (
-                            $item['email']
-                            ?? ''
-                        ),
-
-                    'phone' =>
-                        (string) (
-                            $item['phone']
-                            ?? ''
-                        ),
-
-                    'website' =>
-                        (string) (
-                            $item['website']
-                            ?? ''
-                        ),
-
-                    'sector' =>
-                        (string) (
-                            $item['sector']
-                            ?? ''
-                        ),
-
-                    'problem' =>
-                        (string) (
-                            $item['problem']
-                            ?? ''
-                        ),
-
-                    'marketing_consent' =>
-                        !empty(
-                            $item[
-                                'marketing_consent'
-                            ]
-                        ),
-
-                    'grand_plus_status' =>
-                        (string) (
-                            $item['status']
-                            ?? 'pending'
-                        ),
-
-                    'month_key' =>
-                        (string) (
-                            $item['month_key']
-                            ?? ''
-                        ),
-                ]
-            );
-    }
-
-
-    /* RENDEZ-VOUS */
-
-    foreach (
-        bookings()
-        as $item
-    ) {
-        $reference =
-            (string) (
-                $item['reference']
-                ?? ''
-            );
-
-        $id =
-            idFor(
-                'booking-',
-                $reference !== ''
-                    ? $reference
-                    : hash(
-                        'sha256',
-                        json_encode(
-                            $item
-                        )
-                    )
-            );
-
-        $all[$id] =
-            statusDefaults(
-                [
-                    'id' =>
-                        $id,
-
-                    'source' =>
-                        'booking',
-
-                    'created_at' =>
-                        (string) (
-                            $item['created_at']
-                            ?? ''
-                        ),
-
-                    'name' =>
-                        (string) (
-                            $item['name']
-                            ?? ''
-                        ),
-
-                    'company' =>
-                        (string) (
-                            $item['company']
-                            ?? ''
-                        ),
-
-                    'email' =>
-                        (string) (
-                            $item['email']
-                            ?? ''
-                        ),
-
-                    'phone' =>
-                        (string) (
-                            $item['phone']
-                            ?? ''
-                        ),
-
-                    'website' => '',
-
-                    'booking_reference' =>
-                        $reference,
-
-                    'booking_date' =>
-                        (string) (
-                            $item['date']
-                            ?? ''
-                        ),
-
-                    'booking_time' =>
-                        (string) (
-                            $item['time']
-                            ?? ''
-                        ),
-
-                    'booking_status' =>
-                        (string) (
-                            $item['status']
-                            ?? 'confirmed'
-                        ),
-
-                    'reason' =>
-                        (string) (
-                            $item['reason']
-                            ?? ''
-                        ),
-                ]
-            );
-    }
-
-
-    /* PROSPECTS MANUELS */
-
-    foreach (
-        $metadata as $id => $item
-    ) {
-        if (
-            !isset($all[$id]) &&
-            is_array($item)
-        ) {
-            $all[$id] =
-                statusDefaults(
-                    array_merge(
-                        [
-                            'id' =>
-                                (string) $id,
-
-                            'source' =>
-                                'manual',
-
-                            'created_at' =>
-                                (string) (
-                                    $item[
-                                        'created_at'
-                                    ]
-                                    ?? date(
-                                        DATE_ATOM
-                                    )
-                                ),
-                        ],
-                        $item
-                    )
-                );
-        }
-    }
-
-
-    /* METADATA CRM */
-
-    foreach (
-        $all as $id => $prospect
-    ) {
-        if (
-            isset(
-                $metadata[$id]
-            ) &&
-            is_array(
-                $metadata[$id]
-            )
-        ) {
-            $all[$id] =
-                statusDefaults(
-                    array_merge(
-                        $prospect,
-                        $metadata[$id]
-                    )
-                );
-        }
-    }
-
-
-    $result =
-        array_values($all);
+    $prospects =
+        array_map(
+            fn(array $prospect) =>
+                enrich(
+                    $prospect,
+                    $crm
+                ),
+            source_leads()
+        );
 
     usort(
-        $result,
-        function (
-            array $a,
-            array $b
-        ) {
-            return strcmp(
+        $prospects,
+        fn($a, $b) =>
+            strcmp(
                 (string) (
                     $b['created_at']
                     ?? ''
@@ -801,50 +741,23 @@ function buildProspects(): array
                     $a['created_at']
                     ?? ''
                 )
-            );
-        }
+            )
     );
 
-    return $result;
-}
-
-
-/* ================================================================
-   AUTH
-================================================================ */
-
-requireAuth();
-
-
-/* ================================================================
-   GET
-================================================================ */
-
-$method =
-    $_SERVER['REQUEST_METHOD']
-    ?? 'GET';
-
-if ($method === 'GET') {
-    $prospects =
-        buildProspects();
-
-    $bookingList =
-        bookings();
+    $bookings =
+        read_json(
+            BOOKINGS_FILE,
+            []
+        );
 
     $grand =
-        arr(GRAND_FILE);
+        read_json(
+            GRAND_PLUS_FILE,
+            []
+        );
 
     $today =
-        (
-            new DateTimeImmutable(
-                'today',
-                new DateTimeZone(
-                    'Europe/Paris'
-                )
-            )
-        )->format(
-            'Y-m-d'
-        );
+        date('Y-m-d');
 
     $activeStatuses = [
         'new',
@@ -859,208 +772,144 @@ if ($method === 'GET') {
         'prospects' =>
             count($prospects),
 
-        'new' => 0,
+        'new' =>
+            count(
+                array_filter(
+                    $prospects,
+                    fn($p) =>
+                        ($p['status'] ?? 'new')
+                        === 'new'
+                )
+            ),
 
-        'qualified' => 0,
+        'qualified' =>
+            count(
+                array_filter(
+                    $prospects,
+                    fn($p) =>
+                        ($p['status'] ?? '')
+                        === 'qualified'
+                )
+            ),
 
-        'meetings' => 0,
+        'meetings' =>
+            count(
+                array_filter(
+                    $prospects,
+                    fn($p) =>
+                        ($p['status'] ?? '')
+                        === 'meeting'
+                )
+            ),
 
-        'won' => 0,
+        'won' =>
+            count(
+                array_filter(
+                    $prospects,
+                    fn($p) =>
+                        ($p['status'] ?? '')
+                        === 'won'
+                )
+            ),
 
-        'lost' => 0,
+        'lost' =>
+            count(
+                array_filter(
+                    $prospects,
+                    fn($p) =>
+                        ($p['status'] ?? '')
+                        === 'lost'
+                )
+            ),
 
-        'signed_revenue' => 0,
+        'signed_revenue' =>
+            array_sum(
+                array_map(
+                    fn($p) =>
+                        ($p['status'] ?? '') === 'won'
+                            ? (float) (
+                                $p['estimated_value']
+                                ?? 0
+                            )
+                            : 0,
+                    $prospects
+                )
+            ),
 
-        'potential_revenue' => 0,
+        'potential_revenue' =>
+            array_sum(
+                array_map(
+                    fn($p) =>
+                        in_array(
+                            ($p['status'] ?? ''),
+                            [
+                                'won',
+                                'lost',
+                            ],
+                            true
+                        )
+                            ? 0
+                            : (float) (
+                                $p['estimated_value']
+                                ?? 0
+                            ),
+                    $prospects
+                )
+            ),
 
-        'today_actions' => 0,
+        'today_actions' =>
+            count(
+                array_filter(
+                    $prospects,
+                    fn($p) =>
+                        ($p['next_action_at'] ?? '')
+                        === $today &&
+                        in_array(
+                            ($p['status'] ?? ''),
+                            $activeStatuses,
+                            true
+                        )
+                )
+            ),
 
-        'overdue_actions' => 0,
-
-        'upcoming_bookings' => 0,
-
-        'confirmed_bookings' => 0,
+        'overdue_actions' =>
+            count(
+                array_filter(
+                    $prospects,
+                    fn($p) =>
+                        ($p['next_action_at'] ?? '') !== '' &&
+                        ($p['next_action_at'] ?? '') < $today &&
+                        in_array(
+                            ($p['status'] ?? ''),
+                            $activeStatuses,
+                            true
+                        )
+                )
+            ),
     ];
 
-
-    foreach (
-        $prospects as $prospect
-    ) {
-        $status =
-            (string) (
-                $prospect['status']
-                ?? 'new'
-            );
-
-        if (
-            isset(
-                $stats[$status]
-            )
-        ) {
-            $stats[$status]++;
-        }
-
-        if (
-            $status === 'won'
-        ) {
-            $stats[
-                'signed_revenue'
-            ] +=
-                (float) (
-                    $prospect[
-                        'estimated_value'
-                    ]
-                    ?? 0
-                );
-        }
-
-        if (
-            !in_array(
-                $status,
-                [
-                    'won',
-                    'lost',
-                ],
-                true
-            )
-        ) {
-            $stats[
-                'potential_revenue'
-            ] +=
-                (float) (
-                    $prospect[
-                        'estimated_value'
-                    ]
-                    ?? 0
-                );
-        }
-
-        $nextAction =
-            (string) (
-                $prospect[
-                    'next_action_at'
-                ]
-                ?? ''
-            );
-
-        if (
-            $nextAction === $today &&
-            in_array(
-                $status,
-                $activeStatuses,
-                true
-            )
-        ) {
-            $stats[
-                'today_actions'
-            ]++;
-        }
-
-        if (
-            $nextAction !== '' &&
-            $nextAction < $today &&
-            in_array(
-                $status,
-                $activeStatuses,
-                true
-            )
-        ) {
-            $stats[
-                'overdue_actions'
-            ]++;
-        }
-    }
-
-
-    $now =
-        new DateTimeImmutable(
-            'now',
-            new DateTimeZone(
-                'Europe/Paris'
-            )
-        );
-
-
-    foreach (
-        $bookingList as $booking
-    ) {
-        $bookingStatus =
-            (string) (
-                $booking['status']
-                ?? 'confirmed'
-            );
-
-        if (
-            $bookingStatus ===
-            'confirmed'
-        ) {
-            $stats[
-                'confirmed_bookings'
-            ]++;
-        }
-
-        $date =
-            (string) (
-                $booking['date']
-                ?? ''
-            );
-
-        $time =
-            (string) (
-                $booking['time']
-                ?? ''
-            );
-
-        if (
-            $date === '' ||
-            $time === ''
-        ) {
-            continue;
-        }
-
-        try {
-            $dateTime =
-                new DateTimeImmutable(
-                    $date .
-                    ' ' .
-                    $time .
-                    ':00',
-                    new DateTimeZone(
-                        'Europe/Paris'
-                    )
-                );
-
-            if (
-                $dateTime >= $now &&
-                $bookingStatus ===
-                    'confirmed'
-            ) {
-                $stats[
-                    'upcoming_bookings'
-                ]++;
-            }
-        } catch (
-            Throwable
-        ) {
-            // Rien
-        }
-    }
-
+    /*
+    |--------------------------------------------------------------------------
+    | Sources
+    |--------------------------------------------------------------------------
+    */
 
     $sources = [];
 
-    foreach (
-        $prospects as $prospect
-    ) {
+    foreach ($prospects as $prospect) {
         $source =
             $prospect['source']
             ?? 'manual';
 
         $sources[$source] =
-            ($sources[$source] ?? 0) +
-            1;
+            ($sources[$source] ?? 0) + 1;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Pipeline
+    |--------------------------------------------------------------------------
+    */
 
     $pipeline = [];
 
@@ -1074,72 +923,59 @@ if ($method === 'GET') {
             'negotiation',
             'won',
             'lost',
-        ] as $pipelineStatus
+        ] as $status
     ) {
-        $pipeline[
-            $pipelineStatus
-        ] =
+        $pipeline[$status] =
             count(
                 array_filter(
                     $prospects,
-                    function (
-                        $prospect
-                    ) use (
-                        $pipelineStatus
-                    ) {
-                        return (
-                            $prospect[
-                                'status'
-                            ]
-                            ?? ''
-                        ) ===
-                            $pipelineStatus;
-                    }
+                    fn($p) =>
+                        ($p['status'] ?? '')
+                        === $status
                 )
             );
     }
 
+    respond([
+        'success' => true,
 
-    respond(
-        [
-            'success' =>
-                true,
+        'generated_at' =>
+            date(DATE_ATOM),
 
-            'generated_at' =>
-                date(DATE_ATOM),
+        'stats' =>
+            $stats,
 
-            'stats' =>
-                $stats,
+        'sources' =>
+            $sources,
 
-            'sources' =>
-                $sources,
+        'pipeline' =>
+            $pipeline,
 
-            'pipeline' =>
-                $pipeline,
+        'prospects' =>
+            $prospects,
 
-            'prospects' =>
-                $prospects,
+        'grand_plus' =>
+            is_array($grand)
+                ? $grand
+                : [],
 
-            'bookings' =>
-                $bookingList,
-
-            'grand_plus' =>
-                $grand,
-        ]
-    );
+        'bookings' =>
+            is_array($bookings)
+                ? $bookings
+                : [],
+    ]);
 }
 
-
-/* ================================================================
-   POST
-================================================================ */
+/*
+|--------------------------------------------------------------------------
+| Seules les requêtes POST peuvent modifier le CRM
+|--------------------------------------------------------------------------
+*/
 
 if ($method !== 'POST') {
     respond(
         [
-            'success' =>
-                false,
-
+            'success' => false,
             'message' =>
                 'Méthode non autorisée.',
         ],
@@ -1147,148 +983,67 @@ if ($method !== 'POST') {
     );
 }
 
+/*
+|--------------------------------------------------------------------------
+| Lecture du body
+|--------------------------------------------------------------------------
+*/
 
-$rawInput =
+$raw =
     file_get_contents(
         'php://input'
     );
 
-$payload =
+$data =
     json_decode(
-        $rawInput ?: '{}',
+        $raw ?: '',
         true
     );
 
-if (!is_array($payload)) {
-    $payload = [];
+if (!is_array($data)) {
+    respond(
+        [
+            'success' => false,
+            'message' =>
+                'Données invalides.',
+        ],
+        400
+    );
 }
 
 $action =
     clean(
-        $payload['action']
+        $data['action']
         ?? ''
     );
 
-$metadata =
-    crm();
-
-
-/* ================================================================
-   CRÉER UN PROSPECT
-================================================================ */
-
-if (
-    $action ===
-    'create_prospect'
-) {
-    $id =
-        'manual-' .
-        date('YmdHis') .
-        '-' .
-        bin2hex(
-            random_bytes(4)
-        );
-
-    $metadata[$id] =
-        statusDefaults(
-            [
-                'id' =>
-                    $id,
-
-                'source' =>
-                    'manual',
-
-                'created_at' =>
-                    date(DATE_ATOM),
-
-                'name' =>
-                    clean(
-                        $payload[
-                            'name'
-                        ] ?? '',
-                        120
-                    ),
-
-                'company' =>
-                    clean(
-                        $payload[
-                            'company'
-                        ] ?? '',
-                        160
-                    ),
-
-                'email' =>
-                    clean(
-                        $payload[
-                            'email'
-                        ] ?? '',
-                        180
-                    ),
-
-                'phone' =>
-                    clean(
-                        $payload[
-                            'phone'
-                        ] ?? '',
-                        80
-                    ),
-
-                'website' =>
-                    clean(
-                        $payload[
-                            'website'
-                        ] ?? '',
-                        300
-                    ),
-
-                'notes' =>
-                    clean(
-                        $payload[
-                            'notes'
-                        ] ?? '',
-                        5000
-                    ),
-            ]
-        );
-
-    writeJson(
+$crm =
+    read_json(
         CRM_FILE,
-        $metadata
+        []
     );
 
-    respond(
-        [
-            'success' =>
-                true,
-
-            'id' =>
-                $id,
-        ]
-    );
+if (!is_array($crm)) {
+    $crm = [];
 }
 
+/*
+|--------------------------------------------------------------------------
+| UPDATE PROSPECT
+|--------------------------------------------------------------------------
+*/
 
-/* ================================================================
-   SUPPRIMER UN PROSPECT
-================================================================ */
-
-if (
-    $action ===
-    'delete_prospect'
-) {
+if ($action === 'update_prospect') {
     $id =
         clean(
-            $payload['id']
-            ?? '',
-            300
+            $data['id']
+            ?? ''
         );
 
     if ($id === '') {
         respond(
             [
-                'success' =>
-                    false,
-
+                'success' => false,
                 'message' =>
                     'Prospect introuvable.',
             ],
@@ -1296,369 +1051,14 @@ if (
         );
     }
 
-
-    $prospects =
-        buildProspects();
-
-    $prospect =
-        null;
-
-    foreach (
-        $prospects as $item
-    ) {
-        if (
-            (
-                $item['id']
-                ?? ''
-            ) === $id
-        ) {
-            $prospect =
-                $item;
-
-            break;
-        }
-    }
-
-
     if (
-        !is_array($prospect)
+        !isset($crm[$id]) ||
+        !is_array($crm[$id])
     ) {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Prospect introuvable.',
-            ],
-            404
-        );
+        $crm[$id] = [];
     }
 
-
-    $source =
-        (string) (
-            $prospect['source']
-            ?? 'manual'
-        );
-
-
-    /*
-     * PROSPECT MANUEL
-     */
-
-    if (
-        $source ===
-        'manual'
-    ) {
-        unset(
-            $metadata[$id]
-        );
-
-        writeJson(
-            CRM_FILE,
-            $metadata
-        );
-
-        respond(
-            [
-                'success' =>
-                    true,
-            ]
-        );
-    }
-
-
-    /*
-     * PROSPECT ISSU D'UNE SOURCE
-     */
-
-    $sourceFiles = [
-        'audit' =>
-            AUDIT_FILE,
-
-        'contact' =>
-            CONTACT_FILE,
-
-        'grand-plus' =>
-            GRAND_FILE,
-
-        'booking' =>
-            BOOKINGS_FILE,
-    ];
-
-
-    if (
-        !isset(
-            $sourceFiles[$source]
-        )
-    ) {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Cette source ne peut pas être supprimée.',
-            ],
-            400
-        );
-    }
-
-
-    $file =
-        $sourceFiles[$source];
-
-    $items =
-        arr($file);
-
-    $before =
-        count($items);
-
-
-    /*
-     * RENDEZ-VOUS
-     */
-
-    if (
-        $source ===
-        'booking'
-    ) {
-        $reference =
-            (string) (
-                $prospect[
-                    'booking_reference'
-                ]
-                ?? ''
-            );
-
-        $items =
-            array_values(
-                array_filter(
-                    $items,
-                    function (
-                        $item
-                    ) use (
-                        $reference
-                    ) {
-                        return (
-                            (string) (
-                                $item[
-                                    'reference'
-                                ]
-                                ?? ''
-                            )
-                        ) !==
-                            $reference;
-                    }
-                )
-            );
-    } else {
-        /*
-         * AUDIT / CONTACT / GRAND+
-         */
-
-        $prefix =
-            match ($source) {
-                'audit' =>
-                    'audit-',
-
-                'contact' =>
-                    'contact-',
-
-                'grand-plus' =>
-                    'grand-plus-',
-
-                default =>
-                    '',
-            };
-
-        $rawId =
-            str_starts_with(
-                $id,
-                $prefix
-            )
-                ? substr(
-                    $id,
-                    strlen($prefix)
-                )
-                : $id;
-
-        $items =
-            array_values(
-                array_filter(
-                    $items,
-                    function (
-                        $item
-                    ) use (
-                        $rawId
-                    ) {
-                        return (
-                            (string) (
-                                $item['id']
-                                ?? ''
-                            )
-                        ) !==
-                            $rawId;
-                    }
-                )
-            );
-    }
-
-
-    if (
-        count($items) ===
-        $before
-    ) {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Prospect introuvable dans sa source.',
-            ],
-            404
-        );
-    }
-
-
-    writeJson(
-        $file,
-        $items
-    );
-
-
-    /*
-     * SUPPRESSION DES MÉTADONNÉES CRM
-     */
-
-    unset(
-        $metadata[$id]
-    );
-
-    writeJson(
-        CRM_FILE,
-        $metadata
-    );
-
-
-    respond(
-        [
-            'success' =>
-                true,
-        ]
-    );
-}
-
-
-/* ================================================================
-   MODIFIER UN PROSPECT
-================================================================ */
-
-if (
-    $action ===
-    'update_prospect'
-) {
-    $id =
-        clean(
-            $payload['id']
-            ?? '',
-            300
-        );
-
-    if ($id === '') {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Prospect introuvable.',
-            ],
-            422
-        );
-    }
-
-
-    $prospects =
-        buildProspects();
-
-    $existing =
-        null;
-
-    foreach (
-        $prospects as $item
-    ) {
-        if (
-            (
-                $item['id']
-                ?? ''
-            ) === $id
-        ) {
-            $existing =
-                $item;
-
-            break;
-        }
-    }
-
-
-    if (
-        !is_array($existing)
-    ) {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Prospect introuvable.',
-            ],
-            404
-        );
-    }
-
-
-    if (
-        !isset(
-            $metadata[$id]
-        ) ||
-        !is_array(
-            $metadata[$id]
-        )
-    ) {
-        $metadata[$id] =
-            [
-                'id' =>
-                    $id,
-
-                'source' =>
-                    $existing[
-                        'source'
-                    ] ?? 'manual',
-
-                'created_at' =>
-                    $existing[
-                        'created_at'
-                    ] ?? date(
-                        DATE_ATOM
-                    ),
-
-                'interactions' =>
-                    $existing[
-                        'interactions'
-                    ] ?? [],
-            ];
-    }
-
-
-    $fields = [
-        'name',
-        'company',
-        'email',
-        'phone',
-        'website',
+    $allowed = [
         'status',
         'offer',
         'estimated_value',
@@ -1669,23 +1069,13 @@ if (
         'notes',
     ];
 
-
-    foreach (
-        $fields as $field
-    ) {
-        if (
-            !array_key_exists(
-                $field,
-                $payload
-            )
-        ) {
+    foreach ($allowed as $field) {
+        if (!array_key_exists(
+            $field,
+            $data
+        )) {
             continue;
         }
-
-
-        $value =
-            $payload[$field];
-
 
         if (
             in_array(
@@ -1697,74 +1087,62 @@ if (
                 true
             )
         ) {
-            $value =
-                (float) $value;
+            $crm[$id][$field] =
+                max(
+                    0,
+                    (float) $data[$field]
+                );
         } else {
-            $value =
+            $crm[$id][$field] =
                 clean(
-                    $value,
-                    5000
+                    $data[$field]
                 );
         }
-
-
-        $metadata[$id][$field] =
-            $value;
     }
 
-
-    writeJson(
+    if (!write_json(
         CRM_FILE,
-        $metadata
-    );
+        $crm
+    )) {
+        respond(
+            [
+                'success' => false,
+                'message' =>
+                    'Impossible d’enregistrer le prospect.',
+            ],
+            500
+        );
+    }
 
-
-    respond(
-        [
-            'success' =>
-                true,
-
-            'prospect' =>
-                statusDefaults(
-                    array_merge(
-                        $existing,
-                        $metadata[$id]
-                    )
-                ),
-        ]
-    );
+    respond([
+        'success' => true,
+    ]);
 }
 
+/*
+|--------------------------------------------------------------------------
+| ADD INTERACTION
+|--------------------------------------------------------------------------
+*/
 
-/* ================================================================
-   AJOUTER UNE INTERACTION
-================================================================ */
-
-if (
-    $action ===
-    'add_interaction'
-) {
+if ($action === 'add_interaction') {
     $id =
         clean(
-            $payload['id']
-            ?? '',
-            300
-        );
-
-    $text =
-        clean(
-            $payload['text']
-            ?? '',
-            5000
+            $data['id']
+            ?? ''
         );
 
     $type =
         clean(
-            $payload['type']
-            ?? 'note',
-            50
+            $data['type']
+            ?? 'Note'
         );
 
+    $text =
+        clean(
+            $data['text']
+            ?? ''
+        );
 
     if (
         $id === '' ||
@@ -1772,9 +1150,7 @@ if (
     ) {
         respond(
             [
-                'success' =>
-                    false,
-
+                'success' => false,
                 'message' =>
                     'Interaction incomplète.',
             ],
@@ -1782,98 +1158,26 @@ if (
         );
     }
 
-
-    $prospects =
-        buildProspects();
-
-    $existing =
-        null;
-
-    foreach (
-        $prospects as $item
-    ) {
-        if (
-            (
-                $item['id']
-                ?? ''
-            ) === $id
-        ) {
-            $existing =
-                $item;
-
-            break;
-        }
-    }
-
-
     if (
-        !is_array($existing)
+        !isset($crm[$id]) ||
+        !is_array($crm[$id])
     ) {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Prospect introuvable.',
-            ],
-            404
-        );
+        $crm[$id] = [];
     }
-
 
     if (
         !isset(
-            $metadata[$id]
+            $crm[$id]['interactions']
         ) ||
         !is_array(
-            $metadata[$id]
+            $crm[$id]['interactions']
         )
     ) {
-        $metadata[$id] =
-            [
-                'id' =>
-                    $id,
-
-                'source' =>
-                    $existing[
-                        'source'
-                    ] ?? 'manual',
-
-                'created_at' =>
-                    $existing[
-                        'created_at'
-                    ] ?? date(
-                        DATE_ATOM
-                    ),
-            ];
+        $crm[$id]['interactions'] = [];
     }
 
-
-    if (
-        !isset(
-            $metadata[$id][
-                'interactions'
-            ]
-        ) ||
-        !is_array(
-            $metadata[$id][
-                'interactions'
-            ]
-        )
-    ) {
-        $metadata[$id][
-            'interactions'
-        ] =
-            $existing[
-                'interactions'
-            ] ?? [];
-    }
-
-
-    $metadata[$id][
-        'interactions'
-    ][] =
+    array_unshift(
+        $crm[$id]['interactions'],
         [
             'id' =>
                 bin2hex(
@@ -1888,279 +1192,146 @@ if (
 
             'text' =>
                 $text,
-        ];
+        ]
+    );
 
-
-    $metadata[$id][
-        'last_contact_at'
-    ] =
+    $crm[$id]['last_contact_at'] =
         date('Y-m-d');
 
-
-    writeJson(
+    if (!write_json(
         CRM_FILE,
-        $metadata
-    );
+        $crm
+    )) {
+        respond(
+            [
+                'success' => false,
+                'message' =>
+                    'Impossible d’enregistrer l’interaction.',
+            ],
+            500
+        );
+    }
 
-
-    respond(
-        [
-            'success' =>
-                true,
-        ]
-    );
+    respond([
+        'success' => true,
+    ]);
 }
 
+/*
+|--------------------------------------------------------------------------
+| CREATE PROSPECT MANUEL
+|--------------------------------------------------------------------------
+*/
 
-/* ================================================================
-   MODIFIER UN RENDEZ-VOUS
-================================================================ */
-
-if (
-    $action ===
-    'update_booking'
-) {
-    $reference =
-        clean(
-            $payload[
-                'reference'
-            ] ?? '',
-            100
+if ($action === 'create_prospect') {
+    $id =
+        'manual-' .
+        date('YmdHis') .
+        '-' .
+        bin2hex(
+            random_bytes(3)
         );
 
+    $crm[$id] = [
+        'id' =>
+            $id,
 
-    if (
-        $reference === ''
-    ) {
-        respond(
-            [
-                'success' =>
-                    false,
+        'source' =>
+            'manual',
 
-                'message' =>
-                    'Référence manquante.',
-            ],
-            422
-        );
-    }
+        'created_at' =>
+            date(DATE_ATOM),
 
+        'name' =>
+            clean(
+                $data['name']
+                ?? ''
+            ),
 
-    $items =
-        bookings();
+        'company' =>
+            clean(
+                $data['company']
+                ?? ''
+            ),
 
-    $found =
-        false;
+        'email' =>
+            clean(
+                $data['email']
+                ?? ''
+            ),
 
+        'phone' =>
+            clean(
+                $data['phone']
+                ?? ''
+            ),
 
-    foreach (
-        $items as &$booking
-    ) {
-        if (
-            (
-                $booking[
-                    'reference'
-                ] ?? ''
-            ) ===
-            $reference
-        ) {
-            $found =
-                true;
+        'website' =>
+            clean(
+                $data['website']
+                ?? ''
+            ),
 
+        'status' =>
+            'new',
 
-            if (
-                isset(
-                    $payload[
-                        'status'
-                    ]
-                )
-            ) {
-                $booking[
-                    'status'
-                ] =
-                    clean(
-                        $payload[
-                            'status'
-                        ],
-                        50
-                    );
-            }
+        'offer' =>
+            '',
 
+        'estimated_value' =>
+            0,
 
-            if (
-                isset(
-                    $payload[
-                        'reason'
-                    ]
-                )
-            ) {
-                $booking[
-                    'reason'
-                ] =
-                    clean(
-                        $payload[
-                            'reason'
-                        ],
-                        2500
-                    );
-            }
+        'recurring_value' =>
+            0,
 
+        'last_contact_at' =>
+            '',
 
-            break;
-        }
-    }
+        'next_action' =>
+            '',
 
-    unset($booking);
+        'next_action_at' =>
+            '',
 
+        'notes' =>
+            clean(
+                $data['notes']
+                ?? ''
+            ),
 
-    if (!$found) {
-        respond(
-            [
-                'success' =>
-                    false,
+        'interactions' =>
+            [],
+    ];
 
-                'message' =>
-                    'Rendez-vous introuvable.',
-            ],
-            404
-        );
-    }
-
-
-    writeJson(
-        BOOKINGS_FILE,
-        $items
-    );
-
-
-    respond(
-        [
-            'success' =>
-                true,
-        ]
-    );
-}
-
-
-/* ================================================================
-   SUPPRIMER UN RENDEZ-VOUS
-================================================================ */
-
-if (
-    $action ===
-    'delete_booking'
-) {
-    $reference =
-        clean(
-            $payload[
-                'reference'
-            ] ?? '',
-            100
-        );
-
-
-    if (
-        $reference === ''
-    ) {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Référence du rendez-vous manquante.',
-            ],
-            422
-        );
-    }
-
-
-    $items =
-        bookings();
-
-
-    $filtered =
-        array_values(
-            array_filter(
-                $items,
-                function (
-                    $booking
-                ) use (
-                    $reference
-                ) {
-                    return (
-                        (string) (
-                            $booking[
-                                'reference'
-                            ] ?? ''
-                        )
-                    ) !==
-                        $reference;
-                }
-            )
-        );
-
-
-    if (
-        count($filtered) ===
-        count($items)
-    ) {
-        respond(
-            [
-                'success' =>
-                    false,
-
-                'message' =>
-                    'Rendez-vous introuvable.',
-            ],
-            404
-        );
-    }
-
-
-    writeJson(
-        BOOKINGS_FILE,
-        $filtered
-    );
-
-
-    /*
-     * On supprime également
-     * les métadonnées CRM
-     * associées au rendez-vous.
-     */
-
-    $crmId =
-        'booking-' .
-        $reference;
-
-    unset(
-        $metadata[$crmId]
-    );
-
-    writeJson(
+    if (!write_json(
         CRM_FILE,
-        $metadata
-    );
+        $crm
+    )) {
+        respond(
+            [
+                'success' => false,
+                'message' =>
+                    'Impossible de créer le prospect.',
+            ],
+            500
+        );
+    }
 
-
-    respond(
-        [
-            'success' =>
-                true,
-        ]
-    );
+    respond([
+        'success' => true,
+        'id' => $id,
+    ]);
 }
 
-
-/* ================================================================
-   ACTION INCONNUE
-================================================================ */
+/*
+|--------------------------------------------------------------------------
+| ACTION INCONNUE
+|--------------------------------------------------------------------------
+*/
 
 respond(
     [
-        'success' =>
-            false,
-
+        'success' => false,
         'message' =>
             'Action inconnue.',
     ],

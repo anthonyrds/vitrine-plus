@@ -22,7 +22,7 @@ const faqs = [
   ],
   [
     "Combien coûte un site Vitrine+ ?",
-    "Nos solutions démarrent à 790 €. Le prix dépend du niveau de personnalisation, du contenu, des fonctionnalités et de l’accompagnement souhaité.",
+    "Nos solutions démarrent à 790 € hors promotion. Pendant Octobre Rose, profitez de -20 % jusqu’au 31 octobre 2026 inclus. Le prix dépend du niveau de personnalisation, du contenu, des fonctionnalités et de l’accompagnement souhaité.",
   ],
   [
     "Combien de temps faut-il pour créer un site ?",

@@ -2,6 +2,7 @@ import { Menu, X } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import Logo from "./Logo";
+import { useOctobreRoseActive } from "../lib/seasonalPromo";
 
 const nav: [string, string][] = [
   ["/creation-site-internet", "Création de site"],
@@ -14,6 +15,7 @@ const nav: [string, string][] = [
 
 export default function Layout() {
   const [open, setOpen] = useState(false);
+  const octoberRoseActive = useOctobreRoseActive();
   const location = useLocation();
 
   useEffect(() => {
