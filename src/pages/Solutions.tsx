@@ -9,12 +9,10 @@ import PageHero from "../components/PageHero";
 import CTA from "../components/CTA";
 import SEO from "../components/SEO";
 import SectionLabel from "../components/SectionLabel";
+import BlackFridayBanner from "../components/BlackFridayBanner";
 
 
-import {
-  useOctobreRoseActive,
-  applyOctoberRoseDiscount,
-} from "../lib/seasonalPromo";
+import { useBlackFridayActive, blackFridayPrice } from "../lib/blackFridayPromo";
 
 const plans = [
   {
@@ -89,7 +87,7 @@ const faqs: [string, string][] = [
   ],
   [
     "Combien coûte la création d’un site internet avec Vitrine+ ?",
-    "Les solutions Vitrine+ démarrent à 790 € hors promotion. Pendant l’offre Octobre Rose, une remise de 20 % s’applique aux solutions digitales jusqu’au 31 octobre 2026 inclus. Le prix exact dépend du périmètre, du niveau de personnalisation, des fonctionnalités et de l’accompagnement nécessaires.",
+    "Les solutions Vitrine+ démarrent à 790 € hors promotion. Pendant l’opération Black Friday du 19 au 30 novembre 2026 inclus, une remise de 40 % s’applique aux offres START, GROW et SCALE pour les nouveaux clients. Les abonnements V+ Care ne sont pas concernés. Le prix exact dépend du périmètre, du niveau de personnalisation, des fonctionnalités et de l’accompagnement nécessaires.",
   ],
   [
     "Le SEO est-il inclus dans les solutions ?",
@@ -107,10 +105,18 @@ const faqs: [string, string][] = [
     "Travaillez-vous partout en France ?",
     "Oui. Les échanges, le cadrage et le suivi peuvent être réalisés à distance avec les entreprises partout en France.",
   ],
+  [
+    "Comment fonctionne l’offre Black Friday ?",
+    "Du 19 au 30 novembre 2026 inclus, les nouveaux clients bénéficient de 40 % de remise sur les prix affichés des offres START, GROW et SCALE. L’offre n’est pas cumulable avec une autre promotion.",
+  ],
+  [
+    "La remise concerne-t-elle V+ Care ?",
+    "Non. La remise Black Friday concerne uniquement les offres START, GROW et SCALE. Les abonnements et prestations récurrentes V+ Care restent aux tarifs habituels.",
+  ],
 ];
 
 export default function Solutions() {
-   const octoberRoseActive = useOctobreRoseActive();
+   const blackFridayActive = useBlackFridayActive();
   return (
     <>
       <SEO
@@ -139,13 +145,7 @@ export default function Solutions() {
         text="Choisissez le niveau d’accompagnement qui correspond à votre étape. Le périmètre est ensuite ajusté à votre entreprise."
       />
 
-      {octoberRoseActive && (
-        <div className="mx-6 mb-10 rounded-3xl border border-[#e9a0b7] bg-[#fff1f5] px-6 py-5 text-center sm:mx-8">
-          <p className="text-xs font-extrabold uppercase tracking-[.2em] text-[#c21850]">Octobre Rose 2026</p>
-          <p className="mt-2 text-2xl font-extrabold text-[#171014] sm:text-3xl">-20 % sur toutes nos solutions digitales</p>
-          <p className="mt-2 text-sm text-black/60">Offre valable jusqu’au 31 octobre 2026 inclus.</p>
-        </div>
-      )}
+      <BlackFridayBanner variant="solutions" />
 
       <section
         aria-labelledby="solutions-principales"
@@ -193,15 +193,15 @@ export default function Solutions() {
                 </p>
 
                 <h3 className="display mt-6 text-5xl font-extrabold">
-                  {octoberRoseActive
-                    ? `${applyOctoberRoseDiscount(plan.numericPrice).toLocaleString("fr-FR")} €`
+                  {blackFridayActive
+                    ? `${blackFridayPrice(plan.numericPrice).toLocaleString("fr-FR")} €`
                     : plan.price}
                 </h3>
-                {octoberRoseActive && (
-                  <p className={`mt-1 text-sm ${plan.featured ? "text-white/45" : "text-black/40"}`}>
-                    <span className="line-through">{plan.price}</span>
-                    <span className="ml-2 font-bold text-[#c21850]">−20 %</span>
-                  </p>
+                {blackFridayActive && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                    <span className={plan.featured ? "text-white/45 line-through" : "text-black/40 line-through"}>{plan.price}</span>
+                    <span className="rounded-full bg-[#c8a45d]/20 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-[#a17c3e]">−40 % Black Friday</span>
+                  </div>
                 )}
 
                 <p
@@ -279,6 +279,7 @@ export default function Solutions() {
             <span>
               Les prix sont indicatifs. Le périmètre exact et le calendrier
               sont confirmés après échange et cadrage du projet.
+              {blackFridayActive && " Offre valable du 19 au 30 novembre 2026 inclus, réservée aux nouveaux clients et non cumulable avec d’autres promotions. Remise applicable uniquement à START, GROW et SCALE, hors abonnements V+ Care."}
             </span>
           </p>
         </div>

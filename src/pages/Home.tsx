@@ -14,6 +14,7 @@ import CTA from "../components/CTA";
 import SEO from "../components/SEO";
 import SectionLabel from "../components/SectionLabel";
 import ServiceCard from "../components/ServiceCard";
+import BlackFridayBanner from "../components/BlackFridayBanner";
 
 const faqs = [
   [
@@ -22,7 +23,7 @@ const faqs = [
   ],
   [
     "Combien coûte un site Vitrine+ ?",
-    "Nos solutions démarrent à 790 € hors promotion. Pendant Octobre Rose, profitez de -20 % jusqu’au 31 octobre 2026 inclus. Le prix dépend du niveau de personnalisation, du contenu, des fonctionnalités et de l’accompagnement souhaité.",
+    "Nos solutions démarrent à 790 €. Lors de l’opération Black Friday, du 19 au 30 novembre 2026, les offres START, GROW et SCALE bénéficient de -40 % pour les nouveaux clients. Le prix dépend du niveau de personnalisation, du contenu, des fonctionnalités et de l’accompagnement souhaité.",
   ],
   [
     "Combien de temps faut-il pour créer un site ?",
@@ -188,6 +189,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <BlackFridayBanner variant="home" />
 
       <section className="px-6 py-14 lg:px-8 lg:py-20">
         <div className="mx-auto max-w-7xl">
