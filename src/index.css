@@ -130,3 +130,17 @@ button:disabled {
     backdrop-filter: none !important;
   }
 }
+
+
+@keyframes black-friday-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-black-friday-marquee {
+  animation: black-friday-marquee 24s linear infinite;
+}

@@ -9,7 +9,7 @@ const nav: [string, string][] = [
   ["/services", "Services"],
   ["/le-grand-plus", "Le Grand +"],
   ["/services/seo", "SEO"],
-  ["/realisations", "Réalisations"],
+  ["/solutions", "Nos Tarifs"],
   ["/a-propos", "À propos"],
 ];
 
