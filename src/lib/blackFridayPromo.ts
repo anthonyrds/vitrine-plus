@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const START = "2026-11-19T00:00:00";
+const START = "2026-11-18T00:00:00";
 const END_EXCLUSIVE = "2026-12-01T00:00:00";
 
 function parisLocalDateTime(now: Date = new Date()): string {
